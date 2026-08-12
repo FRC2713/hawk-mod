@@ -1,5 +1,6 @@
 import type { WebClient } from "@slack/web-api";
-import { findingByKey, peopleBySlackId, resolveFinding } from "../db/repo.js";
+import { findingByKey, peopleBySlackId } from "../db/repo.js";
+import { closeFinding } from "../close.js";
 import { today } from "../domain/dates.js";
 import { dedupeKey } from "../domain/findings.js";
 import type { Member } from "../domain/people.js";
@@ -64,7 +65,11 @@ export async function evaluateChannel(
     // finding rather than waiting for the nightly sweep to notice.
     const existing = findingByKey(key);
     if (existing && existing.status !== "resolved") {
-      resolveFinding(existing.id, "hawk-mod", `Resolved: ${result.summary}`);
+      await closeFinding(
+        existing.id,
+        "hawk-mod",
+        `Resolved: ${result.summary}`
+      );
     }
     return;
   }

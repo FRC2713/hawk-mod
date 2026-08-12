@@ -6,10 +6,10 @@ import {
   listConsents,
   personById,
   personBySlackId,
-  resolveFinding,
   setScreeningDates,
   type ScreeningField,
 } from "../db/repo.js";
+import { closeFinding } from "../close.js";
 import { today } from "../domain/dates.js";
 import { dedupeKey } from "../domain/findings.js";
 import { mayAdministerWorkspace, type Person } from "../domain/people.js";
@@ -191,7 +191,7 @@ const textOf = (s: ViewState, block: string) =>
   (s.values[block]?.["value"]?.value ?? "").trim();
 
 /** Re-checks the person and closes the finding this entry was fixing. */
-function settleScreening(personId: number): void {
+async function settleScreening(personId: number): Promise<void> {
   const person = personById(personId);
   if (!person) return;
   if (!screeningStatus(person, today()).current) return;
@@ -199,11 +199,11 @@ function settleScreening(personId: number): void {
     dedupeKey("screening_lapsed", String(personId))
   );
   if (existing && existing.status !== "resolved") {
-    resolveFinding(existing.id, "hawk-mod", "Screening dates recorded.");
+    await closeFinding(existing.id, "hawk-mod", "Screening dates recorded.");
   }
 }
 
-function settleConsent(personId: number): void {
+async function settleConsent(personId: number): Promise<void> {
   const person = personById(personId);
   if (!person) return;
   if (!mayHoldAccount(consentStatus(person, listConsents(), today()))) return;
@@ -211,7 +211,7 @@ function settleConsent(personId: number): void {
     dedupeKey("unconsented_account", String(personId))
   );
   if (existing && existing.status !== "resolved") {
-    resolveFinding(existing.id, "hawk-mod", "Consent recorded.");
+    await closeFinding(existing.id, "hawk-mod", "Consent recorded.");
   }
 }
 
@@ -258,7 +258,7 @@ export function registerViews(app: App): void {
         source: "slack_modal",
       });
       await ack();
-      settleScreening(personId);
+      await settleScreening(personId);
       log.info("screening recorded", {
         personId,
         by: caller.full_name,
@@ -323,7 +323,7 @@ export function registerViews(app: App): void {
         recordedBy: caller.full_name,
       });
       await ack();
-      settleConsent(personId);
+      await settleConsent(personId);
       log.info("consent recorded", { personId, by: caller.full_name });
     } catch (err) {
       log.error("consent submission failed", { personId, error: String(err) });

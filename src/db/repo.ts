@@ -744,19 +744,19 @@ export function setFindingAlertTs(id: number, ts: string): void {
 export function autoResolveMissing(
   kinds: FindingKind[],
   seenKeys: ReadonlySet<string>
-): number {
-  if (kinds.length === 0) return 0;
+): number[] {
+  if (kinds.length === 0) return [];
   const placeholders = kinds.map(() => "?").join(",");
   const open = db()
     .prepare<string[], Finding>(
       `SELECT * FROM findings WHERE status != 'resolved' AND kind IN (${placeholders})`
     )
     .all(...kinds);
-  let closed = 0;
+  const closed: number[] = [];
   for (const f of open) {
     if (seenKeys.has(f.dedupe_key)) continue;
     resolveFinding(f.id, "hawk-mod", "No longer detected by the sweep.");
-    closed += 1;
+    closed.push(f.id);
   }
   return closed;
 }

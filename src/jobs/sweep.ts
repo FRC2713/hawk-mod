@@ -21,6 +21,7 @@ import { log } from "../logger.js";
 import { raise } from "../raise.js";
 import { channelMemberships, syncSlackAccounts } from "../slack/roster.js";
 import { syncRolesFromUserGroups } from "./syncRoles.js";
+import { refreshFinding } from "../slack/alerts.js";
 import { botClient, revokeUserToken } from "../slack/tokens.js";
 
 /** Kinds this sweep owns end to end, and may therefore close on its own. */
@@ -270,7 +271,11 @@ export async function runSweep(): Promise<SweepStats> {
     }
   }
 
-  stats.findingsClosed = autoResolveMissing(SWEEP_OWNED, seen);
+  const closed = autoResolveMissing(SWEEP_OWNED, seen);
+  stats.findingsClosed = closed.length;
+  // Redraw each one: a finding closed in the database but still showing
+  // buttons in the channel is worse than not closing it.
+  for (const id of closed) await refreshFinding(id);
   finishAuditRun(runId, stats);
   log.info("sweep complete", { ...stats });
   return stats;

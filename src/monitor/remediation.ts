@@ -1,8 +1,8 @@
 import { config } from "../config.js";
+import { closeFinding } from "../close.js";
 import {
   getConversation,
   listFindings,
-  resolveFinding,
   type ConversationRow,
 } from "../db/repo.js";
 import {
@@ -13,7 +13,6 @@ import {
 } from "../domain/rules/remediation.js";
 import type { DmVerdict } from "../domain/rules/dmPolicy.js";
 import { log } from "../logger.js";
-import { refreshFinding } from "../slack/alerts.js";
 import { botClient } from "../slack/tokens.js";
 
 type FindingDetail = {
@@ -69,7 +68,7 @@ export async function remediateOneOnOnes(
     if (!remediates(candidate, group)) continue;
 
     const note = describeRemediation(group);
-    resolveFinding(finding.id, "hawk-mod", note, "acknowledged");
+    await closeFinding(finding.id, "hawk-mod", note, "acknowledged");
     closed += 1;
     log.info("1:1 finding remediated", {
       finding: finding.id,

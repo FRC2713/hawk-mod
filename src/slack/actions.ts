@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
-import { getFinding, personBySlackId, resolveFinding } from "../db/repo.js";
+import { closeFinding } from "../close.js";
+import { getFinding, personBySlackId } from "../db/repo.js";
 import { mayAdministerWorkspace } from "../domain/people.js";
 import { log } from "../logger.js";
 import { ACK_ACTION, RESOLVE_ACTION, refreshFinding } from "./alerts.js";
@@ -143,9 +144,8 @@ export function registerActions(app: App): void {
     }
 
     try {
-      resolveFinding(findingId, caller.full_name, note, status);
       await ack();
-      await refreshFinding(findingId);
+      await closeFinding(findingId, caller.full_name, note, status);
       log.info("finding closed from Slack", {
         findingId,
         status,
