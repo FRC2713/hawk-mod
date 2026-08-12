@@ -1,6 +1,14 @@
 # hawk-mod
 
+<img src="assets/hawk-mod-icon.svg" alt="" width="88" align="right">
+
 Youth-protection monitoring for the Red Hawk Robotics Slack workspace.
+
+It is **Hawk Mod** to everyone in Slack — the app, the bot, the DM that follows
+a finding — and `hawk-mod` to everything that is not a person: this repo, the
+package, the container, the database file, the log lines. The slash command
+stays `/hawkmod`, because it is already in people's fingers and in every
+runbook.
 
 Slack does not let us block direct messages between adults and students below
 Enterprise Grid, and Information Barriers — the only feature that would — is
@@ -44,7 +52,27 @@ appear:
 
 Findings are posted once to a private channel, deduplicated, auto-closed when
 the underlying problem goes away, and closable by a Lead Coach from **Resolve**
-and **Acknowledge** buttons on the alert itself. Both open a short form asking
+and **Acknowledge** buttons on the alert itself.
+
+**The adults involved get a private nudge, not just the Lead Coaches.** When a
+DM raises a finding, hawk-mod sends each adult in it a direct message naming the
+rule and the concrete fix — add a second screened adult, or move it to a
+channel. It is deliberately a colleague's heads-up rather than a warning: most
+violations are people who did not know the rule, and an adult who feels accused
+moves the conversation somewhere nobody can see it. The nudge goes once per
+occurrence, it says plainly that a Lead Coach has been notified, and it never
+replaces the finding.
+
+**Students never receive one.** Youth protection governs adult conduct toward
+youth; the student has done nothing wrong, and a policy notice in a minor's chat
+window would frighten them to no purpose.
+
+**Closing a DM finding closes that DM, not that pair.** If a message is sent in
+the conversation afterwards, the finding is raised again with a fresh alert and
+the old message is redrawn to say so. Closing it does not buy silence — only the
+absence of further messages does. Merely re-reading the conversation is not a
+new violation, so a conversation that has been dealt with and left alone stays
+quiet however many times hawk-mod walks past it. Both open a short form asking
 what happened — the reason stays mandatory, because a finding closed without
 one tells the quarterly review nothing. Once closed, the message redraws
 without buttons and shows who closed it and why.
@@ -54,12 +82,14 @@ means seen but not finished with.
 
 **A 1:1 that gets put right is acknowledged automatically.** §4.1's own remedy
 is "anything that starts in a DM moves to a channel or gets a second adult
-added", so when a group DM appears containing the same pair plus a second
-screened adult, the original finding is acknowledged and a note is posted in
-the alert's thread. Slack cannot add anyone to an existing 1:1 — it makes a new
-conversation — which is why remediation is detected as a new group DM rather
-than a change to the old one. The group DM must be newer than the finding, or
-an old thread could be used to clear a fresh violation.
+added", so when a conversation containing the same pair plus a second screened
+adult is used, the original finding is acknowledged and a note is posted in the
+alert's thread. It does not matter whether that group is new or one the team
+already had — Slack cannot add anyone to an existing 1:1, so either is a
+legitimate way to comply. What matters is that it was **spoken in after** the
+1:1 message: an old thread nobody has touched cannot clear a fresh violation.
+Carry on DMing the student privately afterwards and the group stops excusing it,
+because each new 1:1 message raises the finding again.
 
 Acknowledged, not resolved: the 1:1 still happened and its messages are still
 on record. Only a person marks a DM violation resolved.
@@ -129,11 +159,13 @@ and gates on it.
 ## Setup
 
 1. Create the Slack app from `docs/slack-app-manifest.yaml`, replacing the
-   example host with your `PUBLIC_URL`.
+   example host with your `PUBLIC_URL`. Then upload `assets/hawk-mod-icon-512.png`
+   under Basic Information → Display Information → App icon; a manifest cannot
+   carry an image, so that step is manual and one-off.
 2. `cp .env.example .env` and fill it in. Generate the encryption key with
    `openssl rand -base64 32` — it encrypts adult tokens at rest.
 3. Create a private channel for findings and put its ID in `ALERT_CHANNEL_ID`.
-   Invite hawk-mod to it.
+   Invite Hawk Mod to it.
 4. `docker compose up -d` (or `npm install && npm run dev`). For the server —
    DNS, TLS, backups, and the public-reachability requirement — see
    [docs/deploy.md](docs/deploy.md).

@@ -1,3 +1,4 @@
+import { APP_NAME } from "../brand.js";
 import { listFindings, listPeople, lastAuditRun } from "../db/repo.js";
 import { severityEmoji } from "../domain/findings.js";
 import { requiresEnrollment } from "../domain/people.js";
@@ -17,7 +18,7 @@ export async function postDigest(): Promise<void> {
   const extra = open.length > 20 ? `\n…and ${open.length - 20} more.` : "";
 
   await postToAlertChannel(
-    `*hawk-mod: ${open.length} open finding(s)*\n${lines.join("\n")}${extra}`
+    `*${APP_NAME}: ${open.length} open finding(s)*\n${lines.join("\n")}${extra}`
   );
 }
 

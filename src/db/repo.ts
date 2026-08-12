@@ -1,4 +1,5 @@
 import { db } from "./client.js";
+import { APP_ACTOR } from "../brand.js";
 import { decrypt, encrypt } from "../crypto.js";
 import { nowIso } from "../domain/dates.js";
 import type { Consent } from "../domain/rules/consent.js";
@@ -470,6 +471,37 @@ export type ConversationRow = {
   last_backfill_ts: string | null;
 };
 
+/**
+ * Every monitored conversation, with the newest message on record for each.
+ * That timestamp is what a re-evaluation anchors to: it is the most recent
+ * conduct the conversation's verdict can be about, so a conversation someone
+ * has already dealt with is not re-alarmed for merely being re-read.
+ */
+export function monitoredConversations(): {
+  id: string;
+  type: "im" | "mpim";
+  participants: string;
+  lastMessageTs: string | null;
+}[] {
+  return db()
+    .prepare<
+      [],
+      {
+        id: string;
+        type: "im" | "mpim";
+        participants: string;
+        lastMessageTs: string | null;
+      }
+    >(
+      `SELECT c.id, c.type, c.participants,
+              (SELECT MAX(m.ts) FROM dm_messages m
+                WHERE m.conversation_id = c.id) AS lastMessageTs
+         FROM conversations c
+        WHERE c.monitored = 1`
+    )
+    .all();
+}
+
 export function upsertConversation(args: {
   id: string;
   teamId: string;
@@ -651,7 +683,16 @@ export function messageStats(conversationId: string): {
  * Re-detecting a resolved one reopens it: a violation that comes back is not
  * the same as one somebody already dealt with.
  */
-export function upsertFinding(f: NewFinding): { id: number; isNew: boolean } {
+/**
+ * `reopen` says what re-detecting a closed finding means, and only the caller
+ * knows: for a condition it means the problem is back, for an occurrence it
+ * means something new happened. `raise()` decides; this just obeys, so the
+ * policy stays in one place and out of the SQL.
+ */
+export function upsertFinding(
+  f: NewFinding,
+  opts: { reopen?: boolean } = {}
+): { id: number; isNew: boolean } {
   const now = nowIso();
   const existing = db()
     .prepare<[string], Finding>("SELECT * FROM findings WHERE dedupe_key = ?")
@@ -679,13 +720,19 @@ export function upsertFinding(f: NewFinding): { id: number; isNew: boolean } {
     return { id: Number(info.lastInsertRowid), isNew: true };
   }
 
-  const reopened = existing.status === "resolved";
+  // Reopening clears the whole closure, not just its timestamp. A row that says
+  // "open" while still carrying who closed it and why is one nobody can read:
+  // the note describes a closure that has since been undone.
+  const reopened = existing.status !== "open" && opts.reopen === true;
+  const clear = reopened ? 1 : 0;
   db()
     .prepare(
       `UPDATE findings
        SET last_seen_at = ?, summary = ?, detail = ?, severity = ?,
-           status = CASE WHEN status = 'resolved' THEN 'open' ELSE status END,
-           resolved_at = CASE WHEN status = 'resolved' THEN NULL ELSE resolved_at END
+           status          = CASE WHEN ? THEN 'open' ELSE status END,
+           resolved_at     = CASE WHEN ? THEN NULL ELSE resolved_at END,
+           resolved_by     = CASE WHEN ? THEN NULL ELSE resolved_by END,
+           resolution_note = CASE WHEN ? THEN NULL ELSE resolution_note END
        WHERE id = ?`
     )
     .run(
@@ -693,6 +740,10 @@ export function upsertFinding(f: NewFinding): { id: number; isNew: boolean } {
       f.summary,
       f.detail === undefined ? null : JSON.stringify(f.detail),
       f.severity,
+      clear,
+      clear,
+      clear,
+      clear,
       existing.id
     );
   return { id: existing.id, isNew: reopened };
@@ -759,7 +810,7 @@ export function autoResolveMissing(
   const closed: number[] = [];
   for (const f of open) {
     if (seenKeys.has(f.dedupe_key)) continue;
-    resolveFinding(f.id, "hawk-mod", "No longer detected by the sweep.");
+    resolveFinding(f.id, APP_ACTOR, "No longer detected by the sweep.");
     closed.push(f.id);
   }
   return closed;

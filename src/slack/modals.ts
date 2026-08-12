@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
 import type { WebClient } from "@slack/web-api";
+import { APP_ACTOR } from "../brand.js";
 import {
   findingByKey,
   insertConsent,
@@ -216,7 +217,7 @@ async function settleScreening(personId: number): Promise<void> {
     dedupeKey("screening_lapsed", String(personId))
   );
   if (existing && existing.status !== "resolved") {
-    await closeFinding(existing.id, "hawk-mod", "Screening dates recorded.");
+    await closeFinding(existing.id, APP_ACTOR, "Screening dates recorded.");
   }
 }
 
@@ -228,7 +229,7 @@ async function settleConsent(personId: number): Promise<void> {
     dedupeKey("unconsented_account", String(personId))
   );
   if (existing && existing.status !== "resolved") {
-    await closeFinding(existing.id, "hawk-mod", "Consent recorded.");
+    await closeFinding(existing.id, APP_ACTOR, "Consent recorded.");
   }
 }
 

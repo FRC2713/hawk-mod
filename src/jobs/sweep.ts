@@ -1,3 +1,4 @@
+import { APP_NAME } from "../brand.js";
 import {
   autoResolveMissing,
   deleteInstallation,
@@ -18,6 +19,7 @@ import { consentStatus, mayHoldAccount } from "../domain/rules/consent.js";
 import { screeningStatus } from "../domain/rules/screening.js";
 import { evaluateTwoAdultRule } from "../domain/rules/twoAdults.js";
 import { log } from "../logger.js";
+import { reevaluateRecorded } from "../monitor/conversations.js";
 import { raise } from "../raise.js";
 import { channelMemberships, syncSlackAccounts } from "../slack/roster.js";
 import { syncRolesFromUserGroups } from "./syncRoles.js";
@@ -55,6 +57,8 @@ export type SweepStats = {
   studentEnrollmentsRemoved: number;
   channelsChecked: number;
   channelsFailingTwoAdults: number;
+  dmConversationsRechecked: number;
+  dmViolationsStanding: number;
   findingsClosed: number;
 };
 
@@ -80,6 +84,8 @@ export async function runSweep(): Promise<SweepStats> {
     studentEnrollmentsRemoved: 0,
     channelsChecked: 0,
     channelsFailingTwoAdults: 0,
+    dmConversationsRechecked: 0,
+    dmViolationsStanding: 0,
     findingsClosed: 0,
   };
 
@@ -185,7 +191,7 @@ export async function runSweep(): Promise<SweepStats> {
           severity: "violation",
           summary:
             `${p.full_name} is rostered as a student but had authorized ` +
-            `hawk-mod. The token has been revoked and removed — until now it ` +
+            `${APP_NAME}. The token has been revoked and removed — until now it ` +
             `made their DMs with other students visible.`,
           subjectPersonId: p.id,
           subjectRef: p.slack_user_id,
@@ -203,7 +209,7 @@ export async function runSweep(): Promise<SweepStats> {
           dedupeKey: dedupeKey("adult_not_enrolled", String(p.id)),
           severity: "violation",
           summary:
-            `${p.full_name} has not authorized hawk-mod. Their DMs with students ` +
+            `${p.full_name} has not authorized ${APP_NAME}. Their DMs with students ` +
             `are not monitored by anything.`,
           subjectPersonId: p.id,
           subjectRef: p.slack_user_id,
@@ -214,7 +220,7 @@ export async function runSweep(): Promise<SweepStats> {
           kind: "enrollment_revoked",
           dedupeKey: dedupeKey("enrollment_revoked", String(p.id)),
           severity: "violation",
-          summary: `${p.full_name}'s hawk-mod authorization stopped working on ${install.revokedAt.slice(0, 10)}.`,
+          summary: `${p.full_name}'s ${APP_NAME} authorization stopped working on ${install.revokedAt.slice(0, 10)}.`,
           subjectPersonId: p.id,
           subjectRef: p.slack_user_id,
         });
@@ -240,6 +246,15 @@ export async function runSweep(): Promise<SweepStats> {
       detail: result,
     });
   }
+
+  /* ---- DM conversations already on record -------------------------------- */
+
+  // A conversation's verdict can change without anyone saying a word: screening
+  // lapses, roles move. Alerts are otherwise driven by new messages, so this is
+  // what stops a quiet conversation from going unreported.
+  const rechecked = await reevaluateRecorded(asOf);
+  stats.dmConversationsRechecked = rechecked.checked;
+  stats.dmViolationsStanding = rechecked.violations;
 
   /* ---- workspace configuration (§6) ------------------------------------- */
 

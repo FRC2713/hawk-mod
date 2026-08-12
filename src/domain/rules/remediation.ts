@@ -8,7 +8,13 @@
 
 export type OneOnOneFinding = {
   id: number;
-  firstSeenAt: string;
+  /**
+   * The most recent 1:1 message the finding covers — not the first. A finding
+   * that was acknowledged and then recurred is about the new message, and
+   * anchoring on the original would let the group DM that answered the first
+   * one answer the second one too.
+   */
+  lastOccurredAt: string;
   /** Slack ids recorded on the finding when it was raised. */
   students: string[];
   adults: string[];
@@ -16,7 +22,13 @@ export type OneOnOneFinding = {
 
 export type GroupConversation = {
   id: string;
-  firstSeenAt: string;
+  /**
+   * The message that has just landed in the group — not when the group was
+   * created. Moving into a group chat that already existed is the ordinary way
+   * to comply, and often the best one, so creation time says nothing useful.
+   * Activity does: a conversation that moved here has a message here.
+   */
+  lastMessageAt: string;
   participants: string[];
   studentIds: string[];
   screenedAdultIds: string[];
@@ -26,10 +38,16 @@ export type GroupConversation = {
  * Whether `group` is the adult's compliant re-do of the conversation the
  * finding is about.
  *
- * The load-bearing condition is the last one: the group DM must be *newer*
- * than the finding. Without it, a group DM that already existed would clear a
- * 1:1 that happened afterwards — which is backwards, and would let someone
- * launder a fresh violation with an old thread.
+ * The load-bearing condition is the last one: the group must have been *spoken
+ * in* after the most recent 1:1 message. Comparing against when the group was
+ * created would reject the ordinary remedy — carrying on in a group chat the
+ * team already had — while comparing against nothing at all would let a dormant
+ * old thread launder a fresh violation. Activity after the fact is the only
+ * thing that distinguishes the two.
+ *
+ * It follows that an adult who keeps DMing privately loses the excuse each time:
+ * the next 1:1 message moves the anchor past the group's last message, and the
+ * group has to be used again to answer for it.
  */
 export function remediates(
   finding: OneOnOneFinding,
@@ -44,7 +62,7 @@ export function remediates(
   );
   if (!everyoneCarriedOver) return false;
 
-  return group.firstSeenAt > finding.firstSeenAt;
+  return group.lastMessageAt > finding.lastOccurredAt;
 }
 
 export function describeRemediation(group: GroupConversation): string {

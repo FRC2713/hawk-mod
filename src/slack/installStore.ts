@@ -1,3 +1,4 @@
+import { APP_NAME } from "../brand.js";
 import type {
   Installation,
   InstallationQuery,
@@ -66,7 +67,7 @@ export const installationStore: InstallationStore = {
           person: person.full_name,
         });
         throw new Error(
-          "Students cannot authorize hawk-mod; it would expose their DMs with other students."
+          `Students cannot authorize ${APP_NAME}; it would expose their DMs with other students.`
         );
       }
       saveInstallation({

@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
 import type { WebClient } from "@slack/web-api";
+import { APP_NAME } from "../brand.js";
 import { closeFinding } from "../close.js";
 import { config } from "../config.js";
 import {
@@ -28,7 +29,7 @@ import { runSweep } from "../jobs/sweep.js";
 import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 
 const HELP = [
-  "*hawk-mod*",
+  `*${APP_NAME}*`,
   "`/hawkmod status` — enrollment coverage and open findings",
   "`/hawkmod enroll` — link for a adult to authorize monitoring",
   "`/hawkmod findings [kind]` — open findings",
@@ -55,7 +56,7 @@ export function registerCommands(app: App): void {
     if (!caller || !mayAdministerWorkspace(caller)) {
       await respond({
         response_type: "ephemeral",
-        text: "hawk-mod is limited to Lead Coaches and workspace admins.",
+        text: `${APP_NAME} is limited to Lead Coaches and workspace admins.`,
       });
       return;
     }
@@ -78,7 +79,7 @@ export function registerCommands(app: App): void {
             text:
               `Send this to each adult: ${config().PUBLIC_URL}/slack/install\n` +
               "They must be signed in to this workspace, and the authorization " +
-              "screen will name the DM scopes hawk-mod is asking for.",
+              `screen will name the DM scopes ${APP_NAME} is asking for.`,
           });
           return;
 
@@ -212,7 +213,7 @@ function statusText(teamId: string): string {
   return [
     `*Coverage:* ${enrolled.length}/${needEnrollment.length} adults enrolled.`,
     needEnrollment.length !== enrolled.length
-      ? `_Unenrolled adults' DMs are invisible to hawk-mod._`
+      ? `_Unenrolled adults' DMs are invisible to ${APP_NAME}._`
       : "_Every adult on the roster is enrolled._",
     `*Roster:* ${people.filter((p) => p.role === "student").length} students, ` +
       `${people.length - people.filter((p) => p.role === "student").length} adults.`,

@@ -75,9 +75,52 @@ export function findingBlocks(f: Finding): {
   return { text: headline, blocks };
 }
 
+/**
+ * Redraws the message a recurrence has replaced. A finding that has happened
+ * again gets a *new* alert rather than an edit — an edit to an old message is
+ * not seen, and the point of a recurrence is to be seen — but leaving the old
+ * one saying "Resolved by …" above a live recurrence is how a channel stops
+ * being believed.
+ */
+async function supersede(previousTs: string, finding: Finding): Promise<void> {
+  try {
+    await botClient().chat.update({
+      channel: config().ALERT_CHANNEL_ID,
+      ts: previousTs,
+      text: `${severityEmoji(finding.severity)} ${finding.kind} — happened again`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `${severityEmoji(finding.severity)} *${finding.kind}* — ${finding.summary}`,
+          },
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text:
+                `finding #${finding.id} · this was closed and *has happened ` +
+                `again* — see the newer alert in this channel`,
+            },
+          ],
+        },
+      ] as never,
+    });
+  } catch (err) {
+    log.warn("could not supersede the previous alert", {
+      findingId: finding.id,
+      error: String(err),
+    });
+  }
+}
+
 export async function postFinding(findingId: number): Promise<void> {
   const finding = getFinding(findingId);
   if (!finding) return;
+  const previousTs = finding.alert_ts;
   const { text, blocks } = findingBlocks(finding);
   try {
     const res = await botClient().chat.postMessage({
@@ -85,7 +128,12 @@ export async function postFinding(findingId: number): Promise<void> {
       text,
       blocks: blocks as never,
     });
-    if (res.ts) setFindingAlertTs(findingId, res.ts);
+    if (!res.ts) return;
+    setFindingAlertTs(findingId, res.ts);
+    // Only once the replacement is actually in the channel: if the post failed,
+    // the old message is the only one there and must keep its buttons.
+    if (previousTs && previousTs !== res.ts)
+      await supersede(previousTs, finding);
   } catch (err) {
     // A failed alert must not abort the sweep; the finding is already durable.
     log.error("could not post finding", { findingId, error: String(err) });

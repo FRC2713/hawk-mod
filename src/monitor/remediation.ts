@@ -1,3 +1,4 @@
+import { APP_ACTOR } from "../brand.js";
 import { config } from "../config.js";
 import { closeFinding } from "../close.js";
 import {
@@ -32,7 +33,8 @@ type FindingDetail = {
  */
 export async function remediateOneOnOnes(
   conversationId: string,
-  verdict: DmVerdict
+  verdict: DmVerdict,
+  occurredAt: string
 ): Promise<number> {
   if (!verdict.monitored || verdict.violation) return 0;
   if (verdict.screenedAdultIds.length < 2) return 0;
@@ -42,7 +44,7 @@ export async function remediateOneOnOnes(
 
   const group: GroupConversation = {
     id: conversationId,
-    firstSeenAt: row.first_seen_at,
+    lastMessageAt: occurredAt,
     participants: JSON.parse(row.participants) as string[],
     studentIds: verdict.studentIds,
     screenedAdultIds: verdict.screenedAdultIds,
@@ -61,14 +63,14 @@ export async function remediateOneOnOnes(
 
     const candidate: OneOnOneFinding = {
       id: finding.id,
-      firstSeenAt: finding.first_seen_at,
+      lastOccurredAt: finding.last_seen_at,
       students: detail.students ?? [],
       adults: detail.adults ?? [],
     };
     if (!remediates(candidate, group)) continue;
 
     const note = describeRemediation(group);
-    await closeFinding(finding.id, "hawk-mod", note, "acknowledged");
+    await closeFinding(finding.id, APP_ACTOR, note, "acknowledged");
     closed += 1;
     log.info("1:1 finding remediated", {
       finding: finding.id,

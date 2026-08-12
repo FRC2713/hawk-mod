@@ -1,4 +1,5 @@
 import { WebClient } from "@slack/web-api";
+import { APP_NAME } from "../brand.js";
 import {
   anyBotInstallation,
   getInstallation,
@@ -22,7 +23,7 @@ export function botClient(): WebClient {
   const token = botToken();
   if (!token) {
     throw new Error(
-      "hawk-mod is not installed in any workspace yet — visit /slack/install"
+      `${APP_NAME} is not installed in any workspace yet — visit /slack/install`
     );
   }
   return new WebClient(token);

@@ -7,7 +7,11 @@ import {
   personBySlackId,
 } from "../db/repo.js";
 import { log } from "../logger.js";
-import { ensureConversation } from "./conversations.js";
+import {
+  ensureConversation,
+  raiseDmViolation,
+  remediateFromMessage,
+} from "./conversations.js";
 
 export type ObservedFile = {
   id?: string;
@@ -87,6 +91,11 @@ export async function recordMessage(
   });
 
   if (inserted) {
+    // Only for a message we had not already recorded. The backfill re-walks
+    // conversations that have not changed, and both adults in a group DM deliver
+    // the same event twice; neither is a new violation to report.
+    await raiseDmViolation(conversation, msg.ts);
+    await remediateFromMessage(conversation, msg.ts);
     log.debug("recorded monitored message", {
       conversation: msg.conversationId,
       ts: msg.ts,

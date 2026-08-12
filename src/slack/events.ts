@@ -1,4 +1,5 @@
 import type { App } from "@slack/bolt";
+import { APP_NAME } from "../brand.js";
 import {
   listConsents,
   markInstallationRevoked,
@@ -214,7 +215,7 @@ export function registerEvents(app: App): void {
           person ? String(person.id) : userId
         ),
         severity: "violation",
-        summary: `${person?.full_name ?? `<@${userId}>`} revoked hawk-mod. Their DMs are no longer monitored.`,
+        summary: `${person?.full_name ?? `<@${userId}>`} revoked ${APP_NAME}. Their DMs are no longer monitored.`,
         subjectPersonId: person?.id ?? null,
         subjectRef: userId,
       });

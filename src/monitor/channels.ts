@@ -1,4 +1,5 @@
 import type { WebClient } from "@slack/web-api";
+import { APP_ACTOR } from "../brand.js";
 import { findingByKey, peopleBySlackId } from "../db/repo.js";
 import { closeFinding } from "../close.js";
 import { today } from "../domain/dates.js";
@@ -65,11 +66,7 @@ export async function evaluateChannel(
     // finding rather than waiting for the nightly sweep to notice.
     const existing = findingByKey(key);
     if (existing && existing.status !== "resolved") {
-      await closeFinding(
-        existing.id,
-        "hawk-mod",
-        `Resolved: ${result.summary}`
-      );
+      await closeFinding(existing.id, APP_ACTOR, `Resolved: ${result.summary}`);
     }
     return;
   }

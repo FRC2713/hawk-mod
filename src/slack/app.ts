@@ -1,4 +1,5 @@
 import { App } from "@slack/bolt";
+import { APP_NAME, BRAND, ICON_SVG } from "../brand.js";
 import { config } from "../config.js";
 import { healthHandler } from "../health.js";
 import { log } from "../logger.js";
@@ -11,6 +12,11 @@ import { installationStore } from "./installStore.js";
 /** Read-only apart from posting alerts. hawk-mod never needs to act as a user. */
 export const BOT_SCOPES = [
   "chat:write",
+  // Opens hawk-mod's own DM with an adult, to send guidance when their
+  // conversation raises a finding. It cannot write into the conversation that
+  // raised it — an app cannot join two people's DM — and would not want to:
+  // that message must never reach the student.
+  "im:write",
   "commands",
   "channels:read",
   "groups:read",
@@ -59,10 +65,13 @@ export function createApp(): App {
           res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
           res.end(
             `<!doctype html><meta charset="utf-8">
-             <title>hawk-mod</title>
-             <div style="font:16px/1.5 system-ui;max-width:34rem;margin:4rem auto">
-               <h1>You're enrolled.</h1>
-               <p>hawk-mod can now see direct messages you are part of that
+             <meta name="viewport" content="width=device-width,initial-scale=1">
+             <title>${APP_NAME}</title>
+             <div style="font:16px/1.6 system-ui,sans-serif;color:#1f2023;max-width:34rem;margin:4rem auto;padding:0 1.25rem">
+               ${ICON_SVG}
+               <h1 style="font-size:1.6rem;margin:1.25rem 0 .25rem">You're enrolled.</h1>
+               <p style="margin:0 0 1.5rem;color:${BRAND.red};font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:.8rem">${APP_NAME}</p>
+               <p>${APP_NAME} can now see direct messages you are part of that
                include a student, and records them for youth-protection audit.
                Conversations with no student in them are not recorded.</p>
                <p>You can revoke this at any time from Slack &rarr; Settings

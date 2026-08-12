@@ -1,18 +1,22 @@
 # Paste at https://api.slack.com/apps -> Create New App -> From an app manifest.
 # Replace hawk-mod.example.org with PUBLIC_URL everywhere it appears.
+#
+# The icon is not part of a manifest and has to be uploaded by hand, once:
+# Basic Information -> Display Information -> App icon, with
+# assets/hawk-mod-icon-512.png. Slack keeps it across later manifest edits.
 display_information:
-  name: hawk-mod
+  name: Hawk Mod
   description: Youth-protection monitoring for Red Hawk Robotics
   long_description: >-
-    hawk-mod records direct messages that include a student so the team can
+    Hawk Mod records direct messages that include a student so the team can
     audit them, because Slack cannot block adult-student DMs below Enterprise
     Grid. Adults authorize it individually. Conversations with no student in
     them are not recorded.
-  background_color: "#7a1220"
+  background_color: "#ba0c2f"
 
 features:
   bot_user:
-    display_name: hawk-mod
+    display_name: Hawk Mod
     always_online: true
   slash_commands:
     - command: /hawkmod
@@ -27,6 +31,10 @@ oauth_config:
   scopes:
     bot:
       - chat:write
+      # Opens Hawk Mod's own DM with an adult, to send guidance when their
+      # conversation raises a finding. Never used to write into the
+      # conversation itself, which an app cannot join in any case.
+      - im:write
       - commands
       - channels:read
       - groups:read
