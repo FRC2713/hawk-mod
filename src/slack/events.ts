@@ -15,8 +15,9 @@ import {
   recordMessage,
   type ObservedFile,
 } from "../monitor/record.js";
+import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 import { raise } from "../raise.js";
-import { userClient } from "./tokens.js";
+import { botClient, userClient } from "./tokens.js";
 
 type MessageLike = {
   ts?: string;
@@ -178,6 +179,26 @@ export function registerEvents(app: App): void {
       });
     }
   });
+
+  /**
+   * Editing a user group is how someone joins the roster, so it has to take
+   * effect when they edit it — not at 3am. Slack sends several of these for a
+   * single edit; the sync is idempotent, so re-running is harmless.
+   */
+  for (const name of [
+    "subteam_members_changed",
+    "subteam_updated",
+    "subteam_created",
+  ] as const) {
+    app.event(name, async () => {
+      try {
+        const stats = await syncRolesFromUserGroups(botClient());
+        log.info("roles resynced after a user group changed", { ...stats });
+      } catch (err) {
+        log.error("user group resync failed", { error: String(err) });
+      }
+    });
+  }
 
   app.event("tokens_revoked", async ({ event, body }) => {
     const teamId = (body as EventBody).team_id;

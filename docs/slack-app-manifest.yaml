@@ -19,7 +19,7 @@ features:
       url: https://hawk-mod.example.org/slack/events
       description: Coverage, findings, and audits
       usage_hint: status | findings | whois @user | resolve <id> <note>
-      should_escape: false
+      should_escape: true
 
 oauth_config:
   redirect_urls:
@@ -51,6 +51,10 @@ settings:
       - member_left_channel
       - team_join
       - tokens_revoked
+      # Roles come from user groups, so a membership edit is a roster edit.
+      - subteam_created
+      - subteam_members_changed
+      - subteam_updated
     user_events:
       - message.im
       - message.mpim

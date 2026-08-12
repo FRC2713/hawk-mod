@@ -1,4 +1,5 @@
 import type { App } from "@slack/bolt";
+import type { WebClient } from "@slack/web-api";
 import { config } from "../config.js";
 import {
   countOpenByKind,
@@ -7,6 +8,7 @@ import {
   listConsents,
   listFindings,
   listPeople,
+  personByEmail,
   personBySlackId,
   resolveFinding,
 } from "../db/repo.js";
@@ -15,6 +17,7 @@ import { severityEmoji } from "../domain/findings.js";
 import {
   mayAdministerWorkspace,
   requiresEnrollment,
+  type Person,
 } from "../domain/people.js";
 import { consentStatus } from "../domain/rules/consent.js";
 import { screeningStatus } from "../domain/rules/screening.js";
@@ -22,6 +25,7 @@ import { log } from "../logger.js";
 import { backfillAll } from "../monitor/backfill.js";
 import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
+import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 
 const HELP = [
   "*hawk-mod*",
@@ -34,7 +38,11 @@ const HELP = [
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
   "`/hawkmod resolve <id> <note>` — close a finding, with a reason",
   "`/hawkmod sweep` — run the compliance sweep now",
+  "`/hawkmod sync` — re-read the user groups now",
   "`/hawkmod backfill` — walk enrolled adults' DM history now",
+  "",
+  "_Roles come from Slack user groups. To add someone to the roster, add them",
+  "to the students or adults group — it applies straight away._",
 ].join("\n");
 
 export function registerCommands(app: App): void {
@@ -83,11 +91,16 @@ export function registerCommands(app: App): void {
 
         case "screening":
         case "consent": {
-          const person = resolvePerson(rest[0] ?? "");
+          // Join the rest: an unescaped display name arrives with spaces.
+          const person = await resolvePerson(client, rest.join(" "));
           if (!person) {
             await respond({
               response_type: "ephemeral",
-              text: `Usage: \`/hawkmod ${sub} @user\` — and they must be on the roster.`,
+              text:
+                `Couldn't find \`${rest.join(" ") || "(nobody)"}\` on the roster.\n` +
+                `Usage: \`/hawkmod ${sub} @user\`. Roster membership comes from ` +
+                `the user groups, so add them to @${config().STUDENT_USERGROUP ?? "students"} ` +
+                `or @${config().ADULT_USERGROUP ?? "adults"} first.`,
             });
             return;
           }
@@ -102,7 +115,7 @@ export function registerCommands(app: App): void {
         case "whois":
           await respond({
             response_type: "ephemeral",
-            text: whoisText(teamId, rest[0] ?? ""),
+            text: await whoisText(client, teamId, rest.join(" ")),
           });
           return;
 
@@ -133,6 +146,17 @@ export function registerCommands(app: App): void {
           await respond({
             response_type: "ephemeral",
             text: `Finding #${id} ${sub === "ack" ? "acknowledged" : "resolved"}.`,
+          });
+          return;
+        }
+
+        case "sync": {
+          const stats = await syncRolesFromUserGroups(client);
+          await respond({
+            response_type: "ephemeral",
+            text: stats.enabled
+              ? "```" + JSON.stringify(stats, null, 2) + "```"
+              : "No user groups configured; the roster comes from CSV import.",
           });
           return;
         }
@@ -215,14 +239,50 @@ function findingsText(kind?: string): string {
     .join("\n");
 }
 
-/** Slack sends mentions as `<@U123|name>`; accept a bare id or @handle too. */
-function resolvePerson(mention: string) {
-  const id = mention.match(/^<@([A-Z0-9]+)/i)?.[1] ?? mention.replace(/^@/, "");
-  return id ? personBySlackId(id) : undefined;
+/**
+ * Resolves whoever the caller meant. With `should_escape: true` Slack sends
+ * `<@U123|handle>` and the first branch is the whole story; the rest exist
+ * because an app configured without escaping sends the raw text the user
+ * typed, which may be a handle or a display name with a space in it.
+ */
+async function resolvePerson(
+  client: WebClient,
+  mention: string
+): Promise<Person | undefined> {
+  const raw = mention.trim();
+  if (!raw) return undefined;
+
+  const escaped = raw.match(/^<@([A-Z0-9]+)/i)?.[1];
+  if (escaped) return personBySlackId(escaped.toUpperCase());
+
+  if (/^U[A-Z0-9]{4,}$/i.test(raw)) return personBySlackId(raw.toUpperCase());
+
+  if (raw.includes("@") && raw.includes(".")) {
+    const byEmail = personByEmail(raw.replace(/^@/, ""));
+    if (byEmail) return byEmail;
+  }
+
+  const wanted = raw.replace(/^@/, "").toLowerCase();
+  try {
+    const list = await client.users.list({ limit: 500 });
+    const match = (list.members ?? []).find((m) =>
+      [m.name, m.profile?.display_name, m.profile?.real_name]
+        .filter(Boolean)
+        .some((n) => (n as string).toLowerCase() === wanted)
+    );
+    if (match?.id) return personBySlackId(match.id);
+  } catch {
+    // fall through to "not found"
+  }
+  return undefined;
 }
 
-function whoisText(teamId: string, mention: string): string {
-  const person = resolvePerson(mention);
+async function whoisText(
+  client: WebClient,
+  teamId: string,
+  mention: string
+): Promise<string> {
+  const person = await resolvePerson(client, mention);
   if (!person) return `No roster entry for \`${mention}\`.`;
 
   const asOf = today();
