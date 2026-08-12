@@ -231,6 +231,34 @@ start_funnel() {
   wait "$pid" 2>/dev/null
 }
 
+# cert_ok — Funnel serves nothing without a TLS certificate, and issuance can
+# fail server-side. Provisioning it here turns a stage-8 mystery into a stage-3
+# error message. Writes into $WORK so no cert files land in the repo.
+cert_ok() {
+  local host="$1"
+  ( cd "$WORK" && "$TS_CLI" cert --cert-file tls.crt --key-file tls.key "$host" ) \
+    >"$WORK/cert.log" 2>&1
+}
+
+# start_cloudflared PORT — quick tunnel, no account and no certificate of your
+# own (Cloudflare's wildcard covers it). Prints nothing of yours to public
+# certificate logs. The URL changes every restart.
+start_cloudflared() {
+  local port="$1" waited=0
+  : > "$WORK/cloudflared.log"
+  nohup cloudflared tunnel --no-autoupdate --url "http://localhost:${port}" \
+    >"$WORK/cloudflared.log" 2>&1 &
+  echo $! > "$WORK/cloudflared.pid"
+  while (( waited < 30 )); do
+    CF_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$WORK/cloudflared.log" \
+      | head -1) || true
+    [[ -n "${CF_URL:-}" ]] && return 0
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
 # clip FILE — put a file on the clipboard so it can be pasted into a browser.
 clip() {
   if command -v pbcopy >/dev/null 2>&1; then
@@ -366,8 +394,53 @@ if (( rc != 0 )); then
   open_url "https://login.tailscale.com/admin/dns"
   exit 1
 fi
-printf '  %s✓%s funnel serving %s → localhost:%s\n' \
+printf '  %s✓%s funnel on: %s → localhost:%s\n' \
   "$GREEN" "$RESET" "$PUBLIC_URL" "$LOCAL_PORT"
+
+# Funnel being "on" is not the same as it working: without a TLS certificate
+# every request dies in the handshake, and issuance can fail on Tailscale's
+# side. Check now rather than three stages later.
+say "Checking a TLS certificate can actually be issued…"
+if cert_ok "$FUNNEL_HOST"; then
+  printf '  %s✓%s certificate in place\n' "$GREEN" "$RESET"
+else
+  warn "Tailscale could not issue a certificate:"
+  sed 's/^/    /' "$WORK/cert.log" | head -4
+  say ""
+  say "Without it, Funnel answers every request with a TLS error. If that says"
+  say "\"failed to create DNS record\", it is Tailscale's control plane, not"
+  say "anything you configured."
+  say ""
+  step "Worth one try: toggle HTTPS Certificates off and on, then re-run."
+  open_url "https://login.tailscale.com/admin/dns"
+  say ""
+  say "Or switch to a Cloudflare quick tunnel, which needs no certificate of"
+  say "your own and nothing of yours reaches public certificate logs. The URL"
+  say "changes each restart, so the Slack app has to be re-pointed if you"
+  say "restart it mid-test."
+  if confirm "Use a Cloudflare quick tunnel instead?"; then
+    if ! command -v cloudflared >/dev/null 2>&1; then
+      warn "cloudflared isn't installed. Install it, then re-run this script:"
+      note "    brew install cloudflared"
+      exit 1
+    fi
+    "$TS_CLI" funnel --https=443 off >/dev/null 2>&1 || true
+    say "Starting the tunnel…"
+    if ! start_cloudflared "$LOCAL_PORT"; then
+      warn "cloudflared didn't produce a URL. Its output:"
+      sed 's/^/    /' "$WORK/cloudflared.log" | tail -10
+      exit 1
+    fi
+    PUBLIC_URL="$CF_URL"
+    printf '  %s✓%s tunnel serving %s → localhost:%s\n' \
+      "$GREEN" "$RESET" "$PUBLIC_URL" "$LOCAL_PORT"
+    note "It runs in the background (pid $(cat "$WORK/cloudflared.pid"))."
+    note "Stop it with: kill \$(cat $WORK/cloudflared.pid)"
+  else
+    say "Stopping — hawk-mod needs a working public HTTPS URL."
+    exit 1
+  fi
+fi
 write_env PUBLIC_URL "$PUBLIC_URL"
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -569,7 +642,11 @@ note "  logs:        ${COMPOSE[*]} logs -f"
 note "  findings:    ${COMPOSE[*]} exec hawk-mod node dist/src/cli/index.js findings"
 note "  in Slack:    /hawkmod status"
 note "  stop:        ${COMPOSE[*]} down"
-note "  close the public tunnel: $TS_CLI funnel --https=443 off"
+if [[ -f "$WORK/cloudflared.pid" ]]; then
+  note "  close the public tunnel: kill \$(cat $WORK/cloudflared.pid)"
+else
+  note "  close the public tunnel: $TS_CLI funnel --https=443 off"
+fi
 say ""
 warn "Wipe the test data before reusing this machine for anything real:"
 note "  ${COMPOSE[*]} down -v"
