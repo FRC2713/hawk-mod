@@ -10,6 +10,6 @@ import { postFinding } from "./slack/alerts.js";
  */
 export async function raise(f: NewFinding): Promise<number> {
   const { id, isNew } = upsertFinding(f);
-  if (isNew) await postFinding(id, f);
+  if (isNew) await postFinding(id);
   return id;
 }

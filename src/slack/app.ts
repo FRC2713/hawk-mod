@@ -2,6 +2,7 @@ import { App } from "@slack/bolt";
 import { config } from "../config.js";
 import { healthHandler } from "../health.js";
 import { log } from "../logger.js";
+import { registerActions } from "./actions.js";
 import { registerCommands } from "./commands.js";
 import { registerEvents } from "./events.js";
 import { registerViews } from "./modals.js";
@@ -82,6 +83,7 @@ export function createApp(): App {
   registerEvents(app);
   registerCommands(app);
   registerViews(app);
+  registerActions(app);
 
   app.error(async (error) => {
     log.error("bolt error", { error: String(error) });

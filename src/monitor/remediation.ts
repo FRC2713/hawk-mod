@@ -13,6 +13,7 @@ import {
 } from "../domain/rules/remediation.js";
 import type { DmVerdict } from "../domain/rules/dmPolicy.js";
 import { log } from "../logger.js";
+import { refreshFinding } from "../slack/alerts.js";
 import { botClient } from "../slack/tokens.js";
 
 type FindingDetail = {

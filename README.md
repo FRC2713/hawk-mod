@@ -43,8 +43,14 @@ appear:
 - fewer than two workspace owners, or a student holding Owner/Admin (§6)
 
 Findings are posted once to a private channel, deduplicated, auto-closed when
-the underlying problem goes away, and closable by a Lead Coach with a required
-written reason.
+the underlying problem goes away, and closable by a Lead Coach from **Resolve**
+and **Acknowledge** buttons on the alert itself. Both open a short form asking
+what happened — the reason stays mandatory, because a finding closed without
+one tells the quarterly review nothing. Once closed, the message redraws
+without buttons and shows who closed it and why.
+
+_Resolved_ means someone looked into it and it is dealt with; _acknowledged_
+means seen but not finished with.
 
 **A 1:1 that gets put right is acknowledged automatically.** §4.1's own remedy
 is "anything that starts in a DM moves to a channel or gets a second adult
