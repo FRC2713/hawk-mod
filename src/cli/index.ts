@@ -6,6 +6,8 @@ import {
   insertConsent,
   listFindings,
   personByEmail,
+  personBySlackId,
+  setPersonRole,
   upsertPerson,
 } from "../db/repo.js";
 import { defaultExpiry } from "../domain/rules/consent.js";
@@ -19,6 +21,9 @@ const USAGE = `hawk-mod cli
                                mentor_ready_on,cori_completed_on,active,notes
   import-consents <file.csv>   email,signed_on,form_version,guardian_name,
                                guardian_email,document_ref,recorded_by[,expires_on]
+  set-role <email|U…> <role>   role: student|mentor|lead_coach|admin|
+                               district_observer. Bootstraps the first Lead
+                               Coach, since /hawkmod needs one to exist.
   sweep                        run the compliance sweep
   backfill                     walk enrolled mentors' DM history
   findings [status]            list findings (default: open)
@@ -116,6 +121,36 @@ function exportConversation(id: string, out?: string) {
   console.log(`Wrote ${messages.length} message(s) to ${path}`);
 }
 
+/**
+ * The user group sync only ever assigns `student` or `mentor`, so the first
+ * Lead Coach has to be set from outside Slack — otherwise nobody can run
+ * /hawkmod at all. Recorded in role_changes like any other role change.
+ */
+function setRole(who: string, role: string) {
+  if (!ROLES.includes(role as Role)) {
+    throw new Error(`Unknown role "${role}". One of: ${ROLES.join(", ")}`);
+  }
+  const person = who.startsWith("U")
+    ? (personBySlackId(who) ?? personByEmail(who))
+    : personByEmail(who);
+  if (!person) {
+    throw new Error(
+      `No roster entry for ${who}. Run a sweep first so the user groups create it.`
+    );
+  }
+  if (person.role === role) {
+    console.log(`${person.full_name} is already ${role}.`);
+    return;
+  }
+  setPersonRole({
+    personId: person.id,
+    toRole: role as Role,
+    source: "cli",
+    detail: { via: "set-role" },
+  });
+  console.log(`${person.full_name}: ${person.role} -> ${role}`);
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
@@ -126,6 +161,11 @@ async function main() {
     case "import-consents":
       if (!args[0]) throw new Error("import-consents needs a CSV path");
       importConsents(args[0]);
+      return;
+    case "set-role":
+      if (!args[0] || !args[1])
+        throw new Error("set-role needs <email|U…> and a role");
+      setRole(args[0], args[1]);
       return;
     case "sweep":
       console.log(JSON.stringify(await runSweep(), null, 2));

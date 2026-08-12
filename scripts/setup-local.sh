@@ -184,7 +184,7 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=11
+TOTAL_STAGES=12
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -208,26 +208,24 @@ banner "hawk-mod — local test setup"
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Scope — what this will and won't record"
-say "This works fine against your real workspace. What bounds it is the"
-say "ROSTER, not the workspace:"
+say "Roles come from Slack user groups. That is what bounds this test:"
 say ""
-say "  ${BOLD}hawk-mod only records a conversation that includes someone"
-say "  rostered as a student.${RESET} No student in it, nothing is written."
+say "  ${BOLD}hawk-mod records a DM only when it contains both an adult and"
+say "  a student.${RESET} Student-only and adult-only conversations are never"
+say "  recorded, and students cannot enrol."
 say ""
-say "So for a test, two properties keep it contained:"
-step "Only YOU enrol. Enrolling grants hawk-mod your DM history — nobody"
-note "    else's DMs are visible until they authorise it themselves."
-step "Roster only accounts you control. Anyone you don't put on the roster"
-note "    as a student is invisible to it."
+warn "Do NOT point this at your real @students group yet."
+say "The sync rosters everyone in it. Combined with you enrolling, that means"
+say "your DMs with real students start being recorded — before the mentor"
+say "agreement and signed parental consent are in place (§4.3)."
 say ""
-warn "Do NOT roster real students yet."
-say "That is the point where this stops being a test and starts recording"
-say "minors — which needs the mentor agreement and signed parental consent"
-say "in place first, per the plan's §4.3."
+say "For the test, make two throwaway groups containing only accounts you"
+say "control, e.g. @hawkmod-test-students and @hawkmod-test-mentors. You will"
+say "point at the real groups at go-live by editing two lines in .env."
 say ""
-say "You'll need a second account to play the 'student'. A +alias works:"
+say "You'll need a second account to play the student. A +alias works:"
 note "    you+student@gmail.com"
-if ! confirm "Understood — only you enrolled, no real students rostered?"; then
+if ! confirm "Understood — test groups, not the real @students?"; then
   say "Stopping. Nothing has been changed."
   exit 0
 fi
@@ -376,6 +374,21 @@ ask ALERT_CHANNEL_ID "Channel ID:"
 write_env ALERT_CHANNEL_ID "$ALERT_CHANNEL_ID"
 
 # ──────────────────────────────────────────────────────────────────────────
+stage "Slack — user groups that declare roles"
+say "hawk-mod reads two user groups to decide who is a student and who is an"
+say "adult. Give it the TEST groups."
+step "In Slack: create the groups if they don't exist, and put ONLY accounts"
+note "    you control in them — you in the mentors one, your second account"
+note "    in the students one."
+say ""
+ask STUDENT_USERGROUP "Students group handle (without @):"
+ask MENTOR_USERGROUP "Mentors group handle (without @):"
+write_env STUDENT_USERGROUP "$STUDENT_USERGROUP"
+write_env MENTOR_USERGROUP "$MENTOR_USERGROUP"
+note "Membership is only ever added to the roster, never subtracted — dropping"
+note "someone from the students group leaves them a student on purpose."
+
+# ──────────────────────────────────────────────────────────────────────────
 stage "Start the container"
 say "Starting hawk-mod with the values collected so far."
 "${COMPOSE[@]}" up -d --build >/dev/null
@@ -427,30 +440,34 @@ pause "Press Enter once the bot is in the channel."
 curl -fsS "${PUBLIC_URL}/health" 2>/dev/null | sed 's/^/  /' || true
 
 # ──────────────────────────────────────────────────────────────────────────
-stage "Seed a test roster"
-say "hawk-mod decides everything from the roster: who is a student, who is a"
-say "screened adult. Two rows is enough to prove it."
+stage "Sync the roster from those groups"
+say "A sweep reads the user groups and creates roster rows from Slack"
+say "profiles — no CSV involved."
+"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js sweep \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print("  roles:", json.dumps(d.get("rolesFromUserGroups")))' \
+  || warn "sweep failed — check the logs"
 say ""
-warn "Use only accounts you control. A real person rostered as a student here"
-warn "means their DMs with you start being recorded."
-ask MENTOR_EMAIL "Your Slack email (the 'mentor'):"
-ask STUDENT_EMAIL "The second account's email (the 'student'):"
-TODAY="$(date +%F)"
-cat > "$WORK/roster.csv" <<CSV
-email,full_name,role,ypp_completed_on,mentor_ready_on,cori_completed_on,active,notes
-${MENTOR_EMAIL},Test Mentor,mentor,${TODAY},${TODAY},${TODAY},1,wizard test row
-${STUDENT_EMAIL},Test Student,student,,,,1,wizard test row
-CSV
-cat > "$WORK/consents.csv" <<CSV
-email,signed_on,form_version,guardian_name,guardian_email,document_ref,recorded_by
-${STUDENT_EMAIL},${TODAY},test,Test Guardian,,,wizard
-CSV
-"${COMPOSE[@]}" cp "$WORK/roster.csv" hawk-mod:/tmp/roster.csv >/dev/null
-"${COMPOSE[@]}" cp "$WORK/consents.csv" hawk-mod:/tmp/consents.csv >/dev/null
-"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js import-roster /tmp/roster.csv | sed 's/^/  /'
-"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js import-consents /tmp/consents.csv | sed 's/^/  /'
-note "Consent is recorded for the student so the only finding you see is the"
-note "DM one — drop that row later to watch 'unconsented_account' fire too."
+say "The roster now:"
+"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js findings >/dev/null 2>&1 || true
+"${COMPOSE[@]}" exec -T hawk-mod node -e '
+const {listPeople}=require("./dist/src/db/repo.js");
+for (const p of listPeople()) console.log(`  ${p.role.padEnd(18)} ${p.full_name}`);
+' 2>/dev/null || note "  (could not list — check the logs)"
+say ""
+say "The group sync only ever assigns student or mentor, so make yourself a"
+say "Lead Coach — /hawkmod commands need one to exist."
+ask LEAD_COACH_EMAIL "Your Slack email:"
+"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js \
+  set-role "$LEAD_COACH_EMAIL" lead_coach | sed 's/^/  /' \
+  || warn "couldn't set the role — is that the email on your Slack account?"
+note "Being a lead_coach also survives the next sync: someone already recorded"
+note "as a lead coach is not demoted for being in the mentors group."
+say ""
+step "Now record consent for the test student, from Slack:"
+note "    /hawkmod consent @their-account"
+note "Without it you'll get an unconsented_account finding — which is correct,"
+note "and worth seeing once."
+pause "Press Enter when you've done that (or skip it to see the finding)."
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Prove it works"
@@ -465,9 +482,16 @@ say "Findings on record:"
 "${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js findings | sed 's/^/  /' || true
 say ""
 step "Check #youth-protection — the alert should be there too."
-note "Nothing yet? The roster matches on email, so confirm the student's Slack"
-note "email matches what you typed, then force a sweep:"
+say ""
+note "Nothing yet? Both accounts have to be in the right user group, so check"
+note "  /hawkmod whois @them   — does it say student?"
+note "then force a re-read of DM history:"
 note "    ${COMPOSE[*]} exec hawk-mod node dist/src/cli/index.js backfill"
+say ""
+say "Worth trying while you're here, to see the boundaries hold:"
+step "DM another adult — nothing should be recorded."
+step "Have the student DM a second student — also nothing."
+note "Only conversations with both an adult and a student are logged."
 
 finish
 say "Useful from here:"
