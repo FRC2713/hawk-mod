@@ -19,3 +19,6 @@
 # misc
 .DS_Store
 npm-debug.log*
+
+# wizard scratch (generated manifests, funnel log, test CSVs)
+/.wizard

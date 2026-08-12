@@ -1,0 +1,13 @@
+# Local test overlay. Use with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# The base file deliberately publishes no ports — on the Linode host Caddy
+# reaches the container over the `edge` network. Locally there is no Caddy, so
+# publish 3000 for a tunnel (Tailscale Funnel) to forward to.
+#
+# `edge` still has to exist locally: docker network create edge
+services:
+  hawk-mod:
+    ports:
+      - "127.0.0.1:3000:3000"
