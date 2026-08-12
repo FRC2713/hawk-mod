@@ -250,19 +250,32 @@ export function registerViews(app: App): void {
       values[field] = value;
     }
 
-    const changed = setScreeningDates({
-      personId,
-      values,
-      recordedBy: caller.full_name,
-      source: "slack_modal",
-    });
-    await ack();
-    settleScreening(personId);
-    log.info("screening recorded", {
-      personId,
-      by: caller.full_name,
-      changed,
-    });
+    try {
+      const changed = setScreeningDates({
+        personId,
+        values,
+        recordedBy: caller.full_name,
+        source: "slack_modal",
+      });
+      await ack();
+      settleScreening(personId);
+      log.info("screening recorded", {
+        personId,
+        by: caller.full_name,
+        changed,
+      });
+    } catch (err) {
+      // Without this the modal just says "trouble connecting", which sends
+      // whoever hit it looking at their network rather than at the cause.
+      log.error("screening submission failed", {
+        personId,
+        error: String(err),
+      });
+      await ack({
+        response_action: "errors",
+        errors: { ypp: `Could not save: ${String(err)}` },
+      });
+    }
   });
 
   app.view(CONSENT_MODAL, async ({ ack, body, view }) => {
@@ -296,20 +309,28 @@ export function registerViews(app: App): void {
       return;
     }
 
-    insertConsent({
-      personId,
-      signedOn,
-      // Annual re-collection; overridable later via the CSV import if a form
-      // genuinely carries a different term.
-      expiresOn: defaultExpiry(signedOn),
-      formVersion: textOf(state, "form_version") || "unversioned",
-      guardianName: textOf(state, "guardian_name"),
-      guardianEmail: textOf(state, "guardian_email") || null,
-      documentRef: textOf(state, "document_ref") || null,
-      recordedBy: caller.full_name,
-    });
-    await ack();
-    settleConsent(personId);
-    log.info("consent recorded", { personId, by: caller.full_name });
+    try {
+      insertConsent({
+        personId,
+        signedOn,
+        // Annual re-collection; overridable later via the CSV import if a form
+        // genuinely carries a different term.
+        expiresOn: defaultExpiry(signedOn),
+        formVersion: textOf(state, "form_version") || "unversioned",
+        guardianName: textOf(state, "guardian_name"),
+        guardianEmail: textOf(state, "guardian_email") || null,
+        documentRef: textOf(state, "document_ref") || null,
+        recordedBy: caller.full_name,
+      });
+      await ack();
+      settleConsent(personId);
+      log.info("consent recorded", { personId, by: caller.full_name });
+    } catch (err) {
+      log.error("consent submission failed", { personId, error: String(err) });
+      await ack({
+        response_action: "errors",
+        errors: { signed_on: `Could not save: ${String(err)}` },
+      });
+    }
   });
 }

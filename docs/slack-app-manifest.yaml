@@ -44,6 +44,9 @@ oauth_config:
       - users:read
 
 settings:
+  interactivity:
+    is_enabled: true
+    request_url: https://hawk-mod.example.org/slack/events
   event_subscriptions:
     request_url: https://hawk-mod.example.org/slack/events
     bot_events:
