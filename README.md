@@ -12,7 +12,9 @@ It implements the controls in _Moving Team Communication to Slack_ §4 and §6.
 
 ## What it does
 
-**Monitors DMs that include a student.** Each mentor authorizes hawk-mod on
+**Monitors DMs that include both an adult and a student** — 1:1, or any number
+of each. A conversation with only students in it, or only adults, is never
+recorded. Each mentor authorizes hawk-mod on
 their own account, granting `im:history` and `mpim:history`. hawk-mod then
 receives that mentor's DM events, classifies each conversation by who is in it,
 and records every message in the ones that include a student — including edits
@@ -28,7 +30,8 @@ appear:
 | Group DM with a student and fewer than two _screened_ adults     | violation (§4.2)                       |
 | Any conversation with a student and an account not on the roster | violation                              |
 | Group DM with a student and two screened adults                  | recorded, allowed                      |
-| Student-only conversation                                        | recorded, not a mentor-conduct issue   |
+| Student-only conversation                                        | **not recorded**                       |
+| Mentor-only conversation                                         | **not recorded**                       |
 
 **Tracks the things that make the above meaningful**, on a nightly sweep:
 
@@ -61,6 +64,12 @@ control:
   checked whether or not it is a member; private ones require an invite.
 - **File contents.** Attachment names, types, and sizes are recorded; the files
   themselves are left in Slack rather than copied onto this host.
+- **Student-to-student DMs.** Deliberately, not incidentally: FIRST YPP and the
+  mentor agreement govern adult conduct toward youth, and neither asks the team
+  to surveil youth-to-youth conversation. Students may not enrol, and a
+  student's peer DMs are structurally invisible because no enrolled token can
+  see them. A peer incident that genuinely needs investigating is reachable
+  through a Corporate Export, which takes a Workspace Owner and a reason.
 
 The Corporate Export remains the backstop for the first gap, since it captures
 non-enrolled mentors too. It is a manual download — Business+ has no API for it,

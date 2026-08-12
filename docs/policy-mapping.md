@@ -33,6 +33,10 @@ Each control from _Moving Team Communication to Slack_, and what carries it.
   sentiment, or "concerning" language. Every verdict above comes from who is in
   a conversation. Adding content heuristics would trade a rule the team can
   explain to a parent for a classifier it cannot.
+- **No surveillance of youth-to-youth conversation.** Student-only DMs are not
+  recorded, and students cannot enrol. YPP governs adult conduct toward youth;
+  collecting minors' peer conversations would be a privacy harm with no control
+  to justify it, and would need consent far beyond what §4.3 describes.
 - **No blocking.** Slack does not offer it below Grid, and simulating it by
   deleting messages or deactivating accounts would be both unreliable and a
   worse posture than a complete record.

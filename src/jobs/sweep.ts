@@ -1,5 +1,6 @@
 import {
   autoResolveMissing,
+  deleteInstallation,
   finishAuditRun,
   getInstallation,
   listConsents,
@@ -20,7 +21,7 @@ import { log } from "../logger.js";
 import { raise } from "../raise.js";
 import { channelMemberships, syncSlackAccounts } from "../slack/roster.js";
 import { syncRolesFromUserGroups } from "./syncRoles.js";
-import { botClient } from "../slack/tokens.js";
+import { botClient, revokeUserToken } from "../slack/tokens.js";
 
 /** Kinds this sweep owns end to end, and may therefore close on its own. */
 const SWEEP_OWNED: FindingKind[] = [
@@ -32,6 +33,9 @@ const SWEEP_OWNED: FindingKind[] = [
   "lone_adult_channel",
   "workspace_config",
 ];
+// Deliberately absent above: `student_enrolled` records that a student's peer
+// DMs were briefly visible. Removing the token does not un-happen that, so a
+// person closes it, not the sweep.
 
 export type SweepStats = {
   rolesFromUserGroups: {
@@ -47,6 +51,7 @@ export type SweepStats = {
   screeningLapsed: number;
   mentorsNotEnrolled: number;
   enrollmentsRevoked: number;
+  studentEnrollmentsRemoved: number;
   channelsChecked: number;
   channelsFailingTwoAdults: number;
   findingsClosed: number;
@@ -71,6 +76,7 @@ export async function runSweep(): Promise<SweepStats> {
     screeningLapsed: 0,
     mentorsNotEnrolled: 0,
     enrollmentsRevoked: 0,
+    studentEnrollmentsRemoved: 0,
     channelsChecked: 0,
     channelsFailingTwoAdults: 0,
     findingsClosed: 0,
@@ -159,6 +165,30 @@ export async function runSweep(): Promise<SweepStats> {
               .join("; "),
           subjectPersonId: p.id,
           detail: screening,
+        });
+      }
+    }
+
+    // Someone can enrol legitimately as a mentor and later be moved into the
+    // students group. The install-time refusal cannot see the future, so the
+    // sweep tears the token down instead of leaving their peer DMs visible.
+    if (p.role === "student" && p.slack_user_id) {
+      const install = getInstallation(teamId, "user", p.slack_user_id);
+      if (install) {
+        await revokeUserToken(teamId, p.slack_user_id);
+        deleteInstallation(teamId, "user", p.slack_user_id);
+        stats.studentEnrollmentsRemoved += 1;
+        await emit({
+          kind: "student_enrolled",
+          dedupeKey: dedupeKey("student_enrolled", String(p.id)),
+          severity: "violation",
+          summary:
+            `${p.full_name} is rostered as a student but had authorized ` +
+            `hawk-mod. The token has been revoked and removed — until now it ` +
+            `made their DMs with other students visible.`,
+          subjectPersonId: p.id,
+          subjectRef: p.slack_user_id,
+          detail: { installedAt: install.installedAt },
         });
       }
     }

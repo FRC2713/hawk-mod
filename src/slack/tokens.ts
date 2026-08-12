@@ -43,6 +43,28 @@ export function userClient(
   return token ? new WebClient(token) : null;
 }
 
+/**
+ * Kills a user token at Slack, not just in our database — used when someone
+ * who should never have been enrolled turns out to be.
+ */
+export async function revokeUserToken(
+  teamId: string,
+  slackUserId: string
+): Promise<boolean> {
+  const token = userToken(teamId, slackUserId);
+  if (!token) return false;
+  try {
+    await new WebClient(token).auth.revoke();
+    return true;
+  } catch (err) {
+    log.warn("could not revoke token at Slack", {
+      user: slackUserId,
+      error: String(err),
+    });
+    return false;
+  }
+}
+
 export type Enrollment = {
   teamId: string;
   slackUserId: string;

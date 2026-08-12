@@ -87,14 +87,17 @@ export function classifyConversation(
     };
   }
 
-  // Students talking among themselves is not a mentor-conduct question, and
-  // the two-adult rule is about adult contact. Recorded, not flagged.
+  // Students talking among themselves is not recorded at all. FIRST YPP and
+  // the mentor agreement govern ADULT conduct toward youth; neither asks the
+  // team to surveil youth-to-youth conversation, and collecting it would be a
+  // privacy harm with no control to justify it. Peer incidents are reachable
+  // through a Corporate Export, which needs a Workspace Owner and a reason.
   if (adults.length === 0) {
     return {
-      monitored: true,
+      monitored: false,
       violation: null,
       severity: "info",
-      summary: `Student-only conversation with ${students.length} participant(s).`,
+      summary: `Student-only conversation with ${students.length} participant(s); not recorded.`,
       ...base,
     };
   }

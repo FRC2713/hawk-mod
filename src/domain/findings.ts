@@ -19,6 +19,8 @@ export const FINDING_KINDS = [
   "roster_drift",
   /** Someone is in both the students and the mentors user group. */
   "usergroup_conflict",
+  /** A student authorized hawk-mod, which would expose their peer DMs. */
+  "student_enrolled",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];

@@ -8,6 +8,7 @@ import {
   BOT_USER_KEY,
   deleteInstallation,
   getInstallation,
+  personBySlackId,
   saveInstallation,
 } from "../db/repo.js";
 
@@ -54,6 +55,20 @@ export const installationStore: InstallationStore = {
     }
 
     if (installation.user?.token) {
+      // Enrolling grants hawk-mod that account's DM history. For a student
+      // that would expose student-to-student conversations, which are
+      // deliberately never recorded — so the enrolment is refused outright
+      // rather than stored and filtered later.
+      const person = personBySlackId(installation.user.id);
+      if (person?.role === "student") {
+        log.warn("refused enrolment by a student", {
+          user: installation.user.id,
+          person: person.full_name,
+        });
+        throw new Error(
+          "Students cannot authorize hawk-mod; it would expose their DMs with other students."
+        );
+      }
       saveInstallation({
         teamId,
         enterpriseId,

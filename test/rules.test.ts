@@ -219,15 +219,43 @@ describe("DM policy", () => {
     assert.equal(verdict.violation, "unknown_participant_with_student");
   });
 
-  it("records student-only DMs without calling them a violation", () => {
+  it("does not record student-only conversations at all", () => {
     const verdict = classifyConversation(
       "mpim",
       [person("student"), person("student"), person("student")],
       asOf
     );
+    assert.equal(verdict.monitored, false);
+    assert.equal(verdict.violation, null);
+  });
+
+  it("does not record a 1:1 between two students", () => {
+    const verdict = classifyConversation(
+      "im",
+      [person("student"), person("student")],
+      asOf
+    );
+    assert.equal(verdict.monitored, false);
+    assert.equal(verdict.violation, null);
+  });
+
+  it("records any:any once one adult and one student are both present", () => {
+    const verdict = classifyConversation(
+      "mpim",
+      [
+        screened(),
+        screened(),
+        screened("lead_coach"),
+        person("student"),
+        person("student"),
+        person("student"),
+      ],
+      asOf
+    );
     assert.equal(verdict.monitored, true);
     assert.equal(verdict.violation, null);
-    assert.equal(verdict.severity, "info");
+    assert.equal(verdict.studentIds.length, 3);
+    assert.equal(verdict.adultIds.length, 3);
   });
 });
 
