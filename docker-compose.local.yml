@@ -2,8 +2,8 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 #
-# The base file deliberately publishes no ports — on the Linode host Caddy
-# reaches the container over the `edge` network. Locally there is no Caddy, so
+# The base file deliberately publishes no ports — on the server a reverse proxy
+# reaches the container over the `edge` network. Locally there is none, so
 # publish a port for the tunnel (Tailscale Funnel) to forward to.
 #
 # LOCAL_PORT is the HOST port only; the container still listens on 3000. It is

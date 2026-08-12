@@ -134,9 +134,9 @@ and gates on it.
    `openssl rand -base64 32` — it encrypts adult tokens at rest.
 3. Create a private channel for findings and put its ID in `ALERT_CHANNEL_ID`.
    Invite hawk-mod to it.
-4. `docker compose up -d` (or `npm install && npm run dev`). For the Linode
-   host — Caddy, DNS, backups, and the public-reachability requirement — see
-   [docs/deploy-linode.md](docs/deploy-linode.md).
+4. `docker compose up -d` (or `npm install && npm run dev`). For the server —
+   DNS, TLS, backups, and the public-reachability requirement — see
+   [docs/deploy.md](docs/deploy.md).
 5. A Lead Coach installs the app: visit `$PUBLIC_URL/slack/install`.
 6. Import the roster and the consents you have already collected:
 

@@ -78,10 +78,10 @@ bundler, so the runtime stage copies a production `node_modules` alongside
 `dist/`. `migrations/` must ship too — `src/db/client.ts` walks up from the
 module to find it, which is why it works from both `src/` and `dist/src/`.
 
-Deployment is Linode behind Caddy on the shared external `edge` network; the app
-publishes no ports. Unlike the tremblay.house stacks it must be reachable from
-the public internet, because Slack posts events to it. `docs/deploy-linode.md`
-has the details.
+Deployment is a single Linode host behind a reverse proxy on the shared
+external `edge` network; the app publishes no ports. It must be reachable from
+the public internet, because Slack posts events to it. `docs/deploy.md` has the
+details.
 
 `/health` (a Bolt `customRoutes` entry, `src/health.ts`) touches SQLite so an
 unwritable or unmigrated volume surfaces as unhealthy rather than as DMs nobody
@@ -89,7 +89,7 @@ recorded. `installed: false` is healthy — a fresh container is legitimately
 waiting to be installed.
 
 Building locally on macOS can trip the "access data from other apps" prompt;
-`docs/deploy-linode.md` has the `DOCKER_CONFIG` workaround.
+`docs/deploy.md` has the `DOCKER_CONFIG` workaround.
 
 ## Rules that are load-bearing
 

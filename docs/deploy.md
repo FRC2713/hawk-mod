@@ -1,26 +1,24 @@
-# Deploying to the Linode host
+# Deploying
 
-One container, one volume, behind Caddy. Same shape as the other self-hosted
-stacks — but with one difference that is easy to get wrong, so it goes first.
+One container, one volume, behind a reverse proxy. One requirement is easy to
+get wrong, so it goes first.
 
-## This one has to be publicly reachable
+## It has to be publicly reachable
 
-The `*.tremblay.house` stacks are VPN-only: DNS points at a Tailscale IP and no
-router ports are forwarded. **hawk-mod cannot work that way.** Slack delivers
-events and completes the OAuth redirect from its own servers, so `PUBLIC_URL`
-must be:
+Slack delivers events and completes the OAuth redirect from its own servers, so
+`PUBLIC_URL` must be:
 
-- a publicly resolvable hostname,
+- a hostname on the team's domain, publicly resolvable,
 - served over real HTTPS (Slack will not post to plain HTTP),
 - reachable from the internet on 443.
 
-If the Linode Caddy already fronts public services, add a site block. If it is
-a tailnet-only setup like the Pi's, hawk-mod needs its own public hostname
-rather than a subdomain of that wildcard.
+A private, VPN-only, or self-signed setup will not work, no matter how
+convenient it is for the people running it.
 
-## 1. DNS and Caddy
+## 1. DNS and TLS
 
-Point an A record at the Linode's public IP, then add to the Caddyfile:
+Point an A record for something like `hawk-mod.<team-domain>` at the server's
+public IP, then terminate TLS in front of the container. With Caddy that is:
 
 ```
 hawk-mod.example.org {
@@ -28,13 +26,16 @@ hawk-mod.example.org {
 }
 ```
 
-The app joins the shared `edge` network and publishes no ports of its own, so
-Caddy reaches it by container name — same convention as `sure` and `n8n`. If
-the `edge` network does not exist on this host yet:
+The app joins a shared `edge` network and publishes no ports of its own, so the
+proxy reaches it by container name. Create the network once if it does not
+exist:
 
 ```bash
 docker network create edge
 ```
+
+Any proxy works — Caddy, nginx, Traefik. All hawk-mod needs is HTTPS in front
+and a route to port 3000 in the container.
 
 ## 2. Secrets
 
@@ -120,9 +121,9 @@ encrypt it at rest. A quarterly cadence matching the audit is the minimum; the
 whole point of this system is being able to produce a conversation months
 later.
 
-## Data handling on a public VPS
+## Data handling on a public server
 
-This is a different exposure from a Pi on a home network:
+The database holds minors' message content on a rented machine:
 
 - Restrict SSH to keys, and keep the host patched. Anyone with root on the
   Linode can read the volume.

@@ -1,12 +1,12 @@
 # hawk-mod — youth-protection DM monitoring for the RHR Slack workspace.
 #
-# Follows the homelab convention: the app publishes NO ports. It joins the
-# shared external `edge` network and Caddy reverse-proxies to it by container
-# name, terminating TLS. See docs/deploy-linode.md for the Caddyfile block.
+# The app publishes NO ports. It joins a shared external `edge` network and a
+# reverse proxy in front of it terminates TLS and forwards by container name.
+# See docs/deploy.md.
 #
-# UNLIKE the tremblay.house stacks, this one must be reachable from the PUBLIC
-# internet — Slack delivers events and the OAuth redirect from its own servers,
-# over HTTPS, to PUBLIC_URL. A tailnet-only hostname will not work.
+# It must be reachable from the PUBLIC internet: Slack delivers events and the
+# OAuth redirect from its own servers, over HTTPS, to PUBLIC_URL. A private or
+# VPN-only hostname will not work.
 services:
   hawk-mod:
     build: .
@@ -59,7 +59,7 @@ services:
       - hawk-mod-data:/data
     networks:
       - edge
-    # Uncomment ONLY for a standalone run with no Caddy in front. Slack still
+    # Uncomment ONLY for a standalone run with no proxy in front. Slack still
     # needs HTTPS, so this is for local testing, not for the Linode host.
     # ports:
     #   - "${PORT:-3000}:3000"
@@ -78,7 +78,7 @@ services:
 
 networks:
   edge:
-    # Owned by the Caddy stack; this app only joins it.
+    # Created by whatever runs the reverse proxy; this app only joins it.
     external: true
     name: edge
 
