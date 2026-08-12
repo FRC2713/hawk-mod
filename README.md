@@ -87,6 +87,19 @@ Do not deploy this quietly. Covert monitoring of minors is a different thing
 from an audited, disclosed control, and only the second one is what the board
 approved.
 
+## Trying it before you deploy
+
+```bash
+./scripts/setup-local.sh
+```
+
+Walks through a local run end to end: a public URL via Tailscale Funnel, the
+Slack app, credentials, the container, and a test DM that should raise a
+finding. It is safe to point at a real workspace **provided you only enrol
+yourself and roster only accounts you control** — a conversation with nobody
+rostered as a student in it is never recorded. The wizard says so at the top
+and gates on it.
+
 ## Setup
 
 1. Create the Slack app from `docs/slack-app-manifest.yaml`, replacing the

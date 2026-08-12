@@ -207,21 +207,28 @@ clip() {
 banner "hawk-mod — local test setup"
 
 # ──────────────────────────────────────────────────────────────────────────
-stage "Ground rules"
-warn "Use a THROWAWAY Slack workspace, not the team's."
-say "hawk-mod records direct messages the moment a mentor enrols. Pointing it"
-say "at the real workspace before the mentor agreement and parental consent"
-say "forms exist would record real people ahead of the disclosures that make"
-say "it legitimate."
+stage "Scope — what this will and won't record"
+say "This works fine against your real workspace. What bounds it is the"
+say "ROSTER, not the workspace:"
 say ""
-note "A free Slack plan is fine — hawk-mod uses per-mentor user tokens, not"
-note "Corporate Export, so none of this needs Business+."
+say "  ${BOLD}hawk-mod only records a conversation that includes someone"
+say "  rostered as a student.${RESET} No student in it, nothing is written."
 say ""
-say "You will need TWO Slack accounts in that workspace: you (the 'mentor')"
-say "and a second one (the 'student'). A +alias on your email works for the"
-say "second, e.g. you+student@gmail.com."
-if ! confirm "Understood, and you're using a test workspace?"; then
-  say "Stopping. Re-run when you have a test workspace to point at."
+say "So for a test, two properties keep it contained:"
+step "Only YOU enrol. Enrolling grants hawk-mod your DM history — nobody"
+note "    else's DMs are visible until they authorise it themselves."
+step "Roster only accounts you control. Anyone you don't put on the roster"
+note "    as a student is invisible to it."
+say ""
+warn "Do NOT roster real students yet."
+say "That is the point where this stops being a test and starts recording"
+say "minors — which needs the mentor agreement and signed parental consent"
+say "in place first, per the plan's §4.3."
+say ""
+say "You'll need a second account to play the 'student'. A +alias works:"
+note "    you+student@gmail.com"
+if ! confirm "Understood — only you enrolled, no real students rostered?"; then
+  say "Stopping. Nothing has been changed."
   exit 0
 fi
 
@@ -296,8 +303,8 @@ printf '  %s✓%s funnel serving %s → localhost:3000\n' "$GREEN" "$RESET" "$PU
 write_env PUBLIC_URL "$PUBLIC_URL"
 
 # ──────────────────────────────────────────────────────────────────────────
-stage "Slack — create the app"
-say "We create the app WITHOUT event subscriptions first."
+stage "Slack — the app"
+say "The manifest goes on WITHOUT event subscriptions first."
 note "Slack verifies the events URL the moment you save it, and the container"
 note "can't answer that challenge until it has this app's signing secret."
 note "Chicken-and-egg — so events get switched on in stage 8 instead."
@@ -308,10 +315,25 @@ printf 'settings:\n  org_deploy_enabled: false\n  socket_mode_enabled: false\n  
   >> "$WORK/manifest-step1.yaml"
 clip "$WORK/manifest-step1.yaml"
 open_url "https://api.slack.com/apps"
-step "Click 'Create New App' → 'From a manifest'."
-step "Pick your TEST workspace."
-step "Choose YAML, replace the contents with your clipboard, Next → Create."
-pause "Press Enter once the app exists."
+if confirm "Do you already have a Slack app you want to use for hawk-mod?"; then
+  warn "Pasting this manifest REPLACES that app's entire configuration —"
+  warn "its scopes, redirect URLs, slash commands, the lot."
+  say "Only do this to an app that is meant to be hawk-mod. If it's a working"
+  say "integration doing something else, answer no next time and make a new one."
+  if confirm "Replace that app's configuration?"; then
+    step "Open the app → 'App Manifest' in the sidebar."
+    step "Select YAML, replace the contents with your clipboard, Save Changes."
+    step "If it warns that scopes changed, accept — you'll reinstall in stage 9."
+  else
+    say "Stopping. Nothing has been changed in Slack."
+    exit 0
+  fi
+else
+  step "Click 'Create New App' → 'From a manifest'."
+  step "Pick the workspace you're testing in."
+  step "Choose YAML, replace the contents with your clipboard, Next → Create."
+fi
+pause "Press Enter once the app is saved."
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Slack — credentials"
@@ -332,7 +354,15 @@ write_env SLACK_STATE_SECRET "$(openssl rand -hex 32)"
 write_env TOKEN_ENCRYPTION_KEY "$(openssl rand -base64 32)"
 note "TOKEN_ENCRYPTION_KEY encrypts mentors' tokens at rest. On the real"
 note "deployment, keep a copy — losing it means everyone re-authorises."
-write_env LOG_MODE "full"
+say ""
+say "Message text: 'full' stores the text of monitored DMs; 'metadata' stores"
+say "who/when/how-many and no text at all. Every policy violation is detected"
+say "either way — content only matters when investigating one."
+if confirm "Store message text during this test? (no = metadata only)"; then
+  write_env LOG_MODE "full"
+else
+  write_env LOG_MODE "metadata"
+fi
 write_env TZ "America/New_York"
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -400,6 +430,9 @@ curl -fsS "${PUBLIC_URL}/health" 2>/dev/null | sed 's/^/  /' || true
 stage "Seed a test roster"
 say "hawk-mod decides everything from the roster: who is a student, who is a"
 say "screened adult. Two rows is enough to prove it."
+say ""
+warn "Use only accounts you control. A real person rostered as a student here"
+warn "means their DMs with you start being recorded."
 ask MENTOR_EMAIL "Your Slack email (the 'mentor'):"
 ask STUDENT_EMAIL "The second account's email (the 'student'):"
 TODAY="$(date +%F)"
@@ -423,7 +456,7 @@ note "DM one — drop that row later to watch 'unconsented_account' fire too."
 stage "Prove it works"
 say "The actual test: a 1:1 DM between an adult and a student is prohibited"
 say "outright, so hawk-mod should flag it the moment it happens."
-step "Invite the student account to the workspace and accept the invite"
+step "Make sure the student account is in the workspace (invite + accept)"
 note "    (a private browser window is the easy way to hold both sessions)"
 step "From YOUR account, send that student account a direct message."
 pause "Press Enter once you've sent it."
