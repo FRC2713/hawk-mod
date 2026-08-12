@@ -195,15 +195,24 @@ mkdir -p "$WORK"
 TS_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.local.yml)
 
-# port_free PORT — nothing is listening on it locally.
+# port_free PORT — usable for hawk-mod. Nothing listening counts as free, and
+# so does hawk-mod's own container: a re-run should reuse its port, not be told
+# to pick a new one and start a second copy.
 port_free() {
-  ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1 || return 0
+  [[ "$(holder_of "$1")" == "hawk-mod" ]]
+}
+
+# holder_of PORT — the docker container publishing it, if any.
+holder_of() {
+  docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null \
+    | grep ":$1->" | awk '{print $1}' | head -1
 }
 
 # whats_on PORT — best-effort description of the squatter, for the error.
 whats_on() {
   local c
-  c=$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep ":$1->" | awk '{print $1}' | head -1)
+  c=$(holder_of "$1")
   [[ -n "$c" ]] && printf 'docker container "%s"' "$c" && return
   lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | awk 'NR==2{print $1}'
 }
@@ -312,12 +321,15 @@ if ! port_free "$LOCAL_PORT"; then
   for candidate in 3001 3002 3003 3010 3100; do
     if port_free "$candidate"; then SUGGESTED="$candidate"; break; fi
   done
-  ask LOCAL_PORT "Host port for hawk-mod [Enter for $SUGGESTED]:"
+  note "$SUGGESTED is free."
+  ask LOCAL_PORT "Host port for hawk-mod:"
   LOCAL_PORT="${LOCAL_PORT:-$SUGGESTED}"
   if ! port_free "$LOCAL_PORT"; then
     warn "Port $LOCAL_PORT is taken too. Free one up and re-run."
     exit 1
   fi
+elif [[ "$(holder_of "$LOCAL_PORT")" == "hawk-mod" ]]; then
+  say "Port $LOCAL_PORT is hawk-mod's own container from an earlier run; reusing it."
 fi
 write_env LOCAL_PORT "$LOCAL_PORT"
 say "hawk-mod will use host port $LOCAL_PORT (the container still listens on 3000)."
