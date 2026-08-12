@@ -45,10 +45,21 @@ export function decrypt(payload: string): string {
   }
   const decipher = createDecipheriv(ALGO, key(), Buffer.from(ivB64, "base64"));
   decipher.setAuthTag(Buffer.from(tagB64, "base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(ctB64, "base64")),
-    decipher.final(),
-  ]).toString("utf8");
+  try {
+    return Buffer.concat([
+      decipher.update(Buffer.from(ctB64, "base64")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    // GCM authentication failed. In practice this is always the same cause,
+    // and the raw message ("Unsupported state or unable to authenticate
+    // data") says nothing useful to whoever has to fix it.
+    throw new Error(
+      "Stored token could not be decrypted — TOKEN_ENCRYPTION_KEY does not " +
+        "match the one that wrote it. Restore the original key, or re-install " +
+        "the app and have each adult re-authorize."
+    );
+  }
 }
 
 /** Constant-time compare, for the CLI's shared-secret checks. */

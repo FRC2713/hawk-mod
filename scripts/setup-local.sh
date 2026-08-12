@@ -254,6 +254,15 @@ cert_ok() {
 # certificate logs. The URL changes every restart.
 start_cloudflared() {
   local port="$1" waited=0
+  # A previous run may have left one up. Two tunnels means two URLs, and the
+  # Slack app can only point at one of them.
+  if [[ -f "$WORK/cloudflared.pid" ]] && kill -0 "$(cat "$WORK/cloudflared.pid")" 2>/dev/null; then
+    CF_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$WORK/cloudflared.log" | head -1) || true
+    if [[ -n "${CF_URL:-}" ]]; then
+      note "Reusing the tunnel already running (pid $(cat "$WORK/cloudflared.pid"))."
+      return 0
+    fi
+  fi
   : > "$WORK/cloudflared.log"
   nohup cloudflared tunnel --no-autoupdate --url "http://localhost:${port}" \
     >"$WORK/cloudflared.log" 2>&1 &
@@ -502,9 +511,21 @@ write_env SLACK_CLIENT_ID "$SLACK_CLIENT_ID"
 write_env SLACK_CLIENT_SECRET "$SLACK_CLIENT_SECRET"
 write_env SLACK_SIGNING_SECRET "$SLACK_SIGNING_SECRET"
 say ""
-say "Generating the two secrets hawk-mod makes for itself:"
-write_env SLACK_STATE_SECRET "$(openssl rand -hex 32)"
-write_env TOKEN_ENCRYPTION_KEY "$(openssl rand -base64 32)"
+say "The two secrets hawk-mod makes for itself:"
+if [[ -n "$(_existing SLACK_STATE_SECRET || true)" ]]; then
+  note "SLACK_STATE_SECRET already set — keeping it."
+else
+  write_env SLACK_STATE_SECRET "$(openssl rand -hex 32)"
+fi
+# Rotating this orphans every token already in the database: they are sealed
+# with the old key and cannot be opened with a new one. A re-run must never
+# silently do that.
+if [[ -n "$(_existing TOKEN_ENCRYPTION_KEY || true)" ]]; then
+  note "TOKEN_ENCRYPTION_KEY already set — keeping it."
+  note "Replacing it would make every stored token undecryptable."
+else
+  write_env TOKEN_ENCRYPTION_KEY "$(openssl rand -base64 32)"
+fi
 note "TOKEN_ENCRYPTION_KEY encrypts adults' tokens at rest. On the real"
 note "deployment, keep a copy — losing it means everyone re-authorises."
 say ""

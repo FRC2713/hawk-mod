@@ -6,9 +6,11 @@ const min = order[(process.env.LOG_LEVEL as Level) ?? "info"] ?? 1;
 function emit(level: Level, msg: string, fields?: Record<string, unknown>) {
   if (order[level] < min) return;
   const line = { t: new Date().toISOString(), level, msg, ...fields };
-  const out =
-    level === "error" || level === "warn" ? console.error : console.log;
-  out(JSON.stringify(line));
+  // Every level goes to stderr, info included. The CLI writes its result to
+  // stdout, and a caller piping that into a parser must not also receive log
+  // lines — that failure reads as "the command broke" rather than "the log
+  // got in the way".
+  console.error(JSON.stringify(line));
 }
 
 /**

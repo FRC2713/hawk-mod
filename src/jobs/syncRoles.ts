@@ -20,6 +20,7 @@ export type RoleSyncStats = {
   changed: number;
   conflicts: number;
   reducedProtection: number;
+  missingGroups: number;
 };
 
 const SOURCE = "usergroup_sync";
@@ -49,6 +50,7 @@ export async function syncRolesFromUserGroups(
     changed: 0,
     conflicts: 0,
     reducedProtection: 0,
+    missingGroups: 0,
   };
 
   if (!cfg.STUDENT_USERGROUP && !cfg.ADULT_USERGROUP) return stats;
@@ -60,6 +62,27 @@ export async function syncRolesFromUserGroups(
   const adultGroup = cfg.ADULT_USERGROUP
     ? await resolveGroup(client, cfg.ADULT_USERGROUP)
     : null;
+
+  // A configured group that does not exist is a typo, and it reads exactly
+  // like an empty group: nobody rostered, nothing monitored, no complaint.
+  // Being quieter by being blinder is the failure this project must not have.
+  for (const [handle, group] of [
+    [cfg.STUDENT_USERGROUP, studentGroup],
+    [cfg.ADULT_USERGROUP, adultGroup],
+  ] as const) {
+    if (!handle || group) continue;
+    stats.missingGroups += 1;
+    await raise({
+      kind: "workspace_config",
+      dedupeKey: dedupeKey("workspace_config", "usergroup_missing", handle),
+      severity: "violation",
+      summary:
+        `Configured user group @${handle} does not exist in this workspace. ` +
+        `Nobody is being rostered from it, so nobody is being monitored ` +
+        `through it either.`,
+      subjectRef: handle,
+    });
+  }
 
   stats.studentsInGroup = studentGroup?.members.size ?? 0;
   stats.adultsInGroup = adultGroup?.members.size ?? 0;

@@ -14,6 +14,11 @@ async function main() {
     port: cfg.PORT,
     logMode: cfg.LOG_MODE,
     installUrl: `${cfg.PUBLIC_URL}/slack/install`,
+    // Silence here used to look identical to "the groups are empty".
+    roleSource:
+      cfg.STUDENT_USERGROUP || cfg.ADULT_USERGROUP
+        ? `user groups (@${cfg.STUDENT_USERGROUP ?? "-"} / @${cfg.ADULT_USERGROUP ?? "-"})`
+        : "CSV import only — no user groups configured",
   });
 }
 
