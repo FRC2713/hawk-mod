@@ -15,7 +15,7 @@ import { fetchProfiles, resolveGroup } from "../slack/userGroups.js";
 export type RoleSyncStats = {
   enabled: boolean;
   studentsInGroup: number;
-  mentorsInGroup: number;
+  adultsInGroup: number;
   created: number;
   changed: number;
   conflicts: number;
@@ -30,7 +30,7 @@ const SOURCE = "usergroup_sync";
  * Membership is only ever *added*. Dropping someone from the students group
  * does not un-student them — that would silently end their monitoring, which is
  * the failure this whole system exists to prevent. Moving out of `student`
- * requires putting them in the mentors group, which is deliberate, and is
+ * requires putting them in the adults group, which is deliberate, and is
  * reported as a finding either way.
  *
  * Group editing is restricted to Workspace Admins in the workspace settings.
@@ -44,29 +44,29 @@ export async function syncRolesFromUserGroups(
   const stats: RoleSyncStats = {
     enabled: false,
     studentsInGroup: 0,
-    mentorsInGroup: 0,
+    adultsInGroup: 0,
     created: 0,
     changed: 0,
     conflicts: 0,
     reducedProtection: 0,
   };
 
-  if (!cfg.STUDENT_USERGROUP && !cfg.MENTOR_USERGROUP) return stats;
+  if (!cfg.STUDENT_USERGROUP && !cfg.ADULT_USERGROUP) return stats;
   stats.enabled = true;
 
   const studentGroup = cfg.STUDENT_USERGROUP
     ? await resolveGroup(client, cfg.STUDENT_USERGROUP)
     : null;
-  const mentorGroup = cfg.MENTOR_USERGROUP
-    ? await resolveGroup(client, cfg.MENTOR_USERGROUP)
+  const adultGroup = cfg.ADULT_USERGROUP
+    ? await resolveGroup(client, cfg.ADULT_USERGROUP)
     : null;
 
   stats.studentsInGroup = studentGroup?.members.size ?? 0;
-  stats.mentorsInGroup = mentorGroup?.members.size ?? 0;
+  stats.adultsInGroup = adultGroup?.members.size ?? 0;
 
   const decisions = reconcileRoles(peopleBySlackId(), {
     students: studentGroup?.members ?? new Set<string>(),
-    mentors: mentorGroup?.members ?? new Set<string>(),
+    adults: adultGroup?.members ?? new Set<string>(),
   });
 
   // Only group members with no roster row need a profile lookup.
@@ -138,7 +138,7 @@ export async function syncRolesFromUserGroups(
           dedupeKey: dedupeKey("usergroup_conflict", decision.slackId),
           severity: "violation",
           summary:
-            `<@${decision.slackId}> is in both the students and the mentors ` +
+            `<@${decision.slackId}> is in both the students and the adults ` +
             `user group. Roster left unchanged until that is resolved.`,
           subjectPersonId: decision.personId,
           subjectRef: decision.slackId,

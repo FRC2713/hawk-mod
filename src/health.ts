@@ -5,7 +5,7 @@ import { anyBotInstallation, listUserInstallations } from "./db/repo.js";
 type Health = {
   status: "ok" | "error";
   installed: boolean;
-  enrolledMentors: number;
+  enrolledAdults: number;
   error?: string;
 };
 
@@ -25,14 +25,14 @@ export function healthHandler(_req: unknown, res: ServerResponse): void {
     body = {
       status: "ok",
       installed: anyBotInstallation() !== undefined,
-      enrolledMentors: listUserInstallations().length,
+      enrolledAdults: listUserInstallations().length,
     };
     code = 200;
   } catch (error) {
     body = {
       status: "error",
       installed: false,
-      enrolledMentors: 0,
+      enrolledAdults: 0,
       error: error instanceof Error ? error.message : "unknown error",
     };
     code = 503;

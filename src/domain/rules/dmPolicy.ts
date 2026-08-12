@@ -27,9 +27,9 @@ export type DmVerdict = {
 };
 
 /**
- * Classifies a DM or group DM against the mentor conduct agreement (§4.1–4.2):
+ * Classifies a DM or group DM against the adult conduct agreement (§4.1–4.2):
  *
- *   - no 1:1 mentor–student DMs, ever;
+ *   - no 1:1 adult–student DMs, ever;
  *   - anything involving a student needs two screened adults present;
  *   - an account we cannot identify is treated as unscreened.
  *
@@ -72,7 +72,7 @@ export function classifyConversation(
       monitored: true,
       violation: "one_to_one_adult_student",
       severity: "violation",
-      summary: `1:1 DM between ${label(adult)} and ${label(students[0]!)} — prohibited by the mentor agreement.`,
+      summary: `1:1 DM between ${label(adult)} and ${label(students[0]!)} — prohibited by the conduct agreement.`,
       ...base,
     };
   }
@@ -88,7 +88,7 @@ export function classifyConversation(
   }
 
   // Students talking among themselves is not recorded at all. FIRST YPP and
-  // the mentor agreement govern ADULT conduct toward youth; neither asks the
+  // the conduct agreement govern ADULT conduct toward youth; neither asks the
   // team to surveil youth-to-youth conversation, and collecting it would be a
   // privacy harm with no control to justify it. Peer incidents are reachable
   // through a Corporate Export, which needs a Workspace Owner and a reason.

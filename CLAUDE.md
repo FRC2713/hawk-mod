@@ -19,7 +19,7 @@ loop. There is no linter.
 
 ## What this is
 
-A Slack app that records mentor–student direct messages for youth-protection
+A Slack app that records adult–student direct messages for youth-protection
 audit, because Slack cannot block them below Enterprise Grid. The requirements
 come from `obsidian/Areas/FRC/Moving Team Communication to Slack.md`; §4 and §6
 are the parts this implements. `docs/policy-mapping.md` maps each control to the
@@ -28,9 +28,9 @@ code that carries it.
 ## Architecture
 
 **Two token planes.** The bot token posts alerts and reads channel membership.
-Each mentor's _user_ token is what makes DMs visible at all — Slack exposes no
+Each adult's _user_ token is what makes DMs visible at all — Slack exposes no
 other way below Enterprise Grid. `src/slack/installStore.ts` keeps one `bot` row
-per workspace and one `user` row per enrolled mentor, and `fetchInstallation`
+per workspace and one `user` row per enrolled adult, and `fetchInstallation`
 merges them so an event carries both. Tokens are encrypted at rest
 (`src/crypto.ts`); the DB file alone is not enough to read anyone's DMs.
 
@@ -50,7 +50,7 @@ messages. Keep new policy logic here rather than inside Slack handlers.
 in the sweep, because everything after it reads roles. The reconciliation in
 `domain/rules/rosterSync.ts` is pure and **add-only by design**: a person
 dropped from the students group stays a student, since the alternative is
-silently ending someone's monitoring. Only an explicit move into the mentors
+silently ending someone's monitoring. Only an explicit move into the adults
 group leaves `student`, and that raises `roster_drift`. Every change lands in
 `role_changes` — Slack's audit log API is Grid-only, so that table is the only
 trail. Do not make this bidirectional.
@@ -60,13 +60,13 @@ alert, and only alert when the finding is new or has recurred. `dedupe_key` is
 the identity of a problem across sweeps — get it wrong and the alert channel
 becomes noise nobody reads, which is the exact failure the source document warns
 about. The nightly sweep auto-closes findings it no longer detects, except
-`mentor_student_dm`, which only a human may close.
+`adult_student_dm`, which only a human may close.
 
 **Two paths reach the same log.** Events (`src/slack/events.ts`) give real-time
-capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each mentor's
+capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each adult's
 DM list to catch history predating enrollment and anything missed while the
 process was down. `UNIQUE (conversation_id, ts)` is what keeps the two from
-double-counting — both mentors in a group DM also deliver the same event twice.
+double-counting — both adults in a group DM also deliver the same event twice.
 
 ## Container
 
@@ -97,7 +97,7 @@ Building locally on macOS can trip the "access data from other apps" prompt;
   Content belongs in the database, which is access-controlled; logs are not.
 - **Alerts name people and conversations, never content.** The alert channel is
   a place to be told something needs a look.
-- **Coverage gaps are findings, not silence.** A mentor who has not enrolled, or
+- **Coverage gaps are findings, not silence.** A adult who has not enrolled, or
   who revoked, produces a violation. Anything that would make hawk-mod quieter
   by making it blinder is a bug.
 - **`LOG_MODE=metadata` must stay a working mode.** Every policy violation is

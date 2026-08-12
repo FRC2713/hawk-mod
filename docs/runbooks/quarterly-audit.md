@@ -11,7 +11,7 @@ the person whose DMs are being reviewed.
 /hawkmod status
 ```
 
-Enrollment must read N/N. Anything less means those mentors' DMs were invisible
+Enrollment must read N/N. Anything less means those adults' DMs were invisible
 for the whole quarter, and **the rest of this audit does not cover them**. Note
 the gap in the minutes rather than glossing it.
 
@@ -22,13 +22,13 @@ the gap in the minutes rather than glossing it.
 ```
 
 Oldest first. Every one gets a written reason when closed — `/hawkmod resolve
-<id> <note>` requires it. `mentor_student_dm` findings never close on their own,
+<id> <note>` requires it. `adult_student_dm` findings never close on their own,
 so they are the real agenda.
 
 For each DM violation:
 
 - Read the conversation: `npm run cli -- export-conversation <id> out.json`
-- Establish what happened, with the mentor, in person
+- Establish what happened, with the adult, in person
 - Record the outcome in the resolution note, including "nothing concerning" when
   that is the answer
 - If the conversation should have been a channel, move it and say so in the note
@@ -36,7 +36,7 @@ For each DM violation:
 ## 3. Spot-check what was _not_ flagged
 
 Pick two or three allowed group DMs at random and read them. The flagged set is
-only as good as the roster: someone mis-roled as a mentor, or a student whose
+only as good as the roster: someone mis-roled as a adult, or a student whose
 account was never linked, produces silence rather than an alert.
 
 ## 4. Roster truth

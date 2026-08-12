@@ -5,8 +5,8 @@ display_information:
   description: Youth-protection monitoring for Red Hawk Robotics
   long_description: >-
     hawk-mod records direct messages that include a student so the team can
-    audit them, because Slack cannot block mentor-student DMs below Enterprise
-    Grid. Mentors authorize it individually. Conversations with no student in
+    audit them, because Slack cannot block adult-student DMs below Enterprise
+    Grid. Adults authorize it individually. Conversations with no student in
     them are not recorded.
   background_color: "#7a1220"
 
@@ -34,7 +34,7 @@ oauth_config:
       - users:read
       - users:read.email
       - usergroups:read
-    # Granted per mentor, by that mentor. This is the only way to see DMs
+    # Granted per adult, by that adult. This is the only way to see DMs
     # without Enterprise Grid.
     user:
       - im:read

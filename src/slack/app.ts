@@ -16,12 +16,12 @@ export const BOT_SCOPES = [
   "team:read",
   "users:read",
   "users:read.email",
-  // Reads the @students / @mentors groups that declare roles.
+  // Reads the @students / @adults groups that declare roles.
   "usergroups:read",
 ];
 
 /**
- * Granted per mentor, by that mentor, at an authorization screen that names
+ * Granted per adult, by that adult, at an authorization screen that names
  * them. These are the scopes that make DM monitoring possible at all — Slack
  * sells no way to read DMs below Enterprise Grid, so the alternative is not a
  * quieter tool, it is no visibility.

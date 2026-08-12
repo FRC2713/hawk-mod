@@ -1,23 +1,23 @@
 export const FINDING_KINDS = [
   /** A DM/group DM that the conduct agreement does not permit. */
-  "mentor_student_dm",
+  "adult_student_dm",
   /** A student channel below two screened adults. */
   "lone_adult_channel",
   /** A Slack account for a student with no current parental consent. */
   "unconsented_account",
   /** A Slack account with no roster row at all. */
   "unknown_account",
-  /** A mentor whose screening has lapsed or was never recorded. */
+  /** A adult whose screening has lapsed or was never recorded. */
   "screening_lapsed",
-  /** A mentor who has never authorized hawk-mod — their DMs are invisible. */
-  "mentor_not_enrolled",
-  /** A previously enrolled mentor whose token stopped working. */
+  /** A adult who has never authorized hawk-mod — their DMs are invisible. */
+  "adult_not_enrolled",
+  /** A previously enrolled adult whose token stopped working. */
   "enrollment_revoked",
   /** Fewer than two workspace owners, or a student holding admin (§6). */
   "workspace_config",
   /** A Slack user group moved someone out of `student`. */
   "roster_drift",
-  /** Someone is in both the students and the mentors user group. */
+  /** Someone is in both the students and the adults user group. */
   "usergroup_conflict",
   /** A student authorized hawk-mod, which would expose their peer DMs. */
   "student_enrolled",

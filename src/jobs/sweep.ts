@@ -28,7 +28,7 @@ const SWEEP_OWNED: FindingKind[] = [
   "unknown_account",
   "unconsented_account",
   "screening_lapsed",
-  "mentor_not_enrolled",
+  "adult_not_enrolled",
   "enrollment_revoked",
   "lone_adult_channel",
   "workspace_config",
@@ -49,7 +49,7 @@ export type SweepStats = {
   unknownAccounts: number;
   unconsentedAccounts: number;
   screeningLapsed: number;
-  mentorsNotEnrolled: number;
+  adultsNotEnrolled: number;
   enrollmentsRevoked: number;
   studentEnrollmentsRemoved: number;
   channelsChecked: number;
@@ -74,7 +74,7 @@ export async function runSweep(): Promise<SweepStats> {
     unknownAccounts: 0,
     unconsentedAccounts: 0,
     screeningLapsed: 0,
-    mentorsNotEnrolled: 0,
+    adultsNotEnrolled: 0,
     enrollmentsRevoked: 0,
     studentEnrollmentsRemoved: 0,
     channelsChecked: 0,
@@ -143,7 +143,7 @@ export async function runSweep(): Promise<SweepStats> {
       }
     }
 
-    if (p.role === "mentor" || p.role === "lead_coach") {
+    if (p.role === "adult" || p.role === "lead_coach") {
       const screening = screeningStatus(p, asOf);
       if (!screening.current) {
         stats.screeningLapsed += 1;
@@ -169,7 +169,7 @@ export async function runSweep(): Promise<SweepStats> {
       }
     }
 
-    // Someone can enrol legitimately as a mentor and later be moved into the
+    // Someone can enrol legitimately as a adult and later be moved into the
     // students group. The install-time refusal cannot see the future, so the
     // sweep tears the token down instead of leaving their peer DMs visible.
     if (p.role === "student" && p.slack_user_id) {
@@ -196,10 +196,10 @@ export async function runSweep(): Promise<SweepStats> {
     if (requiresEnrollment(p) && p.slack_user_id) {
       const install = getInstallation(teamId, "user", p.slack_user_id);
       if (!install) {
-        stats.mentorsNotEnrolled += 1;
+        stats.adultsNotEnrolled += 1;
         await emit({
-          kind: "mentor_not_enrolled",
-          dedupeKey: dedupeKey("mentor_not_enrolled", String(p.id)),
+          kind: "adult_not_enrolled",
+          dedupeKey: dedupeKey("adult_not_enrolled", String(p.id)),
           severity: "violation",
           summary:
             `${p.full_name} has not authorized hawk-mod. Their DMs with students ` +

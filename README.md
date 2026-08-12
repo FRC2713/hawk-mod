@@ -2,9 +2,9 @@
 
 Youth-protection monitoring for the Red Hawk Robotics Slack workspace.
 
-Slack does not let us block direct messages between mentors and students below
+Slack does not let us block direct messages between adults and students below
 Enterprise Grid, and Information Barriers — the only feature that would — is
-Grid-only. So any mentor can DM any student from day one. We cannot prevent
+Grid-only. So any adult can DM any student from day one. We cannot prevent
 this. **hawk-mod is the detection half of that tradeoff**, made continuous and
 recorded instead of quarterly and manual.
 
@@ -14,14 +14,14 @@ It implements the controls in _Moving Team Communication to Slack_ §4 and §6.
 
 **Monitors DMs that include both an adult and a student** — 1:1, or any number
 of each. A conversation with only students in it, or only adults, is never
-recorded. Each mentor authorizes hawk-mod on
+recorded. Each adult authorizes hawk-mod on
 their own account, granting `im:history` and `mpim:history`. hawk-mod then
-receives that mentor's DM events, classifies each conversation by who is in it,
+receives that adult's DM events, classifies each conversation by who is in it,
 and records every message in the ones that include a student — including edits
 and deletions. Conversations with no student in them are classified and then
-discarded; hawk-mod is not a general archive of the mentors' Slack.
+discarded; hawk-mod is not a general archive of the adults' Slack.
 
-**Flags conversations the mentor agreement does not permit**, the moment they
+**Flags conversations the conduct agreement does not permit**, the moment they
 appear:
 
 | Situation                                                        | Verdict                                |
@@ -31,14 +31,14 @@ appear:
 | Any conversation with a student and an account not on the roster | violation                              |
 | Group DM with a student and two screened adults                  | recorded, allowed                      |
 | Student-only conversation                                        | **not recorded**                       |
-| Mentor-only conversation                                         | **not recorded**                       |
+| Adult-only conversation                                          | **not recorded**                       |
 
 **Tracks the things that make the above meaningful**, on a nightly sweep:
 
 - students with Slack accounts and no current parental consent (§2)
 - Slack accounts with no roster entry at all
-- mentors whose YPP, Mentor Ready, or CORI/fingerprint checks have lapsed (§7)
-- **mentors who have not authorized hawk-mod, or who revoked it** — see below
+- adults whose YPP, Mentor Ready, or CORI/fingerprint checks have lapsed (§7)
+- **adults who have not authorized hawk-mod, or who revoked it** — see below
 - channels containing students with fewer than two screened adults (§4.2)
 - fewer than two workspace owners, or a student holding Owner/Admin (§6)
 
@@ -52,9 +52,9 @@ happened is a historical fact, and only a person should be able to sign it off.
 Stated plainly, because a control whose gaps are undocumented is worse than no
 control:
 
-- **Mentors who do not enroll.** hawk-mod sees DMs through mentors' own tokens.
-  A mentor who never authorizes it, or who revokes it later, is invisible —
-  which is why `mentor_not_enrolled` and `enrollment_revoked` are themselves
+- **Adults who do not enroll.** hawk-mod sees DMs through adults' own tokens.
+  A adult who never authorizes it, or who revokes it later, is invisible —
+  which is why `adult_not_enrolled` and `enrollment_revoked` are themselves
   treated as violations rather than as silence. Enrollment coverage is the first
   number in `/hawkmod status` for the same reason.
 - **Huddles.** Unrecorded 1:1 voice, the same problem as DMs, with no API to
@@ -65,14 +65,14 @@ control:
 - **File contents.** Attachment names, types, and sizes are recorded; the files
   themselves are left in Slack rather than copied onto this host.
 - **Student-to-student DMs.** Deliberately, not incidentally: FIRST YPP and the
-  mentor agreement govern adult conduct toward youth, and neither asks the team
+  conduct agreement govern adult conduct toward youth, and neither asks the team
   to surveil youth-to-youth conversation. Students may not enrol, and a
   student's peer DMs are structurally invisible because no enrolled token can
   see them. A peer incident that genuinely needs investigating is reachable
   through a Corporate Export, which takes a Workspace Owner and a reason.
 
 The Corporate Export remains the backstop for the first gap, since it captures
-non-enrolled mentors too. It is a manual download — Business+ has no API for it,
+non-enrolled adults too. It is a manual download — Business+ has no API for it,
 and the Discovery API is Enterprise Grid only — and ingesting one is **not built
 yet**.
 
@@ -81,7 +81,7 @@ yet**.
 hawk-mod records minors' private messages. That is defensible only if everyone
 involved knows:
 
-1. **Mentors** sign the conduct agreement and authorize hawk-mod knowingly. The
+1. **Adults** sign the conduct agreement and authorize hawk-mod knowingly. The
    authorization screen names the scopes, and the success page says what is
    recorded.
 2. **Students and parents** are told in the consent form that DMs are recorded
@@ -114,7 +114,7 @@ and gates on it.
 1. Create the Slack app from `docs/slack-app-manifest.yaml`, replacing the
    example host with your `PUBLIC_URL`.
 2. `cp .env.example .env` and fill it in. Generate the encryption key with
-   `openssl rand -base64 32` — it encrypts mentor tokens at rest.
+   `openssl rand -base64 32` — it encrypts adult tokens at rest.
 3. Create a private channel for findings and put its ID in `ALERT_CHANNEL_ID`.
    Invite hawk-mod to it.
 4. `docker compose up -d` (or `npm install && npm run dev`). For the Linode
@@ -131,14 +131,14 @@ npm run cli -- import-roster roster.csv
 npm run cli -- import-consents consents.csv
 ```
 
-7. Send every mentor to `$PUBLIC_URL/slack/install` to enroll. `/hawkmod status`
+7. Send every adult to `$PUBLIC_URL/slack/install` to enroll. `/hawkmod status`
    shows coverage; do not consider launch complete until it reads N/N.
 8. `npm run cli -- backfill` to walk DM history that predates enrollment.
 
 ### Roles from Slack user groups
 
-Set `STUDENT_USERGROUP` and `MENTOR_USERGROUP` to user group handles (e.g.
-`students`, `mentors`) and each sweep reconciles roles from them, so membership
+Set `STUDENT_USERGROUP` and `ADULT_USERGROUP` to user group handles (e.g.
+`students`, `adults`) and each sweep reconciles roles from them, so membership
 is managed in Slack rather than by editing a CSV. Group membership is by Slack
 user ID, which removes the email-matching failure below entirely: a group
 member with no roster row gets one created from their Slack profile instead of
@@ -148,7 +148,7 @@ Two properties make this safe to rely on:
 
 - **Membership is only ever added, never subtracted.** Dropping someone from
   the students group does _not_ un-student them — that would silently end their
-  monitoring. The only way out of `student` is being put in the mentors group,
+  monitoring. The only way out of `student` is being put in the adults group,
   which is deliberate and raises a `roster_drift` finding.
 - **Every role change is recorded** in `role_changes` with who, when, and from
   what. Slack's audit log API is Enterprise Grid only, so on Business+ this
@@ -167,7 +167,7 @@ Slack is the source of truth for everything Slack knows: identity, membership,
 role, active status. Three things cannot live there:
 
 - **Screening dates.** Custom profile fields are the obvious home, but below
-  Enterprise Grid a member can edit their own — a mentor entering their own
+  Enterprise Grid a member can edit their own — a adult entering their own
   CORI date is not a control.
 - **Consent records.** No Slack field holds a guardian's name, a signature
   date, or a pointer to the signed PDF. And §2 obliges the team to produce
@@ -186,7 +186,7 @@ projection of Slack — not a second roster to keep in sync.
 email,full_name,role,ypp_completed_on,mentor_ready_on,cori_completed_on,active,notes
 ```
 
-`role` is one of `student`, `mentor`, `lead_coach`, `admin`,
+`role` is one of `student`, `adult`, `lead_coach`, `admin`,
 `district_observer` — the last being the MPS administrator seat from §8. Dates
 are `YYYY-MM-DD`. Email is the join key; Slack IDs are matched automatically
 once people sign up. **If a Slack account's email doesn't match a roster row it

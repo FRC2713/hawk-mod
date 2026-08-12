@@ -116,9 +116,9 @@ export async function ensureConversation(
 
   if (verdict.violation) {
     await raise({
-      kind: "mentor_student_dm",
+      kind: "adult_student_dm",
       dedupeKey: dedupeKey(
-        "mentor_student_dm",
+        "adult_student_dm",
         conversationId,
         verdict.violation
       ),

@@ -42,8 +42,8 @@ type EventBody = {
 };
 
 /**
- * Which mentor's token surfaced this event. Slack delivers one copy per
- * authorization, so two enrolled mentors in the same group DM produce two
+ * Which adult's token surfaced this event. Slack delivers one copy per
+ * authorization, so two enrolled adults in the same group DM produce two
  * events; the (conversation, ts) uniqueness in the log absorbs the duplicate.
  */
 function observerOf(body: EventBody): string | null {
@@ -63,11 +63,11 @@ export function registerEvents(app: App): void {
     const observer = observerOf(body as EventBody);
     if (!teamId || !observer) return;
 
-    // DMs are only readable with the observing mentor's own token; the bot
+    // DMs are only readable with the observing adult's own token; the bot
     // token cannot see them at all.
     const asUser = userClient(teamId, observer);
     if (!asUser) {
-      log.warn("event for a mentor with no usable token", { observer });
+      log.warn("event for a adult with no usable token", { observer });
       return;
     }
 

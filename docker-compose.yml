@@ -32,8 +32,8 @@ services:
 
       # --- Storage ---------------------------------------------------------
       DATA_DIR: /data
-      # Encrypts mentor user tokens at rest: openssl rand -base64 32.
-      # Losing this means every mentor has to re-authorize; leaking it means
+      # Encrypts adult user tokens at rest: openssl rand -base64 32.
+      # Losing this means every adult has to re-authorize; leaking it means
       # the volume alone can read their DMs.
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?generate with `openssl rand -base64 32`}
       # full = store message text of monitored DMs; metadata = who/when only.

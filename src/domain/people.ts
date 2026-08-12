@@ -2,7 +2,7 @@ import type { IsoDate } from "./dates.js";
 
 export const ROLES = [
   "student",
-  "mentor",
+  "adult",
   "lead_coach",
   "admin",
   "district_observer",
@@ -38,7 +38,13 @@ export function isStudent(m: Member): boolean {
   return isKnown(m) && m.role === "student";
 }
 
-/** Anyone on the roster who is not a student. Unknown members are not adults. */
+/**
+ * Anyone on the roster who is not a student — `lead_coach`, `admin`, and
+ * `district_observer` included, not just the `adult` role. Do not rewrite this
+ * as `role === "adult"`: a Lead Coach alone with a student is exactly the
+ * situation the rules exist for. Unknown members are not adults either, so an
+ * unidentified account can never satisfy the two-adult rule.
+ */
 export function isAdult(m: Member): boolean {
   return isKnown(m) && m.role !== "student";
 }
@@ -52,7 +58,7 @@ export function mayAdministerWorkspace(p: Person): boolean {
 export function requiresEnrollment(p: Person): boolean {
   return (
     p.active === 1 &&
-    (p.role === "mentor" ||
+    (p.role === "adult" ||
       p.role === "lead_coach" ||
       p.role === "district_observer")
   );

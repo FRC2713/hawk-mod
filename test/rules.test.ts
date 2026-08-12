@@ -35,7 +35,7 @@ function person(role: Role, overrides: Partial<Person> = {}): Person {
   };
 }
 
-function screened(role: Role = "mentor"): Person {
+function screened(role: Role = "adult"): Person {
   return person(role, {
     ypp_completed_on: "2026-01-15",
     mentor_ready_on: "2026-01-15",
@@ -74,8 +74,8 @@ describe("dates", () => {
 
 describe("consent", () => {
   it("is not required of adults", () => {
-    const mentor = person("mentor");
-    assert.equal(consentStatus(mentor, [], "2026-08-12").state, "not_required");
+    const adult = person("adult");
+    assert.equal(consentStatus(adult, [], "2026-08-12").state, "not_required");
   });
 
   it("is missing when no form was ever filed", () => {
@@ -128,7 +128,7 @@ describe("consent", () => {
 
 describe("screening", () => {
   it("expires YPP annually and CORI after three years", () => {
-    const p = person("mentor", {
+    const p = person("adult", {
       ypp_completed_on: "2025-01-01",
       mentor_ready_on: "2025-01-01",
       cori_completed_on: "2023-01-01",
@@ -143,7 +143,7 @@ describe("screening", () => {
   });
 
   it("reports what was never recorded separately from what lapsed", () => {
-    const p = person("mentor", { ypp_completed_on: "2026-01-01" });
+    const p = person("adult", { ypp_completed_on: "2026-01-01" });
     const status = screeningStatus(p, "2026-08-12");
     assert.deepEqual(status.missing.sort(), [
       "CORI + fingerprints",
@@ -153,10 +153,10 @@ describe("screening", () => {
   });
 
   it("does not count students, inactive people, or unknown accounts as adults", () => {
-    assert.equal(isScreenedAdult(screened("mentor"), "2026-08-12"), true);
+    assert.equal(isScreenedAdult(screened("adult"), "2026-08-12"), true);
     assert.equal(isScreenedAdult(person("student"), "2026-08-12"), false);
     assert.equal(isScreenedAdult({ slackUserId: "U999" }, "2026-08-12"), false);
-    const inactive = screened("mentor");
+    const inactive = screened("adult");
     inactive.active = 0;
     assert.equal(isScreenedAdult(inactive, "2026-08-12"), false);
   });
@@ -204,7 +204,7 @@ describe("DM policy", () => {
   it("flags a group DM whose second adult is unscreened", () => {
     const verdict = classifyConversation(
       "mpim",
-      [screened(), person("mentor"), person("student")],
+      [screened(), person("adult"), person("student")],
       asOf
     );
     assert.equal(verdict.violation, "group_without_second_adult");
@@ -266,9 +266,9 @@ describe("two screened adults", () => {
     const result = evaluateTwoAdultRule(
       {
         channelId: "C1",
-        channelName: "mentors",
+        channelName: "adults",
         isPrivate: true,
-        members: [person("mentor")],
+        members: [person("adult")],
       },
       asOf
     );
@@ -281,7 +281,7 @@ describe("two screened adults", () => {
         channelId: "C2",
         channelName: "build",
         isPrivate: false,
-        members: [screened(), person("mentor"), person("student")],
+        members: [screened(), person("adult"), person("student")],
       },
       asOf
     );

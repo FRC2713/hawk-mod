@@ -2,7 +2,7 @@ import type { WebClient } from "@slack/web-api";
 import { getConversation, setBackfillCursor } from "../db/repo.js";
 import { log } from "../logger.js";
 import {
-  enrolledMentors,
+  enrolledAdults,
   verifyEnrollment,
   type Enrollment,
 } from "../slack/tokens.js";
@@ -21,8 +21,8 @@ type SlackMessage = {
 };
 
 export type BackfillStats = {
-  mentorsChecked: number;
-  mentorsUnavailable: number;
+  adultsChecked: number;
+  adultsUnavailable: number;
   conversationsSeen: number;
   conversationsMonitored: number;
   messagesRecorded: number;
@@ -129,35 +129,35 @@ async function backfillConversation(
 }
 
 /**
- * Walks every enrolled mentor's DM list. This is what catches conversations
+ * Walks every enrolled adult's DM list. This is what catches conversations
  * that predate enrollment and anything that arrived while the process was down
  * — events alone would leave both invisible.
  */
 export async function backfillAll(): Promise<BackfillStats> {
   const stats: BackfillStats = {
-    mentorsChecked: 0,
-    mentorsUnavailable: 0,
+    adultsChecked: 0,
+    adultsUnavailable: 0,
     conversationsSeen: 0,
     conversationsMonitored: 0,
     messagesRecorded: 0,
   };
 
-  for (const mentor of enrolledMentors()) {
-    if (!(await verifyEnrollment(mentor))) {
-      stats.mentorsUnavailable += 1;
+  for (const adult of enrolledAdults()) {
+    if (!(await verifyEnrollment(adult))) {
+      stats.adultsUnavailable += 1;
       continue;
     }
-    stats.mentorsChecked += 1;
+    stats.adultsChecked += 1;
 
     let conversations: { id: string; isMpim: boolean }[];
     try {
-      conversations = await listDmConversations(mentor.client);
+      conversations = await listDmConversations(adult.client);
     } catch (err) {
       log.error("could not list conversations", {
-        user: mentor.slackUserId,
+        user: adult.slackUserId,
         error: String(err),
       });
-      stats.mentorsUnavailable += 1;
+      stats.adultsUnavailable += 1;
       continue;
     }
 
@@ -165,15 +165,15 @@ export async function backfillAll(): Promise<BackfillStats> {
       stats.conversationsSeen += 1;
       try {
         const resolved = await ensureConversation(
-          mentor.client,
-          mentor.teamId,
+          adult.client,
+          adult.teamId,
           conversation.id,
-          mentor.slackUserId
+          adult.slackUserId
         );
         if (!resolved?.verdict.monitored) continue;
         stats.conversationsMonitored += 1;
         stats.messagesRecorded += await backfillConversation(
-          mentor,
+          adult,
           resolved.id,
           getConversation(resolved.id)?.last_backfill_ts ?? null
         );

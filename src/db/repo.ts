@@ -537,7 +537,7 @@ export type MessageInput = {
 };
 
 /**
- * Returns true when the row was new. Both mentors in a group DM deliver the
+ * Returns true when the row was new. Both adults in a group DM deliver the
  * same message, and backfill re-walks what events already caught, so the
  * (conversation_id, ts) uniqueness is what keeps the log from double-counting.
  */
@@ -738,7 +738,7 @@ export function setFindingAlertTs(id: number, ts: string): void {
 /**
  * Closes findings of the given kinds that this sweep did not re-detect. Without
  * this the board's open list only ever grows and stops meaning anything.
- * Deliberately excludes `mentor_student_dm`: a prohibited DM that happened is a
+ * Deliberately excludes `adult_student_dm`: a prohibited DM that happened is a
  * historical fact, and only a human should be able to close it.
  */
 export function autoResolveMissing(

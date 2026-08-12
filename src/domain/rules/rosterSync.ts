@@ -3,8 +3,8 @@ import { type Person, type Role } from "../people.js";
 export type GroupMembership = {
   /** Slack ids in the group designating students. */
   students: ReadonlySet<string>;
-  /** Slack ids in the group designating adults/mentors. */
-  mentors: ReadonlySet<string>;
+  /** Slack ids in the group designating adults/adults. */
+  adults: ReadonlySet<string>;
 };
 
 export type RoleDecision =
@@ -24,7 +24,7 @@ export type RoleDecision =
   | { kind: "conflict"; slackId: string; personId: number | null };
 
 const ADULT_ROLES: Role[] = [
-  "mentor",
+  "adult",
   "lead_coach",
   "admin",
   "district_observer",
@@ -41,7 +41,7 @@ function isAdultRole(role: Role): boolean {
  * only ever be added to the roster, never subtracted from it.** Someone dropped
  * from the students group is left a student, because the alternative — silently
  * ending their monitoring — is the failure this whole system exists to avoid.
- * The only way out of `student` is an explicit move into the mentors group,
+ * The only way out of `student` is an explicit move into the adults group,
  * which is a deliberate admin action and is reported as one.
  *
  * Pure: the caller does the Slack reads and the writes.
@@ -51,14 +51,14 @@ export function reconcileRoles(
   groups: GroupMembership
 ): RoleDecision[] {
   const decisions: RoleDecision[] = [];
-  const seen = new Set<string>([...groups.students, ...groups.mentors]);
+  const seen = new Set<string>([...groups.students, ...groups.adults]);
 
   for (const slackId of seen) {
     const inStudents = groups.students.has(slackId);
-    const inMentors = groups.mentors.has(slackId);
+    const inAdults = groups.adults.has(slackId);
     const person = roster.get(slackId) ?? null;
 
-    if (inStudents && inMentors) {
+    if (inStudents && inAdults) {
       decisions.push({
         kind: "conflict",
         slackId,
@@ -67,7 +67,7 @@ export function reconcileRoles(
       continue;
     }
 
-    const target: Role = inStudents ? "student" : "mentor";
+    const target: Role = inStudents ? "student" : "adult";
 
     if (!person) {
       decisions.push({ kind: "create", slackId, role: target });
@@ -75,8 +75,8 @@ export function reconcileRoles(
     }
 
     // Someone already recorded as a lead coach, admin, or district observer is
-    // in the mentors group too; that is agreement, not a demotion to `mentor`.
-    if (target === "mentor" && isAdultRole(person.role)) {
+    // in the adults group too; that is agreement, not a demotion to `adult`.
+    if (target === "adult" && isAdultRole(person.role)) {
       decisions.push({ kind: "unchanged", slackId });
       continue;
     }

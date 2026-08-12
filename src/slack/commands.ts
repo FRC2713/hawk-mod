@@ -26,7 +26,7 @@ import { runSweep } from "../jobs/sweep.js";
 const HELP = [
   "*hawk-mod*",
   "`/hawkmod status` — enrollment coverage and open findings",
-  "`/hawkmod enroll` — link for a mentor to authorize monitoring",
+  "`/hawkmod enroll` — link for a adult to authorize monitoring",
   "`/hawkmod findings [kind]` — open findings",
   "`/hawkmod whois @user` — role, consent, screening, enrollment",
   "`/hawkmod screening @user` — record YPP / Mentor Ready / CORI dates",
@@ -34,7 +34,7 @@ const HELP = [
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
   "`/hawkmod resolve <id> <note>` — close a finding, with a reason",
   "`/hawkmod sweep` — run the compliance sweep now",
-  "`/hawkmod backfill` — walk enrolled mentors' DM history now",
+  "`/hawkmod backfill` — walk enrolled adults' DM history now",
 ].join("\n");
 
 export function registerCommands(app: App): void {
@@ -68,7 +68,7 @@ export function registerCommands(app: App): void {
           await respond({
             response_type: "ephemeral",
             text:
-              `Send this to each mentor: ${config().PUBLIC_URL}/slack/install\n` +
+              `Send this to each adult: ${config().PUBLIC_URL}/slack/install\n` +
               "They must be signed in to this workspace, and the authorization " +
               "screen will name the DM scopes hawk-mod is asking for.",
           });

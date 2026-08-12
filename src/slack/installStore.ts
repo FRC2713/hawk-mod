@@ -31,12 +31,12 @@ function teamKey(
  * Two kinds of row live here:
  *
  *   'bot'  — one per workspace, installed once by a Lead Coach. Posts alerts.
- *   'user' — one per enrolled mentor, holding that mentor's user token. This is
+ *   'user' — one per enrolled adult, holding that adult's user token. This is
  *            what lets hawk-mod see DMs at all; Slack exposes no other way to
  *            read them below Enterprise Grid.
  *
  * A fetch merges the two so a single event can carry both a bot token (to reply)
- * and the observing mentor's user token (to read the conversation).
+ * and the observing adult's user token (to read the conversation).
  */
 export const installationStore: InstallationStore = {
   async storeInstallation(installation) {
@@ -77,7 +77,7 @@ export const installationStore: InstallationStore = {
         payload: installation,
         scopes: (installation.user.scopes ?? []).join(","),
       });
-      log.info("mentor enrolled", { user: installation.user.id, teamId });
+      log.info("adult enrolled", { user: installation.user.id, teamId });
     }
   },
 
@@ -95,8 +95,8 @@ export const installationStore: InstallationStore = {
     const base = (bot?.payload ?? user!.payload) as unknown as Installation;
     if (!user) {
       // Bot-only context: strip any user token that rode along on the bot row,
-      // so a mentor's token is never handed to a request that did not ask for
-      // that mentor.
+      // so a adult's token is never handed to a request that did not ask for
+      // that adult.
       return {
         ...base,
         user: {

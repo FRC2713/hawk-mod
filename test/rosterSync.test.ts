@@ -27,9 +27,9 @@ function roster(...people: Person[]): Map<string, Person> {
   return new Map(people.map((p) => [p.slack_user_id!, p]));
 }
 
-const groups = (students: string[], mentors: string[]) => ({
+const groups = (students: string[], adults: string[]) => ({
   students: new Set(students),
-  mentors: new Set(mentors),
+  adults: new Set(adults),
 });
 
 describe("user group reconciliation", () => {
@@ -42,7 +42,7 @@ describe("user group reconciliation", () => {
 
   it("leaves agreement alone", () => {
     const decisions = reconcileRoles(
-      roster(person("U1", "student"), person("U2", "mentor")),
+      roster(person("U1", "student"), person("U2", "adult")),
       groups(["U1"], ["U2"])
     );
     assert.deepEqual(
@@ -51,7 +51,7 @@ describe("user group reconciliation", () => {
     );
   });
 
-  it("does not demote a lead coach who is also in the mentors group", () => {
+  it("does not demote a lead coach who is also in the adults group", () => {
     const decisions = reconcileRoles(
       roster(person("U1", "lead_coach")),
       groups([], ["U1"])
@@ -76,13 +76,13 @@ describe("user group reconciliation", () => {
     assert.equal(d.kind, "change");
     if (d.kind !== "change") return;
     assert.equal(d.from, "student");
-    assert.equal(d.to, "mentor");
+    assert.equal(d.to, "adult");
     assert.equal(d.reducesProtection, true);
   });
 
   it("moving an adult into the students group increases protection", () => {
     const decisions = reconcileRoles(
-      roster(person("U1", "mentor")),
+      roster(person("U1", "adult")),
       groups(["U1"], [])
     );
     const d = decisions[0]!;

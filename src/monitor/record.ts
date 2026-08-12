@@ -19,7 +19,7 @@ export type ObservedFile = {
 export type ObservedMessage = {
   teamId: string;
   conversationId: string;
-  /** Slack id of the mentor whose token surfaced this message. */
+  /** Slack id of the adult whose token surfaced this message. */
   observedVia: string;
   ts: string;
   threadTs?: string | null;
@@ -57,7 +57,7 @@ function fileMeta(files: ObservedFile[] | undefined) {
 /**
  * Persists a message from a monitored conversation. Conversations without a
  * student in them are classified and then dropped on the floor — hawk-mod is
- * not a general archive of the mentors' Slack.
+ * not a general archive of the adults' Slack.
  */
 export async function recordMessage(
   client: WebClient,

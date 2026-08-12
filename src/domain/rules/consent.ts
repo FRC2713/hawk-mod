@@ -35,7 +35,7 @@ export type ConsentStatus =
 
 /**
  * `consents` may be in any order; the most recent signature wins. Only students
- * require consent — mentors are adults acting on their own behalf.
+ * require consent — adults are adults acting on their own behalf.
  */
 export function consentStatus(
   person: Person,

@@ -5,7 +5,7 @@ CREATE TABLE people (
   email             TEXT NOT NULL UNIQUE COLLATE NOCASE,
   full_name         TEXT NOT NULL,
   role              TEXT NOT NULL CHECK (role IN (
-                      'student','mentor','lead_coach','admin','district_observer'
+                      'student','adult','lead_coach','admin','district_observer'
                     )),
   active            INTEGER NOT NULL DEFAULT 1,
   ypp_completed_on  TEXT,  -- FIRST Youth Protection screening / Mentor Ready
@@ -34,7 +34,7 @@ CREATE TABLE consents (
 CREATE INDEX consents_person_idx ON consents (person_id, signed_on DESC);
 
 -- OAuth installations. One 'bot' row per workspace (slack_user_id = '-') plus
--- one 'user' row per enrolled mentor holding that mentor's user token.
+-- one 'user' row per enrolled adult holding that adult's user token.
 CREATE TABLE installations (
   id            INTEGER PRIMARY KEY,
   team_id       TEXT NOT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE installations (
   UNIQUE (team_id, kind, slack_user_id)
 );
 
--- Every DM/group-DM an enrolled mentor is party to that includes a student.
+-- Every DM/group-DM an enrolled adult is party to that includes a student.
 CREATE TABLE conversations (
   id                TEXT PRIMARY KEY,   -- Slack conversation id (D…/G…)
   team_id           TEXT NOT NULL,
@@ -76,7 +76,7 @@ CREATE TABLE dm_messages (
   edited_at       TEXT,
   deleted_at      TEXT,      -- tombstone; the row itself is never removed
   source          TEXT NOT NULL CHECK (source IN ('event','backfill')),
-  observed_via    TEXT NOT NULL,  -- Slack id of the mentor whose token saw it
+  observed_via    TEXT NOT NULL,  -- Slack id of the adult whose token saw it
   recorded_at     TEXT NOT NULL,
   UNIQUE (conversation_id, ts)
 );

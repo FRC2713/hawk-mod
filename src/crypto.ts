@@ -22,7 +22,7 @@ function key(): Buffer {
 }
 
 /**
- * Mentor user tokens can read every DM that mentor can see. They are encrypted
+ * Adult user tokens can read every DM that adult can see. They are encrypted
  * at rest so a stolen copy of the SQLite file is not itself a breach.
  */
 export function encrypt(plaintext: string): string {

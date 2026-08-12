@@ -71,8 +71,8 @@ export type Enrollment = {
   client: WebClient;
 };
 
-/** Every mentor whose token still works, which is the monitored population. */
-export function enrolledMentors(): Enrollment[] {
+/** Every adult whose token still works, which is the monitored population. */
+export function enrolledAdults(): Enrollment[] {
   const out: Enrollment[] = [];
   for (const install of listUserInstallations()) {
     const payload = install.payload as InstallationPayload;
@@ -97,7 +97,7 @@ export async function verifyEnrollment(e: Enrollment): Promise<boolean> {
     await e.client.auth.test();
     return true;
   } catch (err) {
-    log.warn("mentor token failed auth.test", {
+    log.warn("adult token failed auth.test", {
       user: e.slackUserId,
       error: String(err),
     });
