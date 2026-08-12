@@ -44,8 +44,19 @@ appear:
 
 Findings are posted once to a private channel, deduplicated, auto-closed when
 the underlying problem goes away, and closable by a Lead Coach with a required
-written reason. A DM violation is never auto-closed — a prohibited DM that
-happened is a historical fact, and only a person should be able to sign it off.
+written reason.
+
+**A 1:1 that gets put right is acknowledged automatically.** §4.1's own remedy
+is "anything that starts in a DM moves to a channel or gets a second adult
+added", so when a group DM appears containing the same pair plus a second
+screened adult, the original finding is acknowledged and a note is posted in
+the alert's thread. Slack cannot add anyone to an existing 1:1 — it makes a new
+conversation — which is why remediation is detected as a new group DM rather
+than a change to the old one. The group DM must be newer than the finding, or
+an old thread could be used to clear a fresh violation.
+
+Acknowledged, not resolved: the 1:1 still happened and its messages are still
+on record. Only a person marks a DM violation resolved.
 
 ## What it cannot see
 

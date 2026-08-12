@@ -15,6 +15,7 @@ import {
 } from "../domain/rules/dmPolicy.js";
 import { log } from "../logger.js";
 import { raise } from "../raise.js";
+import { remediateOneOnOnes } from "./remediation.js";
 
 /** Re-resolve membership at most this often; group DM membership is immutable
  * in Slack, but roster roles and screening dates are not. */
@@ -133,6 +134,11 @@ export async function ensureConversation(
         unknown: verdict.unknownIds,
       },
     });
+  }
+
+  // A compliant group DM may be the fix for a 1:1 raised earlier.
+  if (!verdict.violation && verdict.monitored) {
+    await remediateOneOnOnes(conversationId, verdict);
   }
 
   return { id: conversationId, type, participants, verdict };

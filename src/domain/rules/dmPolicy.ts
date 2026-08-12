@@ -23,6 +23,8 @@ export type DmVerdict = {
   summary: string;
   studentIds: string[];
   adultIds: string[];
+  /** Adults with current screening — what the two-adult rule actually counts. */
+  screenedAdultIds: string[];
   unknownIds: string[];
 };
 
@@ -53,6 +55,7 @@ export function classifyConversation(
   const base = {
     studentIds: ids(students),
     adultIds: ids(adults),
+    screenedAdultIds: ids(screened),
     unknownIds: ids(unknown),
   };
 
