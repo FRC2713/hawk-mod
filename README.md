@@ -126,6 +126,32 @@ npm run cli -- import-consents consents.csv
    shows coverage; do not consider launch complete until it reads N/N.
 8. `npm run cli -- backfill` to walk DM history that predates enrollment.
 
+### Roles from Slack user groups
+
+Set `STUDENT_USERGROUP` and `MENTOR_USERGROUP` to user group handles (e.g.
+`students`, `mentors`) and each sweep reconciles roles from them, so membership
+is managed in Slack rather than by editing a CSV. Group membership is by Slack
+user ID, which removes the email-matching failure below entirely: a group
+member with no roster row gets one created from their Slack profile instead of
+resolving to an unknown account.
+
+Two properties make this safe to rely on:
+
+- **Membership is only ever added, never subtracted.** Dropping someone from
+  the students group does _not_ un-student them — that would silently end their
+  monitoring. The only way out of `student` is being put in the mentors group,
+  which is deliberate and raises a `roster_drift` finding.
+- **Every role change is recorded** in `role_changes` with who, when, and from
+  what. Slack's audit log API is Enterprise Grid only, so on Business+ this
+  table is the sole durable trail of who was monitored when.
+
+Being in both groups changes nothing and raises `usergroup_conflict`.
+
+User Groups need Business+ (they don't exist on the free plan), and
+**"Create and edit user groups" must be restricted to Owners/Admins** in
+Workspace Settings → Roles & permissions. That setting is not readable through
+any API, so it belongs on the quarterly manual checklist.
+
 ### Roster CSV
 
 ```
@@ -135,7 +161,13 @@ email,full_name,role,ypp_completed_on,mentor_ready_on,cori_completed_on,active,n
 `role` is one of `student`, `mentor`, `lead_coach`, `admin`,
 `district_observer` — the last being the MPS administrator seat from §8. Dates
 are `YYYY-MM-DD`. Email is the join key; Slack IDs are matched automatically
-once people sign up.
+once people sign up. **If a Slack account's email doesn't match a roster row it
+resolves to an unknown account, not a student** — which produces silence rather
+than an alert, so the `unknown_account` findings that catch it must never be
+left open. Slack user groups (above) avoid this entirely.
+
+The CSV stays the way screening dates, consent, and guardian details get in;
+user groups can only carry membership.
 
 ### Consents CSV
 

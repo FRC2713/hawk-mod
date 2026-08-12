@@ -11,6 +11,10 @@ const schema = z.object({
   DATA_DIR: z.string().default("./data"),
   TOKEN_ENCRYPTION_KEY: z.string().min(1),
   LOG_MODE: z.enum(["full", "metadata"]).default("full"),
+  // Slack user groups that declare roles. Both optional: leave them unset and
+  // the roster is maintained purely by CSV import.
+  STUDENT_USERGROUP: z.string().optional(),
+  MENTOR_USERGROUP: z.string().optional(),
   TZ: z.string().default("America/New_York"),
   SWEEP_CRON: z.string().default("0 3 * * *"),
   BACKFILL_CRON: z.string().default("15 * * * *"),

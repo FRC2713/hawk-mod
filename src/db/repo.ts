@@ -102,6 +102,112 @@ export function peopleBySlackId(): Map<string, Person> {
   return map;
 }
 
+/**
+ * Changes a role and records why, in one transaction. The `role_changes` row
+ * is the point: Slack's audit log is Enterprise Grid only, so without this
+ * there would be no trail of who was monitored when.
+ */
+export function setPersonRole(args: {
+  personId: number;
+  toRole: Role;
+  source: string;
+  detail?: unknown;
+}): void {
+  const now = nowIso();
+  const person = personById(args.personId);
+  if (!person) throw new Error(`No person ${args.personId}`);
+  db().transaction(() => {
+    db()
+      .prepare("UPDATE people SET role = ?, updated_at = ? WHERE id = ?")
+      .run(args.toRole, now, args.personId);
+    db()
+      .prepare(
+        `INSERT INTO role_changes (person_id, slack_user_id, from_role, to_role,
+                                   source, detail, changed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        args.personId,
+        person.slack_user_id,
+        person.role,
+        args.toRole,
+        args.source,
+        args.detail === undefined ? null : JSON.stringify(args.detail),
+        now
+      );
+  })();
+}
+
+/**
+ * Creates a roster row for a Slack account that is in a user group but was
+ * never imported. Email may be absent, so the row is keyed on the Slack id —
+ * this is what stops a group member from silently resolving to "unknown".
+ */
+export function createPersonFromSlack(args: {
+  slackUserId: string;
+  email: string | null;
+  fullName: string;
+  role: Role;
+  source: string;
+}): Person {
+  const now = nowIso();
+  const email = args.email ?? `${args.slackUserId}@slack.local`;
+  db()
+    .prepare(
+      `INSERT INTO people (slack_user_id, email, full_name, role, active,
+                           notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+       ON CONFLICT (email) DO UPDATE SET
+         slack_user_id = excluded.slack_user_id,
+         updated_at    = excluded.updated_at`
+    )
+    .run(
+      args.slackUserId,
+      email,
+      args.fullName,
+      args.role,
+      `created from Slack user group by ${args.source}`,
+      now,
+      now
+    );
+  const person = personBySlackId(args.slackUserId);
+  if (!person)
+    throw new Error(`Could not create person for ${args.slackUserId}`);
+  db()
+    .prepare(
+      `INSERT INTO role_changes (person_id, slack_user_id, from_role, to_role,
+                                 source, detail, changed_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?)`
+    )
+    .run(
+      person.id,
+      args.slackUserId,
+      args.role,
+      args.source,
+      JSON.stringify({ created: true, email: args.email }),
+      now
+    );
+  return person;
+}
+
+export function listRoleChanges(limit = 100) {
+  return db()
+    .prepare<
+      [number],
+      {
+        id: number;
+        person_id: number;
+        slack_user_id: string | null;
+        from_role: string | null;
+        to_role: string;
+        source: string;
+        detail: string | null;
+        changed_at: string;
+      }
+    >("SELECT * FROM role_changes ORDER BY changed_at DESC LIMIT ?")
+    .all(limit);
+}
+
 /* ---------------------------------------------------------------- consents */
 
 export type ConsentInput = {

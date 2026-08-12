@@ -46,6 +46,15 @@ from _who is in a conversation_, never from what was said — `dmPolicy` for DMs
 tests are cheap and why the policy is enforceable without reading students'
 messages. Keep new policy logic here rather than inside Slack handlers.
 
+**Roles can come from Slack user groups.** `syncRolesFromUserGroups` runs first
+in the sweep, because everything after it reads roles. The reconciliation in
+`domain/rules/rosterSync.ts` is pure and **add-only by design**: a person
+dropped from the students group stays a student, since the alternative is
+silently ending someone's monitoring. Only an explicit move into the mentors
+group leaves `student`, and that raises `roster_drift`. Every change lands in
+`role_changes` — Slack's audit log API is Grid-only, so that table is the only
+trail. Do not make this bidirectional.
+
 **Findings are the output.** `src/raise.ts` is the only path: persist, then
 alert, and only alert when the finding is new or has recurred. `dedupe_key` is
 the identity of a problem across sweeps — get it wrong and the alert channel

@@ -15,6 +15,8 @@ export const BOT_SCOPES = [
   "team:read",
   "users:read",
   "users:read.email",
+  // Reads the @students / @mentors groups that declare roles.
+  "usergroups:read",
 ];
 
 /**

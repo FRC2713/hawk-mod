@@ -15,6 +15,10 @@ export const FINDING_KINDS = [
   "enrollment_revoked",
   /** Fewer than two workspace owners, or a student holding admin (§6). */
   "workspace_config",
+  /** A Slack user group moved someone out of `student`. */
+  "roster_drift",
+  /** Someone is in both the students and the mentors user group. */
+  "usergroup_conflict",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];

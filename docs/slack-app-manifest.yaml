@@ -33,6 +33,7 @@ oauth_config:
       - team:read
       - users:read
       - users:read.email
+      - usergroups:read
     # Granted per mentor, by that mentor. This is the only way to see DMs
     # without Enterprise Grid.
     user:

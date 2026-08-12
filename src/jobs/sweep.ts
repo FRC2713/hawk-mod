@@ -19,6 +19,7 @@ import { evaluateTwoAdultRule } from "../domain/rules/twoAdults.js";
 import { log } from "../logger.js";
 import { raise } from "../raise.js";
 import { channelMemberships, syncSlackAccounts } from "../slack/roster.js";
+import { syncRolesFromUserGroups } from "./syncRoles.js";
 import { botClient } from "../slack/tokens.js";
 
 /** Kinds this sweep owns end to end, and may therefore close on its own. */
@@ -33,6 +34,12 @@ const SWEEP_OWNED: FindingKind[] = [
 ];
 
 export type SweepStats = {
+  rolesFromUserGroups: {
+    enabled: boolean;
+    created: number;
+    changed: number;
+    conflicts: number;
+  };
   people: number;
   slackAccountsLinked: number;
   unknownAccounts: number;
@@ -51,6 +58,12 @@ export async function runSweep(): Promise<SweepStats> {
   const asOf = today();
   const seen = new Set<string>();
   const stats: SweepStats = {
+    rolesFromUserGroups: {
+      enabled: false,
+      created: 0,
+      changed: 0,
+      conflicts: 0,
+    },
     people: 0,
     slackAccountsLinked: 0,
     unknownAccounts: 0,
@@ -66,6 +79,19 @@ export async function runSweep(): Promise<SweepStats> {
   const emit = async (f: NewFinding) => {
     seen.add(f.dedupeKey);
     await raise(f);
+  };
+
+  /* ---- roles from Slack user groups ------------------------------------- */
+
+  // Runs first: everything below reads roles, so the roster must reflect the
+  // groups before consent, screening, and the two-adult rule are evaluated.
+  const roleSync = await syncRolesFromUserGroups(client);
+
+  stats.rolesFromUserGroups = {
+    enabled: roleSync.enabled,
+    created: roleSync.created,
+    changed: roleSync.changed,
+    conflicts: roleSync.conflicts,
   };
 
   /* ---- roster vs Slack -------------------------------------------------- */

@@ -41,6 +41,16 @@ account was never linked, produces silence rather than an alert.
 
 ## 4. Roster truth
 
+Review every role change since the last audit — this is the record Slack does
+not keep for you:
+
+```bash
+docker compose exec hawk-mod node -e "const{listRoleChanges}=require('./dist/src/db/repo.js');console.table(listRoleChanges(50))"
+```
+
+Anything that moved someone _out_ of `student` deserves a second look: it ended
+that person's monitoring.
+
 - Anyone who left the team this quarter: `active = 0`, and deactivate their
   Slack account
 - New students: consent on file _before_ the account, not after
@@ -55,6 +65,7 @@ Confirm by hand, in Workspace Settings, and write the date you checked:
 - Huddles still off
 - Invites still restricted to Owners/Admins
 - Still at least two Owners, both screened adults, neither a student
+- "Create and edit user groups" still restricted to Owners/Admins
 
 ## 6. Close it out
 
