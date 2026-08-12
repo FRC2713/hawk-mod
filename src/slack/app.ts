@@ -4,6 +4,7 @@ import { healthHandler } from "../health.js";
 import { log } from "../logger.js";
 import { registerCommands } from "./commands.js";
 import { registerEvents } from "./events.js";
+import { registerViews } from "./modals.js";
 import { installationStore } from "./installStore.js";
 
 /** Read-only apart from posting alerts. hawk-mod never needs to act as a user. */
@@ -80,6 +81,7 @@ export function createApp(): App {
 
   registerEvents(app);
   registerCommands(app);
+  registerViews(app);
 
   app.error(async (error) => {
     log.error("bolt error", { error: String(error) });

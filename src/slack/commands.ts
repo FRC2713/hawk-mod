@@ -20,6 +20,7 @@ import { consentStatus } from "../domain/rules/consent.js";
 import { screeningStatus } from "../domain/rules/screening.js";
 import { log } from "../logger.js";
 import { backfillAll } from "../monitor/backfill.js";
+import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
 
 const HELP = [
@@ -28,6 +29,8 @@ const HELP = [
   "`/hawkmod enroll` — link for a mentor to authorize monitoring",
   "`/hawkmod findings [kind]` — open findings",
   "`/hawkmod whois @user` — role, consent, screening, enrollment",
+  "`/hawkmod screening @user` — record YPP / Mentor Ready / CORI dates",
+  "`/hawkmod consent @user` — record a signed parental consent",
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
   "`/hawkmod resolve <id> <note>` — close a finding, with a reason",
   "`/hawkmod sweep` — run the compliance sweep now",
@@ -35,7 +38,7 @@ const HELP = [
 ].join("\n");
 
 export function registerCommands(app: App): void {
-  app.command("/hawkmod", async ({ command, ack, respond }) => {
+  app.command("/hawkmod", async ({ command, ack, respond, client }) => {
     await ack();
 
     // Findings name students and describe conduct concerns. Only the adults
@@ -77,6 +80,24 @@ export function registerCommands(app: App): void {
             text: findingsText(rest[0]),
           });
           return;
+
+        case "screening":
+        case "consent": {
+          const person = resolvePerson(rest[0] ?? "");
+          if (!person) {
+            await respond({
+              response_type: "ephemeral",
+              text: `Usage: \`/hawkmod ${sub} @user\` — and they must be on the roster.`,
+            });
+            return;
+          }
+          if (sub === "screening") {
+            await openScreening(client, command.trigger_id, person);
+          } else {
+            await openConsent(client, command.trigger_id, person);
+          }
+          return;
+        }
 
         case "whois":
           await respond({
@@ -194,9 +215,14 @@ function findingsText(kind?: string): string {
     .join("\n");
 }
 
-function whoisText(teamId: string, mention: string): string {
+/** Slack sends mentions as `<@U123|name>`; accept a bare id or @handle too. */
+function resolvePerson(mention: string) {
   const id = mention.match(/^<@([A-Z0-9]+)/i)?.[1] ?? mention.replace(/^@/, "");
-  const person = personBySlackId(id);
+  return id ? personBySlackId(id) : undefined;
+}
+
+function whoisText(teamId: string, mention: string): string {
+  const person = resolvePerson(mention);
   if (!person) return `No roster entry for \`${mention}\`.`;
 
   const asOf = today();

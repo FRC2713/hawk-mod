@@ -190,6 +190,71 @@ export function createPersonFromSlack(args: {
   return person;
 }
 
+export const SCREENING_FIELDS = [
+  "ypp_completed_on",
+  "mentor_ready_on",
+  "cori_completed_on",
+] as const;
+
+export type ScreeningField = (typeof SCREENING_FIELDS)[number];
+
+/**
+ * Writes screening dates and records who supplied each one. Only fields
+ * actually passed are touched, so a modal that fills one date does not erase
+ * the other two. Returns the fields that changed.
+ */
+export function setScreeningDates(args: {
+  personId: number;
+  values: Partial<Record<ScreeningField, string | null>>;
+  recordedBy: string;
+  source: string;
+}): ScreeningField[] {
+  const person = personById(args.personId);
+  if (!person) throw new Error(`No person ${args.personId}`);
+  const now = nowIso();
+  const changed: ScreeningField[] = [];
+
+  db().transaction(() => {
+    for (const field of SCREENING_FIELDS) {
+      if (!(field in args.values)) continue;
+      const to = args.values[field] ?? null;
+      const from = person[field];
+      if (from === to) continue;
+      db()
+        .prepare(`UPDATE people SET ${field} = ?, updated_at = ? WHERE id = ?`)
+        .run(to, now, args.personId);
+      db()
+        .prepare(
+          `INSERT INTO screening_changes (person_id, field, from_value, to_value,
+                                          source, recorded_by, changed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(args.personId, field, from, to, args.source, args.recordedBy, now);
+      changed.push(field);
+    }
+  })();
+
+  return changed;
+}
+
+export function listScreeningChanges(limit = 100) {
+  return db()
+    .prepare<
+      [number],
+      {
+        id: number;
+        person_id: number;
+        field: string;
+        from_value: string | null;
+        to_value: string | null;
+        source: string;
+        recorded_by: string;
+        changed_at: string;
+      }
+    >("SELECT * FROM screening_changes ORDER BY changed_at DESC LIMIT ?")
+    .all(limit);
+}
+
 export function listRoleChanges(limit = 100) {
   return db()
     .prepare<

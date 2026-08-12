@@ -152,6 +152,25 @@ User Groups need Business+ (they don't exist on the free plan), and
 Workspace Settings → Roles & permissions. That setting is not readable through
 any API, so it belongs on the quarterly manual checklist.
 
+### Why a local record exists at all
+
+Slack is the source of truth for everything Slack knows: identity, membership,
+role, active status. Three things cannot live there:
+
+- **Screening dates.** Custom profile fields are the obvious home, but below
+  Enterprise Grid a member can edit their own — a mentor entering their own
+  CORI date is not a control.
+- **Consent records.** No Slack field holds a guardian's name, a signature
+  date, or a pointer to the signed PDF. And §2 obliges the team to produce
+  those consents _to Slack_ on request, so they cannot live inside it.
+- **The past.** Slack answers "who is a student now". An audit asks "was this
+  person a student in March, when this DM happened". Deactivate an account at
+  season's end and Slack forgets, while the DM log still points at them.
+  `role_changes` and `screening_changes` are what survive.
+
+So the `people` table is a compliance record whose identity fields are a
+projection of Slack — not a second roster to keep in sync.
+
 ### Roster CSV
 
 ```
@@ -185,8 +204,14 @@ In Slack, restricted to Lead Coaches and admins:
 
 ```
 /hawkmod status | enroll | findings [kind] | whois @user
+/hawkmod screening @user | consent @user
 /hawkmod ack <id> <note> | resolve <id> <note> | sweep | backfill
 ```
+
+`screening` and `consent` open a form in Slack. They are how screening dates
+and consent records get in day to day — the CSV importers below are a
+season-start bulk load, not a workflow. Both record who entered what and when,
+and both close the finding they were fixing on submit.
 
 On the host, or `docker compose exec hawk-mod node dist/src/cli/index.js …`:
 
