@@ -4,10 +4,16 @@
 #
 # The base file deliberately publishes no ports — on the Linode host Caddy
 # reaches the container over the `edge` network. Locally there is no Caddy, so
-# publish 3000 for a tunnel (Tailscale Funnel) to forward to.
+# publish a port for the tunnel (Tailscale Funnel) to forward to.
+#
+# LOCAL_PORT is the HOST port only; the container still listens on 3000. It is
+# configurable because 3000 is often already taken by another project, and
+# pointing a public Funnel at someone else's app is a bad afternoon.
+#
+# Bound to 127.0.0.1 so the only route in is the tunnel, never the LAN.
 #
 # `edge` still has to exist locally: docker network create edge
 services:
   hawk-mod:
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${LOCAL_PORT:-3000}:3000"

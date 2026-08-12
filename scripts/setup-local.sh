@@ -195,6 +195,42 @@ mkdir -p "$WORK"
 TS_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.local.yml)
 
+# port_free PORT — nothing is listening on it locally.
+port_free() {
+  ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+# whats_on PORT — best-effort description of the squatter, for the error.
+whats_on() {
+  local c
+  c=$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep ":$1->" | awk '{print $1}' | head -1)
+  [[ -n "$c" ]] && printf 'docker container "%s"' "$c" && return
+  lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | awk 'NR==2{print $1}'
+}
+
+# start_funnel PORT — returns 0 on success, 2 if the tailnet needs Funnel
+# enabled first (the CLI blocks polling in that case, so it is run in the
+# background and watched rather than waited on).
+start_funnel() {
+  local port="$1" pid waited=0
+  : > "$WORK/funnel.log"
+  "$TS_CLI" funnel --bg "$port" >"$WORK/funnel.log" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && (( waited < 20 )); do
+    if grep -q "login.tailscale.com/f/funnel" "$WORK/funnel.log" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      return 2
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    return 3
+  fi
+  wait "$pid" 2>/dev/null
+}
+
 # clip FILE — put a file on the clipboard so it can be pasted into a browser.
 clip() {
   if command -v pbcopy >/dev/null 2>&1; then
@@ -239,6 +275,25 @@ if ! docker info >/dev/null 2>&1; then
 fi
 docker network inspect edge >/dev/null 2>&1 || docker network create edge >/dev/null
 say "Docker network 'edge' ready."
+LOCAL_PORT="$(_existing LOCAL_PORT || echo 3000)"
+if ! port_free "$LOCAL_PORT"; then
+  warn "Port $LOCAL_PORT is already taken by $(whats_on "$LOCAL_PORT")."
+  say "That matters more than it looks: the Funnel forwards the public"
+  say "internet to whatever answers on this port. Pick one that is free."
+  SUGGESTED=3001
+  for candidate in 3001 3002 3003 3010 3100; do
+    if port_free "$candidate"; then SUGGESTED="$candidate"; break; fi
+  done
+  ask LOCAL_PORT "Host port for hawk-mod [Enter for $SUGGESTED]:"
+  LOCAL_PORT="${LOCAL_PORT:-$SUGGESTED}"
+  if ! port_free "$LOCAL_PORT"; then
+    warn "Port $LOCAL_PORT is taken too. Free one up and re-run."
+    exit 1
+  fi
+fi
+write_env LOCAL_PORT "$LOCAL_PORT"
+say "hawk-mod will use host port $LOCAL_PORT (the container still listens on 3000)."
+say ""
 say "Building the image (a minute or two the first time)…"
 docker build -t hawk-mod:local . >/dev/null
 printf '  %s✓%s image hawk-mod:local built\n' "$GREEN" "$RESET"
@@ -266,12 +321,13 @@ PUBLIC_URL="https://${FUNNEL_HOST}"
 say "This machine is ${BOLD}${FUNNEL_HOST}${RESET}"
 say ""
 warn "Read this before agreeing — Funnel is genuinely public."
-say "It exposes ONLY port 3000 of this Mac (nothing else on the machine), but"
+say "It exposes ONLY port ${LOCAL_PORT} of this Mac (nothing else on the"
+say "machine), but"
 say "it exposes it to the whole internet. Do not treat the hostname as a"
 say "secret: Tailscale gets a Let's Encrypt cert for it, and every issued cert"
 say "is published to public Certificate Transparency logs."
 say ""
-say "What is actually listening on 3000:"
+say "What is actually listening on ${LOCAL_PORT}:"
 note "  /slack/events         rejects anything without a valid Slack signature"
 note "  /slack/oauth_redirect  rejects callbacks without the signed state param"
 note "  /slack/install         redirects to Slack's own consent screen"
@@ -281,23 +337,37 @@ say "No message content, no database, and no admin surface is served over HTTP."
 say "The safety here is that every endpoint is authenticated — not that the"
 say "URL is hard to guess."
 say ""
+say "It will forward to ${BOLD}localhost:${LOCAL_PORT}${RESET}, which is hawk-mod and"
+say "nothing else — the port was checked in the previous stage."
+say ""
 warn "Funnel persists across restarts. Turn it off when you're done:"
 note "    $TS_CLI funnel --https=443 off"
 if ! confirm "Start the Funnel now?"; then
   say "Stopping — hawk-mod can't be tested without a public URL."
   exit 0
 fi
-if ! "$TS_CLI" funnel --bg 3000 >"$WORK/funnel.log" 2>&1; then
-  warn "Funnel didn't start. Its output:"
+
+rc=0; start_funnel "$LOCAL_PORT" || rc=$?
+if (( rc == 2 )); then
+  say ""
+  warn "Funnel isn't enabled for this tailnet yet."
+  ENABLE_URL="$(grep -o 'https://login.tailscale.com/f/funnel[^[:space:]]*' \
+    "$WORK/funnel.log" | head -1)"
+  step "Approve it here, then come back:"
+  open_url "$ENABLE_URL"
+  pause "Press Enter once you've approved it."
+  rc=0; start_funnel "$LOCAL_PORT" || rc=$?
+fi
+if (( rc != 0 )); then
+  warn "Funnel didn't start. What it said:"
   sed 's/^/    /' "$WORK/funnel.log"
   say ""
-  step "Usually this means HTTPS certs or Funnel need enabling for the tailnet."
-  step "Enable HTTPS certificates, then re-run this script:"
+  step "If it mentions HTTPS certificates, enable them here and re-run:"
   open_url "https://login.tailscale.com/admin/dns"
-  step "If the output above printed an approval link, open that too."
   exit 1
 fi
-printf '  %s✓%s funnel serving %s → localhost:3000\n' "$GREEN" "$RESET" "$PUBLIC_URL"
+printf '  %s✓%s funnel serving %s → localhost:%s\n' \
+  "$GREEN" "$RESET" "$PUBLIC_URL" "$LOCAL_PORT"
 write_env PUBLIC_URL "$PUBLIC_URL"
 
 # ──────────────────────────────────────────────────────────────────────────
