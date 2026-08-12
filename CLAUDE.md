@@ -59,6 +59,29 @@ DM list to catch history predating enrollment and anything missed while the
 process was down. `UNIQUE (conversation_id, ts)` is what keeps the two from
 double-counting — both mentors in a group DM also deliver the same event twice.
 
+## Container
+
+Single self-hosted container, built the same way as hawk-shop: multi-stage,
+Debian (not Alpine) so better-sqlite3's glibc prebuilds work as shipped, and
+`npm ci --ignore-scripts` so npm does not run `node-gyp rebuild` and compile
+from source what is already in the tarball. Unlike hawk-shop there is no
+bundler, so the runtime stage copies a production `node_modules` alongside
+`dist/`. `migrations/` must ship too — `src/db/client.ts` walks up from the
+module to find it, which is why it works from both `src/` and `dist/src/`.
+
+Deployment is Linode behind Caddy on the shared external `edge` network; the app
+publishes no ports. Unlike the tremblay.house stacks it must be reachable from
+the public internet, because Slack posts events to it. `docs/deploy-linode.md`
+has the details.
+
+`/health` (a Bolt `customRoutes` entry, `src/health.ts`) touches SQLite so an
+unwritable or unmigrated volume surfaces as unhealthy rather than as DMs nobody
+recorded. `installed: false` is healthy — a fresh container is legitimately
+waiting to be installed.
+
+Building locally on macOS can trip the "access data from other apps" prompt;
+`docs/deploy-linode.md` has the `DOCKER_CONFIG` workaround.
+
 ## Rules that are load-bearing
 
 - **Never log message text to stdout.** `src/logger.ts` says so; keep it true.

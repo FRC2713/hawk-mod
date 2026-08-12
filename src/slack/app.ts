@@ -1,5 +1,6 @@
 import { App } from "@slack/bolt";
 import { config } from "../config.js";
+import { healthHandler } from "../health.js";
 import { log } from "../logger.js";
 import { registerCommands } from "./commands.js";
 import { registerEvents } from "./events.js";
@@ -40,6 +41,9 @@ export function createApp(): App {
     stateSecret: cfg.SLACK_STATE_SECRET,
     scopes: BOT_SCOPES,
     installationStore,
+    customRoutes: [
+      { path: "/health", method: ["GET"], handler: healthHandler },
+    ],
     redirectUri: `${cfg.PUBLIC_URL}/slack/oauth_redirect`,
     installerOptions: {
       userScopes: USER_SCOPES,
