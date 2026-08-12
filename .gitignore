@@ -1,0 +1,21 @@
+# dependencies
+/node_modules
+
+# build output
+/dist
+*.tsbuildinfo
+
+# local env
+.env
+.env*.local
+
+# hawk-mod local data (sqlite db + ingested exports + generated reports)
+/data
+
+# Slack Corporate Exports are minors' message content. Never commit one.
+*.zip
+/exports
+
+# misc
+.DS_Store
+npm-debug.log*

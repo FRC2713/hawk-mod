@@ -1,0 +1,58 @@
+# Paste at https://api.slack.com/apps -> Create New App -> From an app manifest.
+# Replace hawk-mod.example.org with PUBLIC_URL everywhere it appears.
+display_information:
+  name: hawk-mod
+  description: Youth-protection monitoring for Red Hawk Robotics
+  long_description: >-
+    hawk-mod records direct messages that include a student so the team can
+    audit them, because Slack cannot block mentor-student DMs below Enterprise
+    Grid. Mentors authorize it individually. Conversations with no student in
+    them are not recorded.
+  background_color: "#7a1220"
+
+features:
+  bot_user:
+    display_name: hawk-mod
+    always_online: true
+  slash_commands:
+    - command: /hawkmod
+      url: https://hawk-mod.example.org/slack/events
+      description: Coverage, findings, and audits
+      usage_hint: status | findings | whois @user | resolve <id> <note>
+      should_escape: false
+
+oauth_config:
+  redirect_urls:
+    - https://hawk-mod.example.org/slack/oauth_redirect
+  scopes:
+    bot:
+      - chat:write
+      - commands
+      - channels:read
+      - groups:read
+      - team:read
+      - users:read
+      - users:read.email
+    # Granted per mentor, by that mentor. This is the only way to see DMs
+    # without Enterprise Grid.
+    user:
+      - im:read
+      - im:history
+      - mpim:read
+      - mpim:history
+      - users:read
+
+settings:
+  event_subscriptions:
+    request_url: https://hawk-mod.example.org/slack/events
+    bot_events:
+      - member_joined_channel
+      - member_left_channel
+      - team_join
+      - tokens_revoked
+    user_events:
+      - message.im
+      - message.mpim
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -1,0 +1,15 @@
+services:
+  hawk-mod:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      # Everything durable — the SQLite database, and nothing else.
+      - hawk-mod-data:/data
+    environment:
+      DATA_DIR: /data
+
+volumes:
+  hawk-mod-data:

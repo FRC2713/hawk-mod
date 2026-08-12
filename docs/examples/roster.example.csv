@@ -1,0 +1,9 @@
+email,full_name,role,ypp_completed_on,mentor_ready_on,cori_completed_on,active,notes
+lead1@example.org,Alex Lead,lead_coach,2026-09-01,2026-09-01,2024-08-15,1,
+lead2@example.org,Sam Lead,lead_coach,2026-09-01,2026-09-01,2025-01-20,1,
+mentor1@example.org,Jordan Mentor,mentor,2026-09-03,2026-09-03,2024-09-10,1,
+mentor2@example.org,Casey Mentor,mentor,2026-09-05,2026-09-05,2026-01-05,1,MPS employee — see policy IJNDD
+observer@melroseschools.com,MPS Administrator,district_observer,2026-08-20,2026-08-20,2025-06-01,1,District visibility seat (§8)
+treasurer@example.org,Pat Treasurer,admin,2026-09-01,2026-09-01,2024-08-15,1,Workspace owner #2
+student1@example.org,Robin Student,student,,,,1,
+student2@example.org,Avery Student,student,,,,1,
