@@ -17,7 +17,11 @@ export type Person = {
   full_name: string;
   role: Role;
   active: number;
+  /** Youth Protection Screening — the background check. */
   ypp_completed_on: IsoDate | null;
+  /** Youth Protection Training — annual, and the part FIRST requires. */
+  ypt_completed_on: IsoDate | null;
+  /** Mentor Ready — optional, encouraged. Never blocks screened status. */
   mentor_ready_on: IsoDate | null;
   cori_completed_on: IsoDate | null;
   notes: string | null;

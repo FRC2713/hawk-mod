@@ -19,6 +19,7 @@ export type PersonInput = {
   slackUserId?: string | null;
   active?: boolean;
   yppCompletedOn?: string | null;
+  yptCompletedOn?: string | null;
   mentorReadyOn?: string | null;
   coriCompletedOn?: string | null;
   notes?: string | null;
@@ -30,15 +31,16 @@ export function upsertPerson(input: PersonInput): Person {
   db()
     .prepare(
       `INSERT INTO people (slack_user_id, email, full_name, role, active,
-                           ypp_completed_on, mentor_ready_on, cori_completed_on,
-                           notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           ypp_completed_on, ypt_completed_on, mentor_ready_on,
+                           cori_completed_on, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (email) DO UPDATE SET
          slack_user_id     = COALESCE(excluded.slack_user_id, people.slack_user_id),
          full_name         = excluded.full_name,
          role              = excluded.role,
          active            = excluded.active,
          ypp_completed_on  = COALESCE(excluded.ypp_completed_on, people.ypp_completed_on),
+         ypt_completed_on  = COALESCE(excluded.ypt_completed_on, people.ypt_completed_on),
          mentor_ready_on   = COALESCE(excluded.mentor_ready_on, people.mentor_ready_on),
          cori_completed_on = COALESCE(excluded.cori_completed_on, people.cori_completed_on),
          notes             = COALESCE(excluded.notes, people.notes),
@@ -51,6 +53,7 @@ export function upsertPerson(input: PersonInput): Person {
       input.role,
       input.active === false ? 0 : 1,
       input.yppCompletedOn ?? null,
+      input.yptCompletedOn ?? null,
       input.mentorReadyOn ?? null,
       input.coriCompletedOn ?? null,
       input.notes ?? null,
@@ -192,6 +195,7 @@ export function createPersonFromSlack(args: {
 
 export const SCREENING_FIELDS = [
   "ypp_completed_on",
+  "ypt_completed_on",
   "mentor_ready_on",
   "cori_completed_on",
 ] as const;

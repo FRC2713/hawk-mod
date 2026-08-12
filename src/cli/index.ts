@@ -18,7 +18,8 @@ import { runSweep } from "../jobs/sweep.js";
 const USAGE = `hawk-mod cli
 
   import-roster <file.csv>     email,full_name,role,ypp_completed_on,
-                               mentor_ready_on,cori_completed_on,active,notes
+                               ypt_completed_on,mentor_ready_on,
+                               cori_completed_on,active,notes
   import-consents <file.csv>   email,signed_on,form_version,guardian_name,
                                guardian_email,document_ref,recorded_by[,expires_on]
   set-role <email|U…> <role>   role: student|adult|lead_coach|admin|
@@ -59,6 +60,7 @@ function importRoster(path: string) {
       role,
       active: r.active === undefined ? true : r.active !== "0",
       yppCompletedOn: optional(r.ypp_completed_on),
+      yptCompletedOn: optional(r.ypt_completed_on),
       mentorReadyOn: optional(r.mentor_ready_on),
       coriCompletedOn: optional(r.cori_completed_on),
       notes: optional(r.notes),

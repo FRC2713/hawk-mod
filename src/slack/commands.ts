@@ -304,6 +304,9 @@ async function whoisText(
               .join(", ")}`
       }`
     );
+    if (s.optionalOutstanding.length) {
+      lines.push(`Optional, outstanding: ${s.optionalOutstanding.join(", ")}`);
+    }
   }
 
   if (requiresEnrollment(person) && person.slack_user_id) {

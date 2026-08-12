@@ -26,6 +26,7 @@ function person(role: Role, overrides: Partial<Person> = {}): Person {
     role,
     active: 1,
     ypp_completed_on: null,
+    ypt_completed_on: null,
     mentor_ready_on: null,
     cori_completed_on: null,
     notes: null,
@@ -35,10 +36,11 @@ function person(role: Role, overrides: Partial<Person> = {}): Person {
   };
 }
 
+/** Current on everything FIRST and Massachusetts require. */
 function screened(role: Role = "adult"): Person {
   return person(role, {
-    ypp_completed_on: "2026-01-15",
-    mentor_ready_on: "2026-01-15",
+    ypp_completed_on: "2024-01-15",
+    ypt_completed_on: "2026-01-15",
     cori_completed_on: "2024-06-01",
   });
 }
@@ -127,19 +129,44 @@ describe("consent", () => {
 });
 
 describe("screening", () => {
-  it("expires YPP annually and CORI after three years", () => {
+  it("expires training annually and CORI after three years", () => {
     const p = person("adult", {
-      ypp_completed_on: "2025-01-01",
-      mentor_ready_on: "2025-01-01",
+      ypp_completed_on: "2024-01-01",
+      ypt_completed_on: "2025-01-01",
       cori_completed_on: "2023-01-01",
     });
     const status = screeningStatus(p, "2026-08-12");
     assert.equal(status.current, false);
     assert.deepEqual(status.expired.map((e) => e.item).sort(), [
       "CORI + fingerprints",
-      "Mentor Ready",
-      "YPP screening",
+      "Youth Protection Training",
     ]);
+  });
+
+  it("keeps the background screening valid longer than the training", () => {
+    const p = person("adult", {
+      ypp_completed_on: "2024-01-01",
+      ypt_completed_on: "2026-01-01",
+      cori_completed_on: "2024-01-01",
+    });
+    assert.equal(screeningStatus(p, "2026-08-12").current, true);
+  });
+
+  /**
+   * Mentor Ready is optional per FIRST — a path whose Youth Protection
+   * Training component is the only part required for clearance. Requiring it
+   * would block adults who have done everything actually asked of them.
+   */
+  it("does not require Mentor Ready to count as screened", () => {
+    const p = person("adult", {
+      ypp_completed_on: "2024-01-01",
+      ypt_completed_on: "2026-01-01",
+      cori_completed_on: "2024-01-01",
+      mentor_ready_on: null,
+    });
+    const status = screeningStatus(p, "2026-08-12");
+    assert.equal(status.current, true);
+    assert.deepEqual(status.optionalOutstanding, ["Mentor Ready"]);
   });
 
   it("reports what was never recorded separately from what lapsed", () => {
@@ -147,7 +174,7 @@ describe("screening", () => {
     const status = screeningStatus(p, "2026-08-12");
     assert.deepEqual(status.missing.sort(), [
       "CORI + fingerprints",
-      "Mentor Ready",
+      "Youth Protection Training",
     ]);
     assert.equal(status.expired.length, 0);
   });

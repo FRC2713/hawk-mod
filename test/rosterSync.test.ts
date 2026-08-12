@@ -15,6 +15,7 @@ function person(slackId: string, role: Role): Person {
     role,
     active: 1,
     ypp_completed_on: null,
+    ypt_completed_on: null,
     mentor_ready_on: null,
     cori_completed_on: null,
     notes: null,

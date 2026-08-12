@@ -22,10 +22,25 @@ Each control from _Moving Team Communication to Slack_, and what carries it.
 | 6   | User group editing restricted to Owners/Admins                                | workspace setting — **manual**. Only matters when `STUDENT_USERGROUP`/`ADULT_USERGROUP` are set, since group membership then declares who is monitored |
 | 6   | Real names enforced                                                           | workspace setting — **manual**                                                                                                                         |
 | 6   | Huddles off                                                                   | no API to observe huddles — **manual**, and the reason it matters is in the README's gap list                                                          |
-| 7   | YPP + Mentor Ready annually                                                   | `screening.ts`, `YPP_VALID_YEARS = 1`                                                                                                                  |
+| 7   | Youth Protection Training annually (the part FIRST requires for clearance)    | `screening.ts`, `YPT_VALID_YEARS = 1`                                                                                                                  |
 | 7   | CORI + national fingerprints every 3 years (M.G.L. c. 71 §38R, 603 CMR 51.00) | `screening.ts`, `CORI_VALID_YEARS = 3`                                                                                                                 |
 | 8   | MPS administrator added to the workspace                                      | roster role `district_observer`; counts as an adult only with screening dates recorded                                                                 |
 | 8   | Written approval from the principal before launch                             | **manual**, and blocking                                                                                                                               |
+
+## Corrections worth keeping straight
+
+**Mentor Ready is optional.** FIRST describes it as encouraged, not required
+for YPP Clearance: it is a path of four components — Welcome to _FIRST_, Youth
+Protection Training, Data Privacy for Mentors, Role of a Mentor — and only the
+training inside it is required. hawk-mod tracks it and reports it as
+outstanding, but it never blocks screened-adult status. Requiring it would
+have excluded adults who had done everything actually asked of them.
+
+**The screening and the training run on different clocks.** The background
+screening is valid for longer than a year; the training is annual. Treating
+both as annual flags people who are current, and an alert channel that cries
+wolf is one nobody reads. `SCREENING_VALID_YEARS` is set to 4 — confirm it
+against FIRST before each season.
 
 ## Deliberate non-goals
 

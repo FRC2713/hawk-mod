@@ -95,19 +95,36 @@ export function screeningView(person: Person) {
           {
             type: "mrkdwn" as const,
             text:
-              "Enter the date each was *completed*. Expiry is worked out from " +
-              "it — YPP and Mentor Ready annually, CORI and fingerprints every " +
-              "three years.",
+              "Enter the date each was *completed*; expiry is worked out from " +
+              "it. Training is annual, the background screening runs longer, " +
+              "CORI every three years. Mentor Ready is optional — FIRST " +
+              "requires only the Youth Protection Training inside it.",
           },
         ],
       },
-      dateInput("ypp", "FIRST YPP screening", person.ypp_completed_on),
-      dateInput("mentor_ready", "Mentor Ready", person.mentor_ready_on),
+      dateInput(
+        "ypp",
+        "Youth Protection Screening (required)",
+        person.ypp_completed_on,
+        "The FIRST background check"
+      ),
+      dateInput(
+        "ypt",
+        "Youth Protection Training (required)",
+        person.ypt_completed_on,
+        "Annual"
+      ),
       dateInput(
         "cori",
-        "CORI + national fingerprints",
+        "CORI + national fingerprints (required)",
         person.cori_completed_on,
         "M.G.L. c. 71 §38R; run through district HR"
+      ),
+      dateInput(
+        "mentor_ready",
+        "Mentor Ready (optional)",
+        person.mentor_ready_on,
+        "Encouraged by FIRST, but not needed for clearance"
       ),
     ],
   };
@@ -231,6 +248,7 @@ export function registerViews(app: App): void {
     const values: Partial<Record<ScreeningField, string | null>> = {};
     const pairs: [string, ScreeningField][] = [
       ["ypp", "ypp_completed_on"],
+      ["ypt", "ypt_completed_on"],
       ["mentor_ready", "mentor_ready_on"],
       ["cori", "cori_completed_on"],
     ];
