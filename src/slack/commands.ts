@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
 import type { WebClient } from "@slack/web-api";
+import { closeFinding } from "../close.js";
 import { config } from "../config.js";
 import {
   countOpenByKind,
@@ -10,7 +11,6 @@ import {
   listPeople,
   personByEmail,
   personBySlackId,
-  resolveFinding,
 } from "../db/repo.js";
 import { today } from "../domain/dates.js";
 import { severityEmoji } from "../domain/findings.js";
@@ -137,7 +137,7 @@ export function registerCommands(app: App): void {
             });
             return;
           }
-          resolveFinding(
+          await closeFinding(
             id,
             caller.full_name,
             note,
