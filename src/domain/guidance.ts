@@ -6,7 +6,7 @@ import type { DmVerdict } from "./rules/dmPolicy.js";
  *
  * The audience is someone who almost certainly did not know the rule, so the
  * tone is a colleague's, not a compliance system's: name the rule, give the
- * concrete fix, say plainly that a Lead Coach can see it, and do not imply
+ * concrete fix, say plainly that a coach can see it, and do not imply
  * anyone is in trouble. An adult who feels accused moves the conversation
  * somewhere nobody can see it, which is the opposite of what this is for.
  *
@@ -23,8 +23,8 @@ const OPENING = ":wave: Hi — a quick heads-up, not a telling-off.";
 
 const CLOSING =
   "Conversations that include a student are recorded for youth-protection " +
-  "audit, and a Lead Coach has been notified as usual. Nothing here is an " +
-  "accusation — if you are not sure what to do, just ask a Lead Coach.";
+  "audit, and a coach has been notified as usual. Nothing here is an " +
+  "accusation — if you are not sure what to do, just ask a coach.";
 
 function mentions(ids: string[]): string {
   return ids.map((id) => `<@${id}>`).join(", ");
@@ -67,7 +67,7 @@ export function guidanceFor(verdict: DmVerdict): string | null {
           `This conversation includes a student and ` +
             `${verdict.unknownIds.length} account(s) that are not on the team ` +
             `roster, so ${APP_NAME} cannot tell whether they are a screened adult.`,
-          "*To put it right:* ask a Lead Coach to add them to the roster, or " +
+          "*To put it right:* ask a coach to add them to the roster, or " +
             "to the students or adults user group. Until then the " +
             "conversation counts as an exception.",
         ];

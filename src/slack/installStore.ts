@@ -31,7 +31,7 @@ function teamKey(
 /**
  * Two kinds of row live here:
  *
- *   'bot'  — one per workspace, installed once by a Lead Coach. Posts alerts.
+ *   'bot'  — one per workspace, installed once by a workspace admin. Posts alerts.
  *   'user' — one per enrolled adult, holding that adult's user token. This is
  *            what lets hawk-mod see DMs at all; Slack exposes no other way to
  *            read them below Enterprise Grid.

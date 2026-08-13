@@ -23,12 +23,7 @@ export type RoleDecision =
   /** In both groups at once; too ambiguous to act on. */
   | { kind: "conflict"; slackId: string; personId: number | null };
 
-const ADULT_ROLES: Role[] = [
-  "adult",
-  "lead_coach",
-  "admin",
-  "district_observer",
-];
+const ADULT_ROLES: Role[] = ["adult", "district_observer"];
 
 function isAdultRole(role: Role): boolean {
   return ADULT_ROLES.includes(role);
@@ -74,8 +69,8 @@ export function reconcileRoles(
       continue;
     }
 
-    // Someone already recorded as a lead coach, admin, or district observer is
-    // in the adults group too; that is agreement, not a demotion to `adult`.
+    // A district observer in the adults group is agreement, not a demotion to
+    // plain `adult`.
     if (target === "adult" && isAdultRole(person.role)) {
       decisions.push({ kind: "unchanged", slackId });
       continue;

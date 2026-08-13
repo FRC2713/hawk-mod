@@ -150,7 +150,9 @@ export async function runSweep(): Promise<SweepStats> {
       }
     }
 
-    if (p.role === "adult" || p.role === "lead_coach") {
+    // Every adult on the roster, `district_observer` included (§8: they count
+    // as an adult only once screening dates are recorded).
+    if (p.role !== "student") {
       const screening = screeningStatus(p, asOf);
       if (!screening.current) {
         stats.screeningLapsed += 1;
@@ -284,6 +286,33 @@ export async function runSweep(): Promise<SweepStats> {
         subjectRef: u.id,
       });
     }
+  }
+
+  /* ---- responsible adults (§3) ------------------------------------------ */
+
+  // FIRST requires two screened Lead Coaches. hawk-mod used to answer this
+  // from a `lead_coach` roster role — a label anyone could type, that granted
+  // administrative access, and that nothing checked against reality. The
+  // people who actually hold the authority are the workspace's Owners and
+  // Admins, which Slack knows and nobody can quietly self-assign here, so the
+  // question becomes: are at least two of them screened adults on the roster?
+  const responsible = users.filter((u) => {
+    if (u.isDeleted || u.isBot || !(u.isOwner || u.isAdmin)) return false;
+    const person = rosterBySlackId.get(u.id);
+    if (!person || person.role === "student" || person.active !== 1)
+      return false;
+    return screeningStatus(person, asOf).current;
+  });
+  if (responsible.length < 2) {
+    await emit({
+      kind: "workspace_config",
+      dedupeKey: dedupeKey("workspace_config", "screened_admins"),
+      severity: "violation",
+      summary:
+        `${responsible.length} of the workspace's Owners/Admins are screened ` +
+        `adults on the roster; FIRST requires two (§3).`,
+      detail: { screened: responsible.map((u) => u.id) },
+    });
   }
 
   const closed = autoResolveMissing(SWEEP_OWNED, seen);

@@ -22,9 +22,9 @@ const USAGE = `hawk-mod cli
                                cori_completed_on,active,notes
   import-consents <file.csv>   email,signed_on,form_version,guardian_name,
                                guardian_email,document_ref,recorded_by[,expires_on]
-  set-role <email|U…> <role>   role: student|adult|lead_coach|admin|
-                               district_observer. Bootstraps the first Lead
-                               Coach, since /hawkmod needs one to exist.
+  set-role <email|U…> <role>   role: student|adult|district_observer.
+                               Nothing here grants access to /hawkmod — that
+                               is Slack's Owner/Admin, read live.
   sweep                        run the compliance sweep
   backfill                     walk enrolled adults' DM history
   findings [status]            list findings (default: open)
@@ -124,9 +124,9 @@ function exportConversation(id: string, out?: string) {
 }
 
 /**
- * The user group sync only ever assigns `student` or `adult`, so the first
- * Lead Coach has to be set from outside Slack — otherwise nobody can run
- * /hawkmod at all. Recorded in role_changes like any other role change.
+ * The user group sync only ever assigns `student` or `adult`, so
+ * `district_observer` (§8) has to be set from outside Slack. Recorded in
+ * role_changes like any other role change.
  */
 function setRole(who: string, role: string) {
   if (!ROLES.includes(role as Role)) {

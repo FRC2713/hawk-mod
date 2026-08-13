@@ -176,7 +176,7 @@ export async function raiseDmViolation(
     { at: tsToIso(ts) }
   );
 
-  // Only when the Lead Coaches were told. Guidance rides on the alert rather
+  // Only when the alert channel was told. Guidance rides on the alert rather
   // than on the message, so an adult gets one nudge per occurrence instead of
   // one per line they type — and it never quietly replaces the finding.
   if (alerted) await nudgeAdults(verdict);

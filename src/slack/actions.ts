@@ -1,9 +1,9 @@
 import type { App } from "@slack/bolt";
 import { closeFinding } from "../close.js";
-import { getFinding, personBySlackId } from "../db/repo.js";
-import { mayAdministerWorkspace } from "../domain/people.js";
+import { getFinding } from "../db/repo.js";
 import { log } from "../logger.js";
 import { ACK_ACTION, RESOLVE_ACTION, refreshFinding } from "./alerts.js";
+import { administrator } from "./authz.js";
 
 const NOTE_MODAL = "hawkmod_finding_note";
 const NOTE_BLOCK = "note";
@@ -79,13 +79,13 @@ export function registerActions(app: App): void {
       const findingId = Number(payload.actions?.[0]?.value);
       if (!Number.isInteger(findingId) || !payload.trigger_id) return;
 
-      const caller = personBySlackId(payload.user.id);
+      const caller = await administrator(client, payload.user.id);
       const finding = getFinding(findingId);
       if (!finding) return;
 
       // Anyone who can see the channel can click; only the people responsible
       // for youth protection may close.
-      if (!caller || !mayAdministerWorkspace(caller)) {
+      if (!caller) {
         await client.views.open({
           trigger_id: payload.trigger_id,
           view: {
@@ -97,7 +97,7 @@ export function registerActions(app: App): void {
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: "Only Lead Coaches and workspace admins can close findings.",
+                  text: "Only Slack workspace Owners and Admins can close findings.",
                 },
               },
             ],
@@ -118,13 +118,14 @@ export function registerActions(app: App): void {
     });
   }
 
-  app.view(NOTE_MODAL, async ({ ack, body, view }) => {
-    const caller = personBySlackId(body.user.id);
-    if (!caller || !mayAdministerWorkspace(caller)) {
+  app.view(NOTE_MODAL, async ({ ack, body, view, client }) => {
+    const caller = await administrator(client, body.user.id);
+    if (!caller) {
       await ack({
         response_action: "errors",
         errors: {
-          [NOTE_BLOCK]: "Only Lead Coaches and admins can close findings.",
+          [NOTE_BLOCK]:
+            "Only Slack workspace Owners and Admins can close findings.",
         },
       });
       return;
@@ -145,11 +146,11 @@ export function registerActions(app: App): void {
 
     try {
       await ack();
-      await closeFinding(findingId, caller.full_name, note, status);
+      await closeFinding(findingId, caller.name, note, status);
       log.info("finding closed from Slack", {
         findingId,
         status,
-        by: caller.full_name,
+        by: caller.name,
       });
     } catch (err) {
       log.error("could not close finding", { findingId, error: String(err) });
