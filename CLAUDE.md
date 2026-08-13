@@ -28,10 +28,12 @@ npx tsx --test --test-name-pattern "two adults" test/rules.test.ts
 ```
 
 CLI subcommands: `import-roster`, `import-consents`, `set-role`, `sweep`,
-`backfill`, `findings [status]`, `export-conversation <id> [out.json]`.
-`set-role` is the bootstrap that matters — the user-group sync only ever
-assigns `student` or `adult`, so the first `lead_coach` must be set from the
-CLI or nobody can run `/hawkmod` at all.
+`backfill`, `findings [status]`, `export-conversation <id> [out.json]`. None of
+them is a bootstrap step: administrative access is Slack's Workspace
+Owner/Admin flags, read live in `src/slack/authz.ts`, so a fresh install is
+usable by whoever installed it without anyone touching the host. Don't
+reintroduce a roster role that grants access — see the "Lead Coach" note in
+`docs/policy-mapping.md`.
 
 ## What this is
 

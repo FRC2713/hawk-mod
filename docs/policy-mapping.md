@@ -8,7 +8,7 @@ Each control from _Moving Team Communication to Slack_, and what carries it.
 | 2   | Parental consent on file before a student account exists                      | `consent.ts`; `team_join` event raises `unconsented_account` the moment an account appears; nightly sweep re-checks                                      |
 | 2   | Consent re-collected annually                                                 | `CONSENT_VALID_YEARS = 1`; consents expire rather than linger                                                                                            |
 | 2   | Consents kept on file and producible                                          | `consents` table records `document_ref`; the signed copies themselves live wherever the team files them — **manual**                                     |
-| 3   | Two YPP-screened Lead Coaches                                                 | roster `role = lead_coach` + `screening_lapsed` findings                                                                                                 |
+| 3   | Two YPP-screened Lead Coaches                                                 | `workspace_config` `screened_admins`: two of the workspace's Owners/Admins must be screened adults on the roster, plus `screening_lapsed` findings       |
 | 3   | Written communications copied to a second adult                               | `dmPolicy` — two screened adults required in any student conversation                                                                                    |
 | 4.1 | No 1:1 adult–student DMs, ever                                                | `dmPolicy` `one_to_one_adult_student`, raised on each new message and on backfill; a message after a finding is closed raises it again (`recurrence.ts`) |
 | 4.2 | Two screened adults in every channel students are in                          | `twoAdults.ts`; re-evaluated on every join/leave, plus nightly                                                                                           |
@@ -35,6 +35,17 @@ Protection Training, Data Privacy for Mentors, Role of a Mentor — and only the
 training inside it is required. hawk-mod tracks it and reports it as
 outstanding, but it never blocks screened-adult status. Requiring it would
 have excluded adults who had done everything actually asked of them.
+
+**"Lead Coach" is not a role hawk-mod stores.** It used to be: a roster role
+that granted every administrative action in the app. That put a
+youth-protection permission behind a label anyone with CLI access could type,
+checked against nothing, and it meant a freshly installed app had no
+administrator at all until someone opened a shell on the host. Authority is now
+read live from Slack's Workspace Owner/Admin flags, which the workspace already
+manages and audits. §3 is still checked — see the `screened_admins` row — but
+it asks the question of the people who demonstrably hold the authority rather
+than of a self-assigned label. A student holding Owner or Admin is refused
+regardless (§6), and reported.
 
 **The screening and the training run on different clocks.** The background
 screening is valid for longer than a year; the training is annual. Treating

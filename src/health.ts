@@ -15,7 +15,7 @@ type Health = {
  * later, when the failing thing would be a DM nobody recorded.
  *
  * `installed: false` is not unhealthy — a freshly deployed container is
- * expected to be running and waiting for a Lead Coach to install the app.
+ * expected to be running and waiting for an admin to install the app.
  */
 export function healthHandler(_req: unknown, res: ServerResponse): void {
   let body: Health;

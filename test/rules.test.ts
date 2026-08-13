@@ -209,10 +209,10 @@ describe("DM policy", () => {
     assert.equal(verdict.severity, "violation");
   });
 
-  it("flags a 1:1 even when the adult is fully screened and a Lead Coach", () => {
+  it("flags a 1:1 even when the adult is fully screened and senior", () => {
     const verdict = classifyConversation(
       "im",
-      [screened("lead_coach"), person("student")],
+      [screened("district_observer"), person("student")],
       asOf
     );
     assert.equal(verdict.violation, "one_to_one_adult_student");
@@ -272,7 +272,7 @@ describe("DM policy", () => {
       [
         screened(),
         screened(),
-        screened("lead_coach"),
+        screened("district_observer"),
         person("student"),
         person("student"),
         person("student"),
@@ -323,7 +323,7 @@ describe("two screened adults", () => {
         channelId: "C3",
         channelName: "build",
         isPrivate: false,
-        members: [screened(), screened("lead_coach"), person("student")],
+        members: [screened(), screened("district_observer"), person("student")],
       },
       asOf
     );

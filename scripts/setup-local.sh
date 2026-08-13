@@ -630,14 +630,8 @@ const {listPeople}=require("./dist/src/db/repo.js");
 for (const p of listPeople()) console.log(`  ${p.role.padEnd(18)} ${p.full_name}`);
 ' 2>/dev/null || note "  (could not list — check the logs)"
 say ""
-say "The group sync only ever assigns student or adult, so make yourself a"
-say "Lead Coach — /hawkmod commands need one to exist."
-ask LEAD_COACH_EMAIL "Your Slack email:"
-"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js \
-  set-role "$LEAD_COACH_EMAIL" lead_coach | sed 's/^/  /' \
-  || warn "couldn't set the role — is that the email on your Slack account?"
-note "Being a lead_coach also survives the next sync: someone already recorded"
-note "as a lead coach is not demoted for being in the adults group."
+note "Nothing to grant yourself here: /hawkmod answers to Slack's Workspace"
+note "Owners and Admins, read live. You installed the app, so you can run it."
 say ""
 step "Now record consent for the test student, from Slack:"
 note "    /hawkmod consent @their-account"

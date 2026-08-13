@@ -6,14 +6,14 @@ import {
   insertConsent,
   listConsents,
   personById,
-  personBySlackId,
   setScreeningDates,
   type ScreeningField,
 } from "../db/repo.js";
 import { closeFinding } from "../close.js";
 import { today } from "../domain/dates.js";
 import { dedupeKey } from "../domain/findings.js";
-import { mayAdministerWorkspace, type Person } from "../domain/people.js";
+import { type Person } from "../domain/people.js";
+import { administrator } from "./authz.js";
 import {
   consentStatus,
   defaultExpiry,
@@ -234,12 +234,14 @@ async function settleConsent(personId: number): Promise<void> {
 }
 
 export function registerViews(app: App): void {
-  app.view(SCREENING_MODAL, async ({ ack, body, view }) => {
-    const caller = personBySlackId(body.user.id);
-    if (!caller || !mayAdministerWorkspace(caller)) {
+  app.view(SCREENING_MODAL, async ({ ack, body, view, client }) => {
+    const caller = await administrator(client, body.user.id);
+    if (!caller) {
       await ack({
         response_action: "errors",
-        errors: { ypp: "Only Lead Coaches and admins can record screening." },
+        errors: {
+          ypp: "Only Slack workspace Owners and Admins can record screening.",
+        },
       });
       return;
     }
@@ -273,14 +275,14 @@ export function registerViews(app: App): void {
       const changed = setScreeningDates({
         personId,
         values,
-        recordedBy: caller.full_name,
+        recordedBy: caller.name,
         source: "slack_modal",
       });
       await ack();
       await settleScreening(personId);
       log.info("screening recorded", {
         personId,
-        by: caller.full_name,
+        by: caller.name,
         changed,
       });
     } catch (err) {
@@ -297,13 +299,14 @@ export function registerViews(app: App): void {
     }
   });
 
-  app.view(CONSENT_MODAL, async ({ ack, body, view }) => {
-    const caller = personBySlackId(body.user.id);
-    if (!caller || !mayAdministerWorkspace(caller)) {
+  app.view(CONSENT_MODAL, async ({ ack, body, view, client }) => {
+    const caller = await administrator(client, body.user.id);
+    if (!caller) {
       await ack({
         response_action: "errors",
         errors: {
-          signed_on: "Only Lead Coaches and admins can record consent.",
+          signed_on:
+            "Only Slack workspace Owners and Admins can record consent.",
         },
       });
       return;
@@ -339,11 +342,11 @@ export function registerViews(app: App): void {
         guardianName: textOf(state, "guardian_name"),
         guardianEmail: textOf(state, "guardian_email") || null,
         documentRef: textOf(state, "document_ref") || null,
-        recordedBy: caller.full_name,
+        recordedBy: caller.name,
       });
       await ack();
       await settleConsent(personId);
-      log.info("consent recorded", { personId, by: caller.full_name });
+      log.info("consent recorded", { personId, by: caller.name });
     } catch (err) {
       log.error("consent submission failed", { personId, error: String(err) });
       await ack({

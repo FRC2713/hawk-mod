@@ -49,18 +49,19 @@ appear:
 - **adults who have not authorized hawk-mod, or who revoked it** — see below
 - channels containing students with fewer than two screened adults (§4.2)
 - fewer than two workspace owners, or a student holding Owner/Admin (§6)
+- fewer than two of those Owners/Admins being screened adults on the roster (§3)
 
 Findings are posted once to a private channel, deduplicated, auto-closed when
-the underlying problem goes away, and closable by a Lead Coach from **Resolve**
-and **Acknowledge** buttons on the alert itself.
+the underlying problem goes away, and closable by a workspace admin from
+**Resolve** and **Acknowledge** buttons on the alert itself.
 
-**The adults involved get a private nudge, not just the Lead Coaches.** When a
+**The adults involved get a private nudge, not just the coaches.** When a
 DM raises a finding, hawk-mod sends each adult in it a direct message naming the
 rule and the concrete fix — add a second screened adult, or move it to a
 channel. It is deliberately a colleague's heads-up rather than a warning: most
 violations are people who did not know the rule, and an adult who feels accused
 moves the conversation somewhere nobody can see it. The nudge goes once per
-occurrence, it says plainly that a Lead Coach has been notified, and it never
+occurrence, it says plainly that a coach has been notified, and it never
 replaces the finding.
 
 **Students never receive one.** Youth protection governs adult conduct toward
@@ -169,7 +170,9 @@ and gates on it.
 4. `docker compose up -d` (or `npm install && npm run dev`). For the server —
    DNS, TLS, backups, and the public-reachability requirement — see
    [docs/deploy.md](docs/deploy.md).
-5. A Lead Coach installs the app: visit `$PUBLIC_URL/slack/install`.
+5. A Slack workspace Owner or Admin installs the app: visit
+   `$PUBLIC_URL/slack/install`. Whoever can install it can administer it —
+   there is nothing to grant afterwards.
 6. Import the roster and the consents you have already collected:
 
 ```bash
@@ -235,8 +238,9 @@ projection of Slack — not a second roster to keep in sync.
 email,full_name,role,ypp_completed_on,mentor_ready_on,cori_completed_on,active,notes
 ```
 
-`role` is one of `student`, `adult`, `lead_coach`, `admin`,
-`district_observer` — the last being the MPS administrator seat from §8. Dates
+`role` is one of `student`, `adult`, `district_observer` — the last being the
+MPS administrator seat from §8. Nothing in this file grants access to
+`/hawkmod`; that is Slack's Owner/Admin, and only Slack's. Dates
 are `YYYY-MM-DD`. Email is the join key; Slack IDs are matched automatically
 once people sign up. **If a Slack account's email doesn't match a roster row it
 resolves to an unknown account, not a student** — which produces silence rather
@@ -258,13 +262,18 @@ the signed copy is actually filed.
 
 ## Commands
 
-In Slack, restricted to Lead Coaches and admins:
+In Slack, restricted to the workspace's Owners and Admins — read live from
+Slack on every command, so granting or revoking access is something you do in
+Slack's own admin settings and nowhere else:
 
 ```
 /hawkmod status | enroll | findings [kind] | whois @user
 /hawkmod screening @user | consent @user
 /hawkmod ack <id> <note> | resolve <id> <note> | sweep | backfill
 ```
+
+There is deliberately no roster role that confers this. A student who somehow
+holds Owner or Admin is refused anyway, and reported as a §6 violation.
 
 `screening` and `consent` open a form in Slack. They are how screening dates
 and consent records get in day to day — the CSV importers below are a

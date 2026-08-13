@@ -75,7 +75,7 @@ export function createApp(): App {
                include a student, and records them for youth-protection audit.
                Conversations with no student in them are not recorded.</p>
                <p>You can revoke this at any time from Slack &rarr; Settings
-               &rarr; Manage apps. Revoking is reported to the Lead Coaches,
+               &rarr; Manage apps. Revoking is reported to the coaches,
                because unmonitored is not the same as compliant.</p>
              </div>`
           );
@@ -83,7 +83,7 @@ export function createApp(): App {
         failure: (error, _options, _req, res) => {
           log.error("oauth failure", { error: String(error) });
           res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-          res.end("Authorization failed. Tell a Lead Coach.");
+          res.end("Authorization failed. Tell a coach.");
         },
       },
     },

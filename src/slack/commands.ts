@@ -15,15 +15,12 @@ import {
 } from "../db/repo.js";
 import { today } from "../domain/dates.js";
 import { severityEmoji } from "../domain/findings.js";
-import {
-  mayAdministerWorkspace,
-  requiresEnrollment,
-  type Person,
-} from "../domain/people.js";
+import { requiresEnrollment, type Person } from "../domain/people.js";
 import { consentStatus } from "../domain/rules/consent.js";
 import { screeningStatus } from "../domain/rules/screening.js";
 import { log } from "../logger.js";
 import { backfillAll } from "../monitor/backfill.js";
+import { administrator, NOT_PERMITTED } from "./authz.js";
 import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
 import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
@@ -50,14 +47,11 @@ export function registerCommands(app: App): void {
   app.command("/hawkmod", async ({ command, ack, respond, client }) => {
     await ack();
 
-    // Findings name students and describe conduct concerns. Only the adults
-    // responsible for youth protection get to read them.
-    const caller = personBySlackId(command.user_id);
-    if (!caller || !mayAdministerWorkspace(caller)) {
-      await respond({
-        response_type: "ephemeral",
-        text: `${APP_NAME} is limited to Lead Coaches and workspace admins.`,
-      });
+    // Findings name students and describe conduct concerns. Only the people
+    // Slack already trusts to run the workspace get to read them.
+    const caller = await administrator(client, command.user_id);
+    if (!caller) {
+      await respond({ response_type: "ephemeral", text: NOT_PERMITTED });
       return;
     }
 
@@ -140,7 +134,7 @@ export function registerCommands(app: App): void {
           }
           await closeFinding(
             id,
-            caller.full_name,
+            caller.name,
             note,
             sub === "ack" ? "acknowledged" : "resolved"
           );

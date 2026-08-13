@@ -71,7 +71,7 @@ describe("guidance to an adult", () => {
     assert.match(text, /add another screened adult/);
   });
 
-  it("points an unknown participant at a Lead Coach, not at the adult", () => {
+  it("points an unknown participant at a coach, not at the adult", () => {
     const verdict = classifyConversation(
       "mpim",
       [
@@ -85,7 +85,7 @@ describe("guidance to an adult", () => {
     assert.equal(verdict.violation, "unknown_participant_with_student");
     const text = guidanceFor(verdict);
     assert.ok(text);
-    assert.match(text, /ask a Lead Coach/);
+    assert.match(text, /ask a coach/);
   });
 
   it("never accuses, and always says the finding still stands", () => {
@@ -101,6 +101,6 @@ describe("guidance to an adult", () => {
     assert.match(text, /not a telling-off/);
     assert.match(text, /Nothing here is an accusation/);
     // Guidance must never read as a substitute for the alert.
-    assert.match(text, /Lead Coach has been notified/);
+    assert.match(text, /coach has been notified/);
   });
 });

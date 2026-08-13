@@ -90,7 +90,7 @@ before setup — running and waiting.
 
 ## 4. Set up the workspace
 
-1. A Lead Coach visits `https://hawk-mod.example.org/slack/install`.
+1. A workspace Owner or Admin visits `https://hawk-mod.example.org/slack/install`.
 2. Invite the bot to the private findings channel.
 3. Import the roster and consents (see the README).
 4. Send every adult the same install URL, and watch `/hawkmod status` until

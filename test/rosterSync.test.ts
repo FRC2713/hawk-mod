@@ -52,15 +52,7 @@ describe("user group reconciliation", () => {
     );
   });
 
-  it("does not demote a lead coach who is also in the adults group", () => {
-    const decisions = reconcileRoles(
-      roster(person("U1", "lead_coach")),
-      groups([], ["U1"])
-    );
-    assert.equal(decisions[0]!.kind, "unchanged");
-  });
-
-  it("does not demote the district observer either", () => {
+  it("does not demote the district observer", () => {
     const decisions = reconcileRoles(
       roster(person("U1", "district_observer")),
       groups([], ["U1"])

@@ -1,12 +1,12 @@
 import type { IsoDate } from "./dates.js";
 
-export const ROLES = [
-  "student",
-  "adult",
-  "lead_coach",
-  "admin",
-  "district_observer",
-] as const;
+/**
+ * What the roster says about a person, and nothing more. Deliberately no role
+ * for "runs hawk-mod": administrative authority is Slack's Owner/Admin flags,
+ * read live in `slack/authz.ts`, so there is nothing here to keep in sync with
+ * Slack and nothing to bootstrap by hand on a fresh install.
+ */
+export const ROLES = ["student", "adult", "district_observer"] as const;
 
 export type Role = (typeof ROLES)[number];
 
@@ -43,29 +43,19 @@ export function isStudent(m: Member): boolean {
 }
 
 /**
- * Anyone on the roster who is not a student — `lead_coach`, `admin`, and
- * `district_observer` included, not just the `adult` role. Do not rewrite this
- * as `role === "adult"`: a Lead Coach alone with a student is exactly the
- * situation the rules exist for. Unknown members are not adults either, so an
- * unidentified account can never satisfy the two-adult rule.
+ * Anyone on the roster who is not a student — `district_observer` included,
+ * not just the `adult` role, and a workspace Owner is no exception. Seniority
+ * has never been an argument for being alone with a student; that is exactly
+ * the situation the rules exist for. Unknown members are not adults either, so
+ * an unidentified account can never satisfy the two-adult rule.
  */
 export function isAdult(m: Member): boolean {
   return isKnown(m) && m.role !== "student";
 }
 
-/** Roles that may hold Workspace Owner/Admin. Never a student (§6). */
-export function mayAdministerWorkspace(p: Person): boolean {
-  return p.role === "lead_coach" || p.role === "admin";
-}
-
 /** Roles whose DMs hawk-mod expects to monitor via an enrolled user token. */
 export function requiresEnrollment(p: Person): boolean {
-  return (
-    p.active === 1 &&
-    (p.role === "adult" ||
-      p.role === "lead_coach" ||
-      p.role === "district_observer")
-  );
+  return p.active === 1 && p.role !== "student";
 }
 
 export function label(m: Member): string {
