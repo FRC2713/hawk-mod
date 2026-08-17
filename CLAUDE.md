@@ -39,7 +39,7 @@ reintroduce a roster role that grants access — see the "Lead Coach" note in
 
 A Slack app that records adult–student direct messages for youth-protection
 audit, because Slack cannot block them below Enterprise Grid. The requirements
-come from `obsidian/Areas/FRC/Moving Team Communication to Slack.md`; §4 and §6
+come from `docs/moving-team-communication-to-slack.md`; §4 and §6
 are the parts this implements. `docs/policy-mapping.md` maps each control to the
 code that carries it, and records which controls are deliberately manual.
 

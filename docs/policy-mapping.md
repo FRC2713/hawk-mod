@@ -1,6 +1,8 @@
 # Policy → mechanism
 
-Each control from _Moving Team Communication to Slack_, and what carries it.
+Each control from
+[_Moving Team Communication to Slack_](moving-team-communication-to-slack.md),
+and what carries it.
 "Manual" means hawk-mod cannot do it and does not pretend to.
 
 | §   | Control                                                                       | Carried by                                                                                                                                               |

@@ -16,7 +16,10 @@ Grid-only. So any adult can DM any student from day one. We cannot prevent
 this. **hawk-mod is the detection half of that tradeoff**, made continuous and
 recorded instead of quarterly and manual.
 
-It implements the controls in _Moving Team Communication to Slack_ §4 and §6.
+It implements the controls in
+[_Moving Team Communication to Slack_](docs/moving-team-communication-to-slack.md)
+§4 and §6 — the team's plan for running on Slack, and the source of every
+section number cited below.
 
 ## What it does
 
