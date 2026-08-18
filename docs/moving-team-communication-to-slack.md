@@ -6,16 +6,16 @@ Slack, and the policy analysis behind it. hawk-mod implements §4 and §6.
 carries it, records which ones are deliberately manual, and notes two places
 where later reading of the FIRST rules corrected what §3 and §7 say here.
 
-Two caveats the original carries in a note to the board rather than in the text:
-the nonprofit-pricing/educator-status tension in §5 is unresolved and worth
-re-checking at renewal, and clause 1 quoted in §8 is typical language for that
-policy family, **not confirmed Melrose text** — the district PDF has not been
-read cleanly. If clause 1 turns out not to be in IJNDD, that whole conditional
-goes away.
+One caveat the original carries in a note to the board rather than in the text
+still stands: the nonprofit-pricing/educator-status tension in §5 is unresolved
+and worth re-checking at renewal. The other has been settled — the IJNDD clauses
+§8 quoted were typical language for that policy family rather than confirmed
+Melrose text, and reading the adopted policy showed they are not in it. §8 now
+records what Melrose actually says.
 
 ---
 
-**Summary:** Slack is workable for our team, legally and under FIRST policy, but only with a specific setup. This post lays out what's required, what it costs, and the one open question we need the district to answer.
+**Summary:** Slack is workable for our team, legally and under FIRST policy, but only with a specific setup. This post lays out what's required, what it costs, and how the one district-policy question resolved.
 
 ---
 
@@ -23,7 +23,7 @@ goes away.
 - Our **501(c)(3) will own the workspace**, not the school. This is what lets non-employee mentors participate — the reason we can't just use Google Classroom.
 - We need the **Business+ plan** (~$2.25/user/month at the nonprofit discount) so that DMs are auditable.
 - **Direct messages between mentors and students cannot be technically blocked.** We manage this with policy and real audits, not software.
-- **One open item:** one of our mentors is an MPS employee and is bound by district policy IJNDD. We need written approval from the principal before launch.
+- **Settled:** one of our mentors is an MPS employee and is bound by district policy IJNDD, but the text Melrose actually adopted does not bar them from an outside platform (§8). We still want written approval from the principal before launch.
 
 ---
 
@@ -106,21 +106,70 @@ Independent of everything above, and required regardless of platform:
 
 Keep training completions filed with the consent forms.
 
-## 8. Open item: our MPS-employee mentor
+## 8. Resolved: our MPS-employee mentor
 
-Melrose School Committee policy **IJNDD — Policy on Use of Social Media Sites** (Section I of the district policy manual) binds any MPS employee personally, as a condition of employment. It prohibits "improper fraternization with students using any social media... chat rooms, texts... or other digital means."
+Melrose School Committee policy **IJNDD — Electronic Communication/Social
+Media** (Section I of the district policy manual, adopted June 12, 2018) binds
+any MPS employee personally, as a condition of employment, and it does reach
+Slack. Its definition of social media covers "chat, text message features of
+cell phones... and other electronic or technologically based communication
+systems," and clause (i) of _Professional Use_ provides that employees
+"including coaches/advisors" who engage with team social media "do so as an
+employee of the District." Booster club ownership of the workspace does not put
+our mentor outside it.
 
-Policies in this family typically also contain:
+**The clause that would have decided this against us is not in Melrose's
+version.** This section originally quoted two provisions as typical of the
+policy family, because the district text had not been read. Both are absent, as
+is the "improper fraternization" language the section attributed to IJNDD.
+Melrose adopted a locally drafted policy instead, and its operative provision on
+individual contact reads:
 
-1. _"All electronic contacts with students should be through the district's e-mail, computer and telephone systems, except in emergency situations."_ — **If Melrose's version contains this, our employee-mentor cannot use Slack with students at all**, no matter who owns the workspace. This clause decides the question.
-2. _"Team, class, or student organization pages, accounts, or groups will be created only in conjunction with the teacher, coach or faculty advisor. All groups must include the appropriate administrator as a member."_ — This is our remedy.
+> Educators who wish to communicate with students or families on an individual
+> basis **should**: (a) use their district e-mail account or web portal accounts
+> rather than alternative media, and (b) inform families which social media are
+> to be used for school business.
 
-**Proposed actions:**
+"Should" — in a policy that says "shall not" and "must" in the clauses on either
+side of it. And half (b) presupposes that non-district platforms do carry school
+business, or there would be nothing to tell families about. Nothing prohibits
+using an outside platform with students. **Our employee-mentor is not barred
+from Slack.**
 
-- Read IJNDD in full and check for clause 1
-- Get **written approval** from the principal or superintendent before launch — email is fine, but in writing, filed with the consents
-- **Add an MPS administrator to the workspace as a member.** This satisfies clause 2 on its own terms and turns our Slack from "an outside platform an employee uses with students" into "a channel the district can see." One seat, ~$27/yr — the cheapest risk reduction in this entire plan.
-- If clause 1 applies and no exception is granted, that mentor stays in mentors-only channels
+The remedy this section proposed rested on the second quoted clause — that
+student-organization groups must include the appropriate administrator as a
+member — which is likewise absent. Adding an MPS administrator is still worth
+the $27/yr for district visibility, but as goodwill rather than as compliance
+with anything written.
+
+**What Melrose does ask of that mentor:**
+
+- Clause (k): _"All contact and messages by coaches with team members will be
+  sent to all team members, except for messages concerning medical or academic
+  privacy matters, in which case the messages will be copied to the athletic
+  director and the principal."_ Team channels satisfy this. Group DMs do not —
+  so that mentor works in channels and does not DM students at all. That is
+  stricter than §4.1, and it is enforced by their obligations under the employee
+  manual, not by hawk-mod.
+- Clauses (e)(b) and (l): parents must be told which platforms carry school
+  business. Fold this into the consent form, which we are writing anyway.
+- **Public records.** Under **M.G.L. c. 66 §10**, IJNDD puts the retention
+  burden personally on the educator when school business runs through
+  non-district accounts, and asks them to forward such communications to their
+  school e-mail so it can be archived. hawk-mod covers the substance — the
+  messages are retained and producible via `export-conversation` — but the
+  forwarding expectation should be put to the principal explicitly rather than
+  assumed satisfied.
+
+**Remaining actions:**
+
+- Get **written approval** from the principal or superintendent before launch —
+  email is fine, but in writing, filed with the consents. The ask is now
+  documentation of how we comply, not a request for an exception.
+- Settle how the public-records expectation is met for that mentor.
+- **Add an MPS administrator to the workspace as a member.** One seat, ~$27/yr,
+  and it turns our Slack from "an outside platform an employee uses with
+  students" into "a channel the district can see."
 
 This binds one person, not the booster club or our other mentors. It's a one-person problem with a one-person solution and doesn't threaten the plan.
 
@@ -129,7 +178,8 @@ This binds one person, not the booster club or our other mentors. It's a one-per
 ## Launch checklist
 
 - [ ] Board votes to approve, records the DM-risk tradeoff in the minutes
-- [ ] Read IJNDD; send written approval request to the principal
+- [ ] Send written approval request to the principal (IJNDD read — see §8)
+- [ ] Settle the M.G.L. c. 66 §10 forwarding expectation for our MPS-employee mentor
 - [ ] Apply for Slack for Nonprofits (booster club, not the school)
 - [ ] Upgrade to Business+; apply for Corporate Export
 - [ ] Configure workspace per section 6

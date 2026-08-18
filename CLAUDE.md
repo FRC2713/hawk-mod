@@ -227,3 +227,10 @@ Building locally on macOS can trip the "access data from other apps" prompt;
   (`modals.ts`). There is no middleware doing this centrally — anyone who can
   see the alert channel can click a button, so a new handler that forgets the
   check is open to the workspace. Findings name students.
+- **Files are recorded as metadata, never fetched.** `record.ts` stores
+  `{id, name, mimetype, size}` and the bytes stay in Slack. That an image was
+  shared is the policy-relevant fact; the image itself is a minor's photograph,
+  and downloading it would put content in the team's custody that the
+  content-blind rules never need. Slack retention is set to keep everything, so
+  an investigation that genuinely needs the file gets it from Slack. Do not add
+  file download.
