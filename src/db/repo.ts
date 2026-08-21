@@ -373,6 +373,82 @@ export function revokeConsent(consentId: number, on: string): void {
     .run(on, consentId);
 }
 
+/* -------------------------------------------------------------- settings */
+
+/** A setting a Slack admin has changed, or undefined if none has. */
+export function getSetting(key: string): string | undefined {
+  const row = db()
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+  return row?.value;
+}
+
+export function listSettingRows(): Array<{
+  key: string;
+  value: string;
+  updated_by: string;
+  updated_at: string;
+}> {
+  return db().prepare("SELECT * FROM settings ORDER BY key").all() as Array<{
+    key: string;
+    value: string;
+    updated_by: string;
+    updated_at: string;
+  }>;
+}
+
+/**
+ * Changes a setting and records who changed it, in one transaction.
+ *
+ * Which user group declares who is monitored is a youth-protection fact, so it
+ * leaves the same kind of trail as changing somebody's role does. Slack's audit
+ * log API is Enterprise Grid only; `setting_changes` is the trail.
+ */
+export function setSetting(args: {
+  key: string;
+  value: string;
+  actor: string;
+  actorName: string;
+}): void {
+  const now = nowIso();
+  const previous = getSetting(args.key) ?? null;
+  db().transaction(() => {
+    db()
+      .prepare(
+        `INSERT INTO settings (key, value, updated_by, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET
+           value      = excluded.value,
+           updated_by = excluded.updated_by,
+           updated_at = excluded.updated_at`
+      )
+      .run(args.key, args.value, args.actorName, now);
+    db()
+      .prepare(
+        `INSERT INTO setting_changes (key, from_value, to_value, actor,
+                                      actor_name, changed_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(args.key, previous, args.value, args.actor, args.actorName, now);
+  })();
+}
+
+export function listSettingChanges(limit = 100) {
+  return db()
+    .prepare(
+      `SELECT * FROM setting_changes ORDER BY changed_at DESC, id DESC LIMIT ?`
+    )
+    .all(limit) as Array<{
+    id: number;
+    key: string;
+    from_value: string | null;
+    to_value: string;
+    actor: string;
+    actor_name: string;
+    changed_at: string;
+  }>;
+}
+
 /* --------------------------------------------------------- group changes */
 
 export type GroupChangeInput = {

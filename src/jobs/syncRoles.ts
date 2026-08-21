@@ -1,5 +1,4 @@
 import type { WebClient } from "@slack/web-api";
-import { config } from "../config.js";
 import {
   createPersonFromSlack,
   peopleBySlackId,
@@ -10,6 +9,7 @@ import {
 import { dedupeKey } from "../domain/findings.js";
 import { reconcileRoles } from "../domain/rules/rosterSync.js";
 import { log } from "../logger.js";
+import { settingValue } from "../settings.js";
 import { raise } from "../raise.js";
 import { fetchProfiles, resolveGroup } from "../slack/userGroups.js";
 
@@ -49,7 +49,9 @@ const SOURCE = "usergroup_sync";
 export async function syncRolesFromUserGroups(
   client: WebClient
 ): Promise<RoleSyncStats> {
-  const cfg = config();
+  // From Slack if an admin has set it, from the environment otherwise.
+  const studentHandle = settingValue("student-group");
+  const adultHandle = settingValue("mentor-group");
   const stats: RoleSyncStats = {
     enabled: false,
     studentsInGroup: 0,
@@ -62,22 +64,22 @@ export async function syncRolesFromUserGroups(
     missingGroups: 0,
   };
 
-  if (!cfg.STUDENT_USERGROUP && !cfg.ADULT_USERGROUP) return stats;
+  if (!studentHandle && !adultHandle) return stats;
   stats.enabled = true;
 
-  const studentGroup = cfg.STUDENT_USERGROUP
-    ? await resolveGroup(client, cfg.STUDENT_USERGROUP)
+  const studentGroup = studentHandle
+    ? await resolveGroup(client, studentHandle)
     : null;
-  const adultGroup = cfg.ADULT_USERGROUP
-    ? await resolveGroup(client, cfg.ADULT_USERGROUP)
+  const adultGroup = adultHandle
+    ? await resolveGroup(client, adultHandle)
     : null;
 
   // A configured group that does not exist is a typo, and it reads exactly
   // like an empty group: nobody rostered, nothing monitored, no complaint.
   // Being quieter by being blinder is the failure this project must not have.
   for (const [handle, group] of [
-    [cfg.STUDENT_USERGROUP, studentGroup],
-    [cfg.ADULT_USERGROUP, adultGroup],
+    [studentHandle, studentGroup],
+    [adultHandle, adultGroup],
   ] as const) {
     if (!handle || group) continue;
     stats.missingGroups += 1;
@@ -88,7 +90,7 @@ export async function syncRolesFromUserGroups(
       summary:
         `Configured user group @${handle} does not exist in this workspace. ` +
         `Nobody is being rostered from it, so nobody is being monitored ` +
-        `through it either.`,
+        `through it either. Fix it with \`/hawkmod config\`.`,
       subjectRef: handle,
     });
   }

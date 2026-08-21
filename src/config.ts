@@ -7,23 +7,20 @@ const schema = z.object({
   SLACK_STATE_SECRET: z.string().min(16),
   PUBLIC_URL: z.string().url(),
   PORT: z.coerce.number().int().positive().default(3000),
-  ALERT_CHANNEL_ID: z.string().min(1),
+  // Seeds only, all four of them. A value set from Slack wins — see
+  // src/settings.ts. Kept optional so a fresh install can be configured
+  // entirely from Slack, and so an existing host keeps working unchanged.
+  ALERT_CHANNEL_ID: z.string().optional(),
   DATA_DIR: z.string().default("./data"),
   TOKEN_ENCRYPTION_KEY: z.string().min(1),
   LOG_MODE: z.enum(["full", "metadata"]).default("full"),
-  // Slack user groups that declare roles. Both optional: leave them unset and
-  // the roster is maintained purely by CSV import.
+  // Slack user groups that declare roles. Seeds for the settings of the same
+  // name; leave both unset and unconfigured and the roster is maintained purely
+  // by CSV import.
   STUDENT_USERGROUP: z.string().optional(),
   ADULT_USERGROUP: z.string().optional(),
-  // Further user group handles hawk-mod may edit, comma separated. The two
-  // role groups above are always editable; this widens the allowlist to
-  // subteams (@programming, @drive-team) without widening it to everything.
-  //
-  // The allowlist is not authorization — every caller is already a Workspace
-  // Owner or Admin who could edit any group in Slack's own UI. It is blast
-  // radius. `usergroups.users.update` replaces a group's entire membership, so
-  // a bad plan does not corrupt a group, it empties one, and this bounds how
-  // many groups a single bug can reach.
+  // Seed for the `managed-groups` setting; see src/settings.ts for what the
+  // allowlist is actually for.
   MANAGED_USERGROUPS: z.string().optional(),
   TZ: z.string().default("America/New_York"),
   SWEEP_CRON: z.string().default("0 3 * * *"),
@@ -61,18 +58,4 @@ export function dataDir(): string {
 /** LOG_MODE without requiring the full Slack environment. */
 export function logMode(): "full" | "metadata" {
   return process.env.LOG_MODE === "metadata" ? "metadata" : "full";
-}
-
-/** Handles hawk-mod is permitted to edit, lowercased and without the `@`. */
-export function managedGroupHandles(): Set<string> {
-  const cfg = config();
-  const extra = (cfg.MANAGED_USERGROUPS ?? "")
-    .split(",")
-    .map((h) => h.trim())
-    .filter(Boolean);
-  return new Set(
-    [cfg.STUDENT_USERGROUP, cfg.ADULT_USERGROUP, ...extra]
-      .filter((h): h is string => Boolean(h))
-      .map((h) => h.replace(/^@/, "").toLowerCase())
-  );
 }

@@ -5,6 +5,7 @@ import { closeFinding } from "../close.js";
 import { config } from "../config.js";
 import {
   countOpenByKind,
+  setSetting,
   getFinding,
   getInstallation,
   listConsents,
@@ -21,9 +22,18 @@ import { requiresEnrollment, type Person } from "../domain/people.js";
 import { consentStatus } from "../domain/rules/consent.js";
 import { screeningStatus } from "../domain/rules/screening.js";
 import { log } from "../logger.js";
+import {
+  isSettingKey,
+  SETTING_KEYS,
+  SETTINGS,
+  setting,
+  settingValue,
+  type SettingKey,
+} from "../settings.js";
 import { backfillAll } from "../monitor/backfill.js";
 import { administrator, type Actor, NOT_PERMITTED } from "./authz.js";
 import { applyGroupEdit } from "./groupAdmin.js";
+import { resolveGroup } from "./userGroups.js";
 import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
 import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
@@ -37,6 +47,7 @@ const HELP = [
   "`/hawkmod group add @user @group` — put someone in a user group",
   "`/hawkmod group remove @user @group` — take someone out of a user group",
   "`/hawkmod deactivate @user <reason>` — stop monitoring someone",
+  "`/hawkmod config` — show settings; `config set <key> <value>` to change one",
   "`/hawkmod screening @user` — record YPP / Mentor Ready / CORI dates",
   "`/hawkmod consent @user` — record a signed parental consent",
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
@@ -100,8 +111,8 @@ export function registerCommands(app: App): void {
               text:
                 `Couldn't find \`${rest.join(" ") || "(nobody)"}\` on the roster.\n` +
                 `Usage: \`/hawkmod ${sub} @user\`. Roster membership comes from ` +
-                `the user groups, so add them to @${config().STUDENT_USERGROUP ?? "students"} ` +
-                `or @${config().ADULT_USERGROUP ?? "mentors"} first.`,
+                `the user groups, so add them to @${settingValue("student-group") ?? "students"} ` +
+                `or @${settingValue("mentor-group") ?? "mentors"} first.`,
             });
             return;
           }
@@ -147,6 +158,14 @@ export function registerCommands(app: App): void {
           await respond({
             response_type: "ephemeral",
             text: `Finding #${id} ${sub === "ack" ? "acknowledged" : "resolved"}.`,
+          });
+          return;
+        }
+
+        case "config": {
+          await respond({
+            response_type: "ephemeral",
+            text: await configText(client, caller, rest),
           });
           return;
         }
@@ -541,4 +560,162 @@ async function deactivateText(
     );
   }
   return lines.join("\n");
+}
+
+/**
+ * `/hawkmod config` and `/hawkmod config set <key> <value>`.
+ *
+ * Everything here used to live in a `.env` file on the host, which meant a
+ * Slack admin could not change which user group declares students without an
+ * SSH session. `authz.ts` already rejected that shape of problem once, for
+ * administrative authority; this is the same argument applied to the settings
+ * that decide who is monitored.
+ *
+ * Credentials are deliberately absent, and cannot be added: `SETTINGS` is an
+ * allowlist. You cannot configure from Slack the things that let hawk-mod reach
+ * Slack, and changing the encryption key would make every stored token
+ * undecryptable.
+ */
+async function configText(
+  client: WebClient,
+  caller: Actor,
+  rest: string[]
+): Promise<string> {
+  const [verb, key, ...valueWords] = rest;
+
+  if (!verb) return configListing();
+
+  if (verb !== "set") {
+    return (
+      "Usage: `/hawkmod config` to show, " +
+      "`/hawkmod config set <key> <value>` to change one."
+    );
+  }
+
+  if (!key || !isSettingKey(key)) {
+    return (
+      `Unknown setting \`${key ?? "(none)"}\`. Settable: ` +
+      SETTING_KEYS.map((k) => `\`${k}\``).join(", ") +
+      ".\nSlack credentials and the encryption key are deliberately not " +
+      "settable from here."
+    );
+  }
+
+  const raw = valueWords.join(" ").trim();
+  if (!raw) return `Usage: \`/hawkmod config set ${key} <value>\`.`;
+
+  const cleaned = await validateSetting(client, key, raw);
+  if ("error" in cleaned) return cleaned.error;
+
+  const before = setting(key);
+  setSetting({
+    key,
+    value: cleaned.value,
+    actor: caller.slackUserId,
+    actorName: caller.name,
+  });
+
+  const lines = [
+    `*${SETTINGS[key].label}* is now \`${cleaned.value}\`` +
+      (before.value
+        ? ` (was \`${before.value}\`, from ${before.source})`
+        : "") +
+      ".",
+  ];
+
+  // Roles are read from these groups by everything downstream, so leaving the
+  // roster stale until 3am would mean the setting looked applied and was not.
+  if (key === "student-group" || key === "mentor-group") {
+    const stats = await syncRolesFromUserGroups(client);
+    lines.push(
+      `_Re-synced: ${stats.created} rostered, ${stats.changed} changed, ` +
+        `${stats.reactivated} resumed._`
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function configListing(): string {
+  const rows = SETTING_KEYS.map((key) => {
+    const { value, source } = setting(key);
+    const where =
+      source === "slack"
+        ? "set here"
+        : source === "env"
+          ? `from ${SETTINGS[key].env}`
+          : "*not set*";
+    return `• \`${key}\` — ${value ?? "—"}  _(${where})_`;
+  });
+
+  const unset = SETTING_KEYS.filter((k) => setting(k).source === "unset");
+
+  return [
+    "*Settings*",
+    ...rows,
+    "",
+    "`/hawkmod config set <key> <value>`",
+    ...(unset.length
+      ? ["", ...unset.map((k) => `_\`${k}\` is unset — ${SETTINGS[k].hint}._`)]
+      : []),
+    "_Slack credentials and the token encryption key stay in the environment " +
+      "and cannot be changed from here._",
+  ].join("\n");
+}
+
+/**
+ * Checks a value against Slack before storing it.
+ *
+ * A user group handle that does not resolve is a typo, and a stored typo reads
+ * exactly like an empty group: nobody rostered, nobody monitored, no complaint.
+ * The sweep would raise that eventually; refusing it here turns tomorrow's
+ * finding into an error message the person who caused it is still reading.
+ */
+async function validateSetting(
+  client: WebClient,
+  key: SettingKey,
+  raw: string
+): Promise<{ value: string } | { error: string }> {
+  const kind = SETTINGS[key].kind;
+
+  if (kind === "channel") {
+    // `<#C123|name>` when escaping is on, a bare id or #name when it is not.
+    const id = raw.match(/^<#([A-Z0-9]+)/i)?.[1] ?? raw.replace(/^#/, "");
+    try {
+      const info = await client.conversations.info({ channel: id });
+      if (!info.channel?.id) return { error: `No channel \`${raw}\`.` };
+      return { value: info.channel.id };
+    } catch (err) {
+      return {
+        error:
+          `Couldn't read \`${raw}\`: ${String(err)}\n` +
+          `hawk-mod must be a member of the channel it posts findings to.`,
+      };
+    }
+  }
+
+  const handles = raw
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean)
+    .map((h) => h.match(/^<!subteam\^[A-Z0-9]+\|@?([^>]+)>$/i)?.[1] ?? h)
+    .map((h) => h.replace(/^@/, ""));
+
+  if (kind === "usergroup" && handles.length !== 1) {
+    return { error: `\`${key}\` takes exactly one user group.` };
+  }
+
+  for (const handle of handles) {
+    const group = await resolveGroup(client, handle);
+    if (!group) {
+      return {
+        error:
+          `No user group @${handle} in this workspace. Nothing was changed — ` +
+          `a stored typo looks exactly like an empty group, which is why this ` +
+          `is checked before saving.`,
+      };
+    }
+  }
+
+  return { value: handles.join(",") };
 }

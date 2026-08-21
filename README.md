@@ -192,9 +192,9 @@ npm run cli -- import-consents consents.csv
 
 ### Roles from Slack user groups
 
-Set `STUDENT_USERGROUP` and `ADULT_USERGROUP` to user group handles — this
-team uses `students` and `mentors` — and each sweep reconciles roles from them,
-so membership
+Set the student and mentor groups with `/hawkmod config` — this team uses
+`students` and `mentors` — and each sweep reconciles roles from them, so
+membership
 is managed in Slack rather than by editing a CSV. Group membership is by Slack
 user ID, which removes the email-matching failure below entirely: a group
 member with no roster row gets one created from their Slack profile instead of
@@ -206,6 +206,9 @@ Two properties make this safe to rely on:
   the students group does _not_ un-student them — that would silently end their
   monitoring. The only way out of `student` is being put in the mentors
   group, which is deliberate and raises a `roster_drift` finding.
+- **The handle is checked before it is stored.** A user group that does not
+  resolve is refused outright, because a stored typo reads exactly like an
+  empty group: nobody rostered, nobody monitored, no complaint.
 - **Every role change is recorded** in `role_changes` with who, when, and from
   what. Slack's audit log API is Enterprise Grid only, so on Business+ this
   table is the sole durable trail of who was monitored when.
