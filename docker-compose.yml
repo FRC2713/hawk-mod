@@ -46,6 +46,9 @@ services:
       # is told to, and a missing one silently reads as "feature off".
       STUDENT_USERGROUP: ${STUDENT_USERGROUP:-}
       ADULT_USERGROUP: ${ADULT_USERGROUP:-}
+      # Further group handles `/hawkmod group` may edit, comma separated. The
+      # two above are always editable; this bounds how far a bad plan reaches.
+      MANAGED_USERGROUPS: ${MANAGED_USERGROUPS:-}
 
       # --- Schedules -------------------------------------------------------
       TZ: ${TZ:-America/New_York}

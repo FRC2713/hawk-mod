@@ -8,24 +8,35 @@ export type ResolvedGroup = {
   members: Set<string>;
 };
 
+/** Slack ids for user groups are `S` followed by uppercase alphanumerics. */
+const GROUP_ID = /^S[A-Z0-9]{4,}$/;
+
+export function isGroupId(ref: string): boolean {
+  return GROUP_ID.test(ref.toUpperCase());
+}
+
 /**
- * Resolves a user group by its @handle. Handles are what people actually type
- * and see, so they are what the config names; ids are opaque.
+ * Resolves a user group by its @handle or its id. Handles are what people
+ * actually type and see, so they are what the config names; ids are opaque —
+ * but an id is what Slack sends when a slash command has link escaping on and
+ * somebody types `@students`, which arrives as `<!subteam^S123|students>`.
  *
  * Requires the `usergroups:read` bot scope, and User Groups themselves require
  * a Standard/Business+ plan — they do not exist on the free tier.
  */
 export async function resolveGroup(
   client: WebClient,
-  handle: string
+  ref: string
 ): Promise<ResolvedGroup | null> {
-  const wanted = handle.replace(/^@/, "").toLowerCase();
+  const raw = ref.replace(/^@/, "");
+  const wanted = raw.toLowerCase();
+  const byId = isGroupId(raw) ? raw.toUpperCase() : null;
   const list = await client.usergroups.list({ include_disabled: false });
-  const group = (list.usergroups ?? []).find(
-    (g) => (g.handle ?? "").toLowerCase() === wanted
+  const group = (list.usergroups ?? []).find((g) =>
+    byId ? g.id === byId : (g.handle ?? "").toLowerCase() === wanted
   );
   if (!group?.id) {
-    log.warn("user group not found", { handle });
+    log.warn("user group not found", { ref });
     return null;
   }
 
@@ -65,4 +76,33 @@ export async function fetchProfiles(
     }
   }
   return out;
+}
+
+/**
+ * Replaces a user group's membership.
+ *
+ * `usergroups.users.update` takes the *complete* new member list — Slack sells
+ * no add-one or remove-one endpoint — which is why every caller goes through a
+ * plan rather than mutating a set in place.
+ *
+ * This must be called with an administrator's user token, not the bot token.
+ * Slack accepts a bot token here only when the workspace lets *everyone* edit
+ * user groups, and §6 requires that be restricted to Owners and Admins. The
+ * restriction is the point, so the token is what changes.
+ */
+export async function setGroupMembership(
+  client: WebClient,
+  usergroupId: string,
+  userIds: readonly string[]
+): Promise<void> {
+  if (userIds.length === 0) {
+    throw new Error(
+      "Refusing to send an empty membership; Slack rejects it and a plan " +
+        "should have caught this."
+    );
+  }
+  await client.usergroups.users.update({
+    usergroup: usergroupId,
+    users: userIds.join(","),
+  });
 }

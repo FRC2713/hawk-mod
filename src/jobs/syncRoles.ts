@@ -4,6 +4,7 @@ import {
   createPersonFromSlack,
   peopleBySlackId,
   personBySlackId,
+  setPersonActive,
   setPersonRole,
 } from "../db/repo.js";
 import { dedupeKey } from "../domain/findings.js";
@@ -18,6 +19,7 @@ export type RoleSyncStats = {
   adultsInGroup: number;
   created: number;
   changed: number;
+  reactivated: number;
   conflicts: number;
   reducedProtection: number;
   missingGroups: number;
@@ -28,15 +30,21 @@ const SOURCE = "usergroup_sync";
 /**
  * Pulls role declarations from Slack user groups into the roster.
  *
- * Membership is only ever *added*. Dropping someone from the students group
+ * Monitoring is only ever *added*. Dropping someone from the students group
  * does not un-student them — that would silently end their monitoring, which is
  * the failure this whole system exists to prevent. Moving out of `student`
  * requires putting them in the adults group, which is deliberate, and is
- * reported as a finding either way.
+ * reported as a finding either way. Ending monitoring altogether is
+ * `/hawkmod deactivate`, which names a person and demands a reason.
+ *
+ * The same asymmetry runs the other way: a deactivated person who reappears in
+ * a group is reactivated here without ceremony, because gaining protection back
+ * never needs approval.
  *
  * Group editing is restricted to Workspace Admins in the workspace settings.
- * That is not readable through any API, so it lives on the manual §6 checklist
- * alongside retention and huddles.
+ * That is not readable through any API, so it stays on the manual §6 checklist
+ * alongside retention and huddles — and it is precisely why `slack/groupAdmin.ts`
+ * edits groups with an administrator's own token rather than the bot's.
  */
 export async function syncRolesFromUserGroups(
   client: WebClient
@@ -48,6 +56,7 @@ export async function syncRolesFromUserGroups(
     adultsInGroup: 0,
     created: 0,
     changed: 0,
+    reactivated: 0,
     conflicts: 0,
     reducedProtection: 0,
     missingGroups: 0,
@@ -122,7 +131,36 @@ export async function syncRolesFromUserGroups(
         break;
       }
 
+      case "reactivate": {
+        // Declared again after being deactivated. Monitoring resumes without
+        // anyone's approval, for the same reason `create` needs none: this
+        // direction only ever adds protection.
+        setPersonActive({
+          personId: decision.personId,
+          active: true,
+          source: SOURCE,
+          actor: SOURCE,
+          reason: "declared by a Slack user group",
+        });
+        stats.reactivated += 1;
+        log.info("monitoring resumed from user group", {
+          user: decision.slackId,
+          role: decision.role,
+        });
+        break;
+      }
+
       case "change": {
+        if (decision.reactivates) {
+          setPersonActive({
+            personId: decision.personId,
+            active: true,
+            source: SOURCE,
+            actor: SOURCE,
+            reason: "declared by a Slack user group",
+          });
+          stats.reactivated += 1;
+        }
         setPersonRole({
           personId: decision.personId,
           toRole: decision.to,
