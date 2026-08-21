@@ -31,6 +31,29 @@ function teamKey(
 /** Marks an authorization that came from the group-editing flow. */
 export const GROUP_ADMIN_METADATA = "group-admin";
 
+/** Present on an enrolment token, absent on a group-editing one. */
+const DM_SCOPE = "im:history";
+const GROUP_WRITE_SCOPE = "usergroups:write";
+
+/**
+ * Which of the two per-person grants came back.
+ *
+ * Decided from the token's *scopes* rather than from the metadata marker
+ * alone. The marker is a hint that has to survive a round trip through Slack,
+ * and when it did not, this fell through to the enrolment branch — where the
+ * scope guard correctly refused to overwrite a mentor's DM token, and the whole
+ * authorization died with "Authorization failed. Tell a coach."
+ *
+ * What the token can actually do is not a hint. A token carrying
+ * `usergroups:write` and no DM history scope cannot be an enrolment, whatever
+ * the state parameter says it was.
+ */
+function isGroupAdminGrant(installation: Installation): boolean {
+  if (installation.metadata === GROUP_ADMIN_METADATA) return true;
+  const scopes = installation.user?.scopes ?? [];
+  return scopes.includes(GROUP_WRITE_SCOPE) && !scopes.includes(DM_SCOPE);
+}
+
 /**
  * Three kinds of row live here:
  *
@@ -73,7 +96,7 @@ export const installationStore: InstallationStore = {
       // The group-editing grant is a different consent for a different purpose
       // and gets its own row. Critically it must not fall through to the
       // enrolment branch below, which would overwrite a mentor's DM token.
-      if (installation.metadata === GROUP_ADMIN_METADATA) {
+      if (isGroupAdminGrant(installation as Installation)) {
         saveInstallation({
           teamId,
           enterpriseId,
