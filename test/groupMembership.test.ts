@@ -98,27 +98,27 @@ describe("group membership plans", () => {
  * It is keyed on the resolved handle for a reason — see the regression below.
  */
 describe("edits that end a student's monitoring", () => {
-  const adults = "adults";
+  const mentors = "mentors";
 
-  it("flags a student being added to the adults group", () => {
+  it("flags a student being added to the mentors group", () => {
     assert.equal(
       reducesMonitoring({
         action: "add",
         subjectRole: "student",
-        handle: "adults",
-        adultHandle: adults,
+        handle: "mentors",
+        adultHandle: mentors,
       }),
       true
     );
   });
 
-  it("ignores an adult being added to the adults group", () => {
+  it("ignores an adult being added to the mentors group", () => {
     assert.equal(
       reducesMonitoring({
         action: "add",
         subjectRole: "adult",
-        handle: "adults",
-        adultHandle: adults,
+        handle: "mentors",
+        adultHandle: mentors,
       }),
       false
     );
@@ -130,7 +130,7 @@ describe("edits that end a student's monitoring", () => {
         action: "add",
         subjectRole: "student",
         handle: "programming",
-        adultHandle: adults,
+        adultHandle: mentors,
       }),
       false
     );
@@ -141,8 +141,8 @@ describe("edits that end a student's monitoring", () => {
       reducesMonitoring({
         action: "remove",
         subjectRole: "student",
-        handle: "adults",
-        adultHandle: adults,
+        handle: "mentors",
+        adultHandle: mentors,
       }),
       false
     );
@@ -153,8 +153,8 @@ describe("edits that end a student's monitoring", () => {
       reducesMonitoring({
         action: "add",
         subjectRole: "student",
-        handle: "Adults",
-        adultHandle: "@adults",
+        handle: "mentors",
+        adultHandle: "@Mentors",
       }),
       true
     );
@@ -163,9 +163,9 @@ describe("edits that end a student's monitoring", () => {
   /**
    * Regression. The first version of this compared the *raw slash-command
    * argument* to the configured handle. The app sets `should_escape: true`, so
-   * Slack sends `<!subteam^S0614TY5A|adults>` and the raw argument is an opaque
-   * id — which never equals "adults", so the gate never fired and a student
-   * could be moved into the adults group by typo, with no reason recorded.
+   * Slack sends `<!subteam^S0614TY5A|mentors>` and the raw argument is an opaque
+   * id — which never equals "mentors", so the gate never fired and a student
+   * could be moved into the mentors group by typo, with no reason recorded.
    * Only the resolved handle is a safe input here.
    */
   it("is not fooled by a group id, because it never sees one", () => {
@@ -174,7 +174,7 @@ describe("edits that end a student's monitoring", () => {
         action: "add",
         subjectRole: "student",
         handle: "S0614TY5A",
-        adultHandle: adults,
+        adultHandle: mentors,
       }),
       false
     );

@@ -80,6 +80,22 @@ that has shipped. All SQL lives in `src/db/repo.ts` and nowhere else, and
 better-sqlite3 is synchronous — repo functions are not `async`, so anything
 `await`ed in this codebase is Slack, not the database.
 
+**Settings a Slack admin owns live in the database, not the environment.**
+`src/settings.ts` resolves each one **database → environment → unset**, so the
+env var is a _seed_ rather than the source of truth and an existing host keeps
+working with no flag day. `/hawkmod config` shows every value **and where it
+came from**, which is the question actually asked when the roster looks wrong.
+`SETTINGS` is an allowlist and must stay one: Slack credentials cannot be set
+from Slack, and `TOKEN_ENCRYPTION_KEY` must never be reachable — changing it
+makes every stored token undecryptable and every enrolled adult invisible while
+coverage still reads 100%. A user group handle is validated against Slack before
+it is stored, because a stored typo reads exactly like an empty group. Changing
+a role group re-syncs immediately; leaving it until 3am would mean the setting
+looked applied and was not. Every change lands in `setting_changes`.
+
+Note `settings.ts` reads `process.env` directly rather than through `config()` —
+it is reachable from the CLI, and `config()` there would throw at import time.
+
 **`config()` is all or nothing.** One zod parse of the whole environment, on
 first use; a missing `SLACK_*` var throws for every caller. That is why
 `dataDir()` and `logMode()` exist as separate readers — the CLI runs
@@ -104,7 +120,7 @@ is idempotent, which is what makes the duplicate events harmless). The
 reconciliation in `domain/rules/rosterSync.ts` is pure and **may only ever add
 monitoring, never subtract it**: a person dropped from the students group stays
 a student, since the alternative is silently ending someone's monitoring. Only
-an explicit move into the adults group leaves `student`, and that raises
+an explicit move into the mentors group leaves `student`, and that raises
 `roster_drift`. Every change lands in `role_changes` — Slack's audit log API is
 Grid-only, so that table is the only trail. Do not make this bidirectional.
 

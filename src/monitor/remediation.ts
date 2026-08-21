@@ -14,6 +14,7 @@ import {
 } from "../domain/rules/remediation.js";
 import type { DmVerdict } from "../domain/rules/dmPolicy.js";
 import { log } from "../logger.js";
+import { settingValue } from "../settings.js";
 import { botClient } from "../slack/tokens.js";
 
 type FindingDetail = {
@@ -81,8 +82,10 @@ export async function remediateOneOnOnes(
     // to the alarm, rather than leaving a violation that looks unanswered.
     if (finding.alert_ts) {
       try {
+        const channel = settingValue("alert-channel");
+        if (!channel) throw new Error("no alert channel configured");
         await botClient().chat.postMessage({
-          channel: config().ALERT_CHANNEL_ID,
+          channel,
           thread_ts: finding.alert_ts,
           text: `:white_check_mark: Put right — ${note} Acknowledged automatically; the 1:1 messages remain on record.`,
         });

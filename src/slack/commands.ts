@@ -5,6 +5,7 @@ import { closeFinding } from "../close.js";
 import { config } from "../config.js";
 import {
   countOpenByKind,
+  setSetting,
   getFinding,
   getInstallation,
   listConsents,
@@ -21,9 +22,18 @@ import { requiresEnrollment, type Person } from "../domain/people.js";
 import { consentStatus } from "../domain/rules/consent.js";
 import { screeningStatus } from "../domain/rules/screening.js";
 import { log } from "../logger.js";
+import {
+  isSettingKey,
+  SETTING_KEYS,
+  SETTINGS,
+  setting,
+  settingValue,
+  type SettingKey,
+} from "../settings.js";
 import { backfillAll } from "../monitor/backfill.js";
 import { administrator, type Actor, NOT_PERMITTED } from "./authz.js";
 import { applyGroupEdit } from "./groupAdmin.js";
+import { resolveGroup } from "./userGroups.js";
 import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
 import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
@@ -37,6 +47,7 @@ const HELP = [
   "`/hawkmod group add @user @group` — put someone in a user group",
   "`/hawkmod group remove @user @group` — take someone out of a user group",
   "`/hawkmod deactivate @user <reason>` — stop monitoring someone",
+  "`/hawkmod config` — show settings; `config set <key> <value>` to change one",
   "`/hawkmod screening @user` — record YPP / Mentor Ready / CORI dates",
   "`/hawkmod consent @user` — record a signed parental consent",
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
@@ -46,7 +57,7 @@ const HELP = [
   "`/hawkmod backfill` — walk enrolled adults' DM history now",
   "",
   "_Roles come from Slack user groups. To add someone to the roster, add them",
-  "to the students or adults group — it applies straight away._",
+  "to the @students or @mentors group — it applies straight away._",
 ].join("\n");
 
 export function registerCommands(app: App): void {
@@ -100,8 +111,8 @@ export function registerCommands(app: App): void {
               text:
                 `Couldn't find \`${rest.join(" ") || "(nobody)"}\` on the roster.\n` +
                 `Usage: \`/hawkmod ${sub} @user\`. Roster membership comes from ` +
-                `the user groups, so add them to @${config().STUDENT_USERGROUP ?? "students"} ` +
-                `or @${config().ADULT_USERGROUP ?? "adults"} first.`,
+                `the user groups, so add them to @${settingValue("student-group") ?? "students"} ` +
+                `or @${settingValue("mentor-group") ?? "mentors"} first.`,
             });
             return;
           }
@@ -147,6 +158,14 @@ export function registerCommands(app: App): void {
           await respond({
             response_type: "ephemeral",
             text: `Finding #${id} ${sub === "ack" ? "acknowledged" : "resolved"}.`,
+          });
+          return;
+        }
+
+        case "config": {
+          await respond({
+            response_type: "ephemeral",
+            text: await configText(client, caller, rest),
           });
           return;
         }
@@ -294,6 +313,43 @@ async function resolvePerson(
   return undefined;
 }
 
+/**
+ * Resolves a Slack account, roster row or not.
+ *
+ * `resolvePerson` answers "who is this on the roster", which is the right
+ * question almost everywhere and the wrong one for group edits: joining a role
+ * user group is *how* somebody gets a roster row, so demanding one first is a
+ * deadlock. This answers the smaller question — which Slack account did they
+ * mean — so the edit can proceed and the sync can create the row from it.
+ */
+async function resolveSlackId(
+  client: WebClient,
+  mention: string
+): Promise<string | undefined> {
+  const raw = mention.trim();
+  if (!raw) return undefined;
+
+  const escaped = raw.match(/^<@([A-Z0-9]+)/i)?.[1];
+  if (escaped) return escaped.toUpperCase();
+  if (/^U[A-Z0-9]{4,}$/i.test(raw)) return raw.toUpperCase();
+
+  const wanted = raw.replace(/^@/, "").toLowerCase();
+  try {
+    const list = await client.users.list({ limit: 500 });
+    const match = (list.members ?? []).find(
+      (m) =>
+        !m.deleted &&
+        !m.is_bot &&
+        [m.name, m.profile?.display_name, m.profile?.real_name]
+          .filter(Boolean)
+          .some((n) => (n as string).toLowerCase() === wanted)
+    );
+    return match?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 async function whoisText(
   client: WebClient,
   teamId: string,
@@ -358,7 +414,7 @@ function groupRef(raw: string): string | null {
 /**
  * `/hawkmod group add|remove @user @group`.
  *
- * Moving a student into the adults group requires a written reason. Refusing it
+ * Moving a student into the mentors group requires a written reason. Refusing it
  * outright would be worse than allowing it: the action would simply happen in
  * Slack's own UI instead, where hawk-mod learns of it from an event carrying no
  * reason and no author. Requiring a sentence keeps the most consequential edit
@@ -380,14 +436,21 @@ async function groupText(
     return `Usage: \`/hawkmod group ${action} @user @group\`.`;
   }
 
+  // A roster row is not a precondition here, and requiring one was a deadlock:
+  // the sync only creates rows for people already in a role group, so the
+  // command meant to put somebody in their first group refused everybody who
+  // needed it. Slack's account is enough — `subteam_members_changed` fires on
+  // the write and the sync creates the roster row moments later.
   const person = await resolvePerson(client, mention);
-  if (!person) {
+  const slackId =
+    person?.slack_user_id ?? (await resolveSlackId(client, mention));
+  if (!slackId) {
     return (
-      `Couldn't find \`${mention}\` on the roster. hawk-mod only edits groups ` +
-      `for people it already knows, so the edit is never the first thing it ` +
-      `learns about someone.`
+      `Couldn't work out who \`${mention}\` is. Mention them with @ so Slack ` +
+      `sends their account, or paste their Slack member ID.`
     );
   }
+  const who = person?.full_name ?? `<@${slackId}>`;
 
   const reason = reasonWords.join(" ").trim();
 
@@ -396,7 +459,7 @@ async function groupText(
     actor: caller,
     groupRef: ref,
     action,
-    subject: person,
+    subject: person ?? { slackUserId: slackId },
     reason: reason || null,
     source: "command",
   });
@@ -407,27 +470,36 @@ async function groupText(
     // where the caller's own words are still to hand.
     if ("needsReason" in outcome) {
       return (
-        `*${person.full_name}* is a student. ${outcome.reason}\n` +
+        `*${who}* is a student. ${outcome.reason}\n` +
         `\`/hawkmod group add ${mention} ${group} <why>\``
       );
     }
     return outcome.reason;
   }
   if (outcome.noop) {
-    return `*${person.full_name}* was already ${
+    return `*${who}* was already ${
       action === "add" ? "in" : "out of"
     } @${outcome.handle}. Nothing changed.`;
   }
 
   const lines = [
-    `${action === "add" ? "Added" : "Removed"} *${person.full_name}* ` +
+    `${action === "add" ? "Added" : "Removed"} *${who}* ` +
       `${action === "add" ? "to" : "from"} @${outcome.handle}.`,
   ];
+
+  // Says out loud that the roster is about to catch up, so a caller who runs
+  // `whois` a second later and sees nothing knows to wait rather than to worry.
+  if (!person && action === "add") {
+    lines.push(
+      `_hawk-mod had no roster entry for them. The user group sync creates one ` +
+        `within a few seconds; \`/hawkmod whois\` will show it._`
+    );
+  }
 
   // The honest half. Group membership declares a role; it does not end
   // monitoring, and saying otherwise here would be the quiet failure this
   // project exists to avoid.
-  if (action === "remove") {
+  if (action === "remove" && person) {
     lines.push(
       `_${person.full_name} is still a ${person.role} on the roster and still ` +
         `monitored. Leaving a group never ends monitoring — use ` +
@@ -436,7 +508,7 @@ async function groupText(
   }
   if (outcome.reducedMonitoring) {
     lines.push(
-      `_${person.full_name} is no longer monitored as a student. Recorded ` +
+      `_${who} is no longer monitored as a student. Recorded ` +
         `against your name: ${reason}_`
     );
   }
@@ -488,4 +560,162 @@ async function deactivateText(
     );
   }
   return lines.join("\n");
+}
+
+/**
+ * `/hawkmod config` and `/hawkmod config set <key> <value>`.
+ *
+ * Everything here used to live in a `.env` file on the host, which meant a
+ * Slack admin could not change which user group declares students without an
+ * SSH session. `authz.ts` already rejected that shape of problem once, for
+ * administrative authority; this is the same argument applied to the settings
+ * that decide who is monitored.
+ *
+ * Credentials are deliberately absent, and cannot be added: `SETTINGS` is an
+ * allowlist. You cannot configure from Slack the things that let hawk-mod reach
+ * Slack, and changing the encryption key would make every stored token
+ * undecryptable.
+ */
+async function configText(
+  client: WebClient,
+  caller: Actor,
+  rest: string[]
+): Promise<string> {
+  const [verb, key, ...valueWords] = rest;
+
+  if (!verb) return configListing();
+
+  if (verb !== "set") {
+    return (
+      "Usage: `/hawkmod config` to show, " +
+      "`/hawkmod config set <key> <value>` to change one."
+    );
+  }
+
+  if (!key || !isSettingKey(key)) {
+    return (
+      `Unknown setting \`${key ?? "(none)"}\`. Settable: ` +
+      SETTING_KEYS.map((k) => `\`${k}\``).join(", ") +
+      ".\nSlack credentials and the encryption key are deliberately not " +
+      "settable from here."
+    );
+  }
+
+  const raw = valueWords.join(" ").trim();
+  if (!raw) return `Usage: \`/hawkmod config set ${key} <value>\`.`;
+
+  const cleaned = await validateSetting(client, key, raw);
+  if ("error" in cleaned) return cleaned.error;
+
+  const before = setting(key);
+  setSetting({
+    key,
+    value: cleaned.value,
+    actor: caller.slackUserId,
+    actorName: caller.name,
+  });
+
+  const lines = [
+    `*${SETTINGS[key].label}* is now \`${cleaned.value}\`` +
+      (before.value
+        ? ` (was \`${before.value}\`, from ${before.source})`
+        : "") +
+      ".",
+  ];
+
+  // Roles are read from these groups by everything downstream, so leaving the
+  // roster stale until 3am would mean the setting looked applied and was not.
+  if (key === "student-group" || key === "mentor-group") {
+    const stats = await syncRolesFromUserGroups(client);
+    lines.push(
+      `_Re-synced: ${stats.created} rostered, ${stats.changed} changed, ` +
+        `${stats.reactivated} resumed._`
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function configListing(): string {
+  const rows = SETTING_KEYS.map((key) => {
+    const { value, source } = setting(key);
+    const where =
+      source === "slack"
+        ? "set here"
+        : source === "env"
+          ? `from ${SETTINGS[key].env}`
+          : "*not set*";
+    return `• \`${key}\` — ${value ?? "—"}  _(${where})_`;
+  });
+
+  const unset = SETTING_KEYS.filter((k) => setting(k).source === "unset");
+
+  return [
+    "*Settings*",
+    ...rows,
+    "",
+    "`/hawkmod config set <key> <value>`",
+    ...(unset.length
+      ? ["", ...unset.map((k) => `_\`${k}\` is unset — ${SETTINGS[k].hint}._`)]
+      : []),
+    "_Slack credentials and the token encryption key stay in the environment " +
+      "and cannot be changed from here._",
+  ].join("\n");
+}
+
+/**
+ * Checks a value against Slack before storing it.
+ *
+ * A user group handle that does not resolve is a typo, and a stored typo reads
+ * exactly like an empty group: nobody rostered, nobody monitored, no complaint.
+ * The sweep would raise that eventually; refusing it here turns tomorrow's
+ * finding into an error message the person who caused it is still reading.
+ */
+async function validateSetting(
+  client: WebClient,
+  key: SettingKey,
+  raw: string
+): Promise<{ value: string } | { error: string }> {
+  const kind = SETTINGS[key].kind;
+
+  if (kind === "channel") {
+    // `<#C123|name>` when escaping is on, a bare id or #name when it is not.
+    const id = raw.match(/^<#([A-Z0-9]+)/i)?.[1] ?? raw.replace(/^#/, "");
+    try {
+      const info = await client.conversations.info({ channel: id });
+      if (!info.channel?.id) return { error: `No channel \`${raw}\`.` };
+      return { value: info.channel.id };
+    } catch (err) {
+      return {
+        error:
+          `Couldn't read \`${raw}\`: ${String(err)}\n` +
+          `hawk-mod must be a member of the channel it posts findings to.`,
+      };
+    }
+  }
+
+  const handles = raw
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean)
+    .map((h) => h.match(/^<!subteam\^[A-Z0-9]+\|@?([^>]+)>$/i)?.[1] ?? h)
+    .map((h) => h.replace(/^@/, ""));
+
+  if (kind === "usergroup" && handles.length !== 1) {
+    return { error: `\`${key}\` takes exactly one user group.` };
+  }
+
+  for (const handle of handles) {
+    const group = await resolveGroup(client, handle);
+    if (!group) {
+      return {
+        error:
+          `No user group @${handle} in this workspace. Nothing was changed — ` +
+          `a stored typo looks exactly like an empty group, which is why this ` +
+          `is checked before saving.`,
+      };
+    }
+  }
+
+  return { value: handles.join(",") };
 }

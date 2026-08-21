@@ -1,9 +1,30 @@
-import { config } from "../config.js";
 import { getFinding, setFindingAlertTs } from "../db/repo.js";
 import type { Finding } from "../domain/findings.js";
 import { severityEmoji } from "../domain/findings.js";
 import { log } from "../logger.js";
+import { settingValue } from "../settings.js";
 import { botClient } from "./tokens.js";
+
+/**
+ * Where findings go, or `null` if nobody has said.
+ *
+ * Unset is not a quiet state. A finding with nowhere to be announced is
+ * recorded and invisible, which is the exact failure this project defines
+ * itself against — so every attempt to use it logs at error level, naming the
+ * finding that is going unreported and the command that fixes it. `/hawkmod
+ * config` shows it too, and so does startup.
+ */
+function alertChannel(context: string): string | null {
+  const channel = settingValue("alert-channel");
+  if (!channel) {
+    log.error("no alert channel configured; nobody is being told", {
+      context,
+      fix: "/hawkmod config set alert-channel #channel",
+    });
+    return null;
+  }
+  return channel;
+}
 
 export const ACK_ACTION = "hawkmod_finding_ack";
 export const RESOLVE_ACTION = "hawkmod_finding_resolve";
@@ -84,8 +105,10 @@ export function findingBlocks(f: Finding): {
  */
 async function supersede(previousTs: string, finding: Finding): Promise<void> {
   try {
+    const channel = alertChannel("supersede");
+    if (!channel) return;
     await botClient().chat.update({
-      channel: config().ALERT_CHANNEL_ID,
+      channel,
       ts: previousTs,
       text: `${severityEmoji(finding.severity)} ${finding.kind} — happened again`,
       blocks: [
@@ -123,8 +146,10 @@ export async function postFinding(findingId: number): Promise<void> {
   const previousTs = finding.alert_ts;
   const { text, blocks } = findingBlocks(finding);
   try {
+    const channel = alertChannel(`finding ${findingId}`);
+    if (!channel) return;
     const res = await botClient().chat.postMessage({
-      channel: config().ALERT_CHANNEL_ID,
+      channel,
       text,
       blocks: blocks as never,
     });
@@ -146,8 +171,10 @@ export async function refreshFinding(findingId: number): Promise<void> {
   if (!finding?.alert_ts) return;
   const { text, blocks } = findingBlocks(finding);
   try {
+    const channel = alertChannel(`finding ${finding.id}`);
+    if (!channel) return;
     await botClient().chat.update({
-      channel: config().ALERT_CHANNEL_ID,
+      channel,
       ts: finding.alert_ts,
       text,
       blocks: blocks as never,
@@ -162,8 +189,10 @@ export async function refreshFinding(findingId: number): Promise<void> {
 
 export async function postToAlertChannel(text: string): Promise<void> {
   try {
+    const channel = alertChannel("digest");
+    if (!channel) return;
     await botClient().chat.postMessage({
-      channel: config().ALERT_CHANNEL_ID,
+      channel,
       text,
     });
   } catch (err) {

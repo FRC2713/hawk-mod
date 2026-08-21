@@ -1,5 +1,5 @@
 import { WebClient } from "@slack/web-api";
-import { config, managedGroupHandles } from "../config.js";
+import { config } from "../config.js";
 import { getInstallation, insertGroupChange } from "../db/repo.js";
 import type { Person } from "../domain/people.js";
 import {
@@ -9,6 +9,7 @@ import {
   type GroupPlan,
 } from "../domain/rules/groupMembership.js";
 import { log } from "../logger.js";
+import { managedGroupHandles, settingValue } from "../settings.js";
 import type { Actor } from "./authz.js";
 import { resolveGroup, setGroupMembership } from "./userGroups.js";
 
@@ -142,7 +143,7 @@ export async function applyGroupEdit(
       };
     }
 
-    // Moving a student into the adults group ends their monitoring as a
+    // Moving a student into the mentors group ends their monitoring as a
     // student. Allowed — refusing would only push the same act into Slack's own
     // UI, where hawk-mod learns of it from an event with no author and no
     // reason — but never silently, and never by typo.
@@ -152,7 +153,7 @@ export async function applyGroupEdit(
         action: req.action,
         subjectRole: req.subject.role,
         handle: group.handle,
-        adultHandle: config().ADULT_USERGROUP ?? "adults",
+        adultHandle: settingValue("mentor-group") ?? "mentors",
       });
 
     if (reduces && !req.reason) {
