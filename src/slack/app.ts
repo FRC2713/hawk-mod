@@ -167,9 +167,44 @@ export function createApp(): App {
           );
         },
         failure: (error, _options, _req, res) => {
-          log.error("oauth failure", { error: String(error) });
-          res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-          res.end("Authorization failed. Tell a coach.");
+          // An authorization link is valid for ten minutes. Expiring is the
+          // most common way this fails and the only one the person in front of
+          // it can fix, so it gets its own answer rather than being lumped in
+          // with "tell a coach" — which is what to do about the rest.
+          const code = (error as { code?: string } | undefined)?.code;
+          const expired =
+            code === "slack_oauth_invalid_state" ||
+            code === "slack_oauth_missing_state";
+
+          log.error("oauth failure", {
+            code: code ?? "none",
+            error: String(error),
+          });
+
+          res.writeHead(expired ? 400 : 500, {
+            "content-type": "text/html; charset=utf-8",
+          });
+          res.end(
+            `<!doctype html><meta charset="utf-8">
+             <meta name="viewport" content="width=device-width,initial-scale=1">
+             <title>${APP_NAME}</title>
+             <div style="font:16px/1.6 system-ui,sans-serif;color:#1f2023;max-width:34rem;margin:4rem auto;padding:0 1.25rem">
+               ${ICON_SVG}
+               <h1 style="font-size:1.6rem;margin:1.25rem 0 .25rem">${
+                 expired ? "That link expired." : "Authorization failed."
+               }</h1>
+               <p style="margin:0 0 1.5rem;color:${BRAND.red};font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:.8rem">${APP_NAME}</p>
+               <p>${
+                 expired
+                   ? "Authorization links are good for ten minutes. Run the " +
+                     "command again and follow the new link — nothing was " +
+                     "changed."
+                   : "Nothing was changed. Tell a coach, and give them this: " +
+                     `<code>${code ?? "unknown"}</code>. The server log has ` +
+                     "the detail."
+               }</p>
+             </div>`
+          );
         },
       },
     },
