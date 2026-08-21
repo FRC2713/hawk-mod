@@ -143,6 +143,55 @@ export function setPersonRole(args: {
 }
 
 /**
+ * Starts or stops monitoring a person, and records who decided and why.
+ *
+ * Deactivation is the only operation in hawk-mod that makes it see less. There
+ * is no sweep, no sync and no rule that reaches it — a person does, by name,
+ * with a reason, which is why both are required rather than optional.
+ *
+ * The trail goes in `role_changes` with `from_role` and `to_role` equal. That
+ * reads oddly until you remember what the table is for: it is not a log of role
+ * strings, it is the answer to "who was monitored, when" — the only such answer
+ * that exists below Enterprise Grid. A deactivation changes that answer, so it
+ * belongs in the same place as the changes that alter someone's role.
+ */
+export function setPersonActive(args: {
+  personId: number;
+  active: boolean;
+  source: string;
+  actor: string;
+  reason: string;
+}): void {
+  const now = nowIso();
+  const person = personById(args.personId);
+  if (!person) throw new Error(`No person ${args.personId}`);
+  db().transaction(() => {
+    db()
+      .prepare("UPDATE people SET active = ?, updated_at = ? WHERE id = ?")
+      .run(args.active ? 1 : 0, now, args.personId);
+    db()
+      .prepare(
+        `INSERT INTO role_changes (person_id, slack_user_id, from_role, to_role,
+                                   source, detail, changed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        args.personId,
+        person.slack_user_id,
+        person.role,
+        person.role,
+        args.source,
+        JSON.stringify({
+          active: args.active,
+          actor: args.actor,
+          reason: args.reason,
+        }),
+        now
+      );
+  })();
+}
+
+/**
  * Creates a roster row for a Slack account that is in a user group but was
  * never imported. Email may be absent, so the row is keyed on the Slack id —
  * this is what stops a group member from silently resolving to "unknown".
@@ -324,13 +373,89 @@ export function revokeConsent(consentId: number, on: string): void {
     .run(on, consentId);
 }
 
+/* --------------------------------------------------------- group changes */
+
+export type GroupChangeInput = {
+  usergroupId: string;
+  handle: string;
+  action: "add" | "remove";
+  subject: string;
+  personId: number | null;
+  actor: string;
+  actorName: string;
+  reason: string | null;
+  source: string;
+};
+
+/**
+ * Records that somebody edited a user group.
+ *
+ * Separate from `role_changes` on purpose. That table is written by the
+ * user-group sync, which runs from a Slack event and cannot know a human was
+ * involved — by the time it fires, whoever ran the command is long gone. This
+ * one answers "who asked for this", and it is the only record of edits that
+ * change nobody's role at all, which most of them will be once subteams are
+ * managed here too.
+ */
+export function insertGroupChange(input: GroupChangeInput): void {
+  db()
+    .prepare(
+      `INSERT INTO group_changes (usergroup_id, handle, action, subject,
+                                  person_id, actor, actor_name, reason,
+                                  source, changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.usergroupId,
+      input.handle,
+      input.action,
+      input.subject,
+      input.personId,
+      input.actor,
+      input.actorName,
+      input.reason,
+      input.source,
+      nowIso()
+    );
+}
+
+export function listGroupChanges(limit = 100) {
+  return db()
+    .prepare(
+      `SELECT * FROM group_changes ORDER BY changed_at DESC, id DESC LIMIT ?`
+    )
+    .all(limit) as Array<{
+    id: number;
+    usergroup_id: string;
+    handle: string;
+    action: "add" | "remove";
+    subject: string;
+    person_id: number | null;
+    actor: string;
+    actor_name: string;
+    reason: string | null;
+    source: string;
+    changed_at: string;
+  }>;
+}
+
 /* ----------------------------------------------------------- installations */
+
+/**
+ * 'bot'   — one per workspace; posts alerts and reads membership.
+ * 'user'  — one per enrolled adult; their DM-reading token.
+ * 'admin' — one per administrator who authorized group editing. Separate from
+ *           'user' because Slack issues one token per authorization carrying
+ *           only that authorization's scopes, so sharing a row would mean the
+ *           second grant destroying the first.
+ */
+export type InstallationKind = "bot" | "user" | "admin";
 
 export type StoredInstallation = {
   teamId: string;
   enterpriseId: string | null;
   slackUserId: string;
-  kind: "bot" | "user";
+  kind: InstallationKind;
   payload: Record<string, unknown>;
   scopes: string | null;
   installedAt: string;
@@ -341,7 +466,7 @@ type InstallationRow = {
   team_id: string;
   enterprise_id: string | null;
   slack_user_id: string;
-  kind: "bot" | "user";
+  kind: InstallationKind;
   payload_enc: string;
   scopes: string | null;
   installed_at: string;
@@ -351,14 +476,46 @@ type InstallationRow = {
 /** Bot installations share one row per team; '-' keeps the UNIQUE index honest. */
 export const BOT_USER_KEY = "-";
 
+/**
+ * Scopes an enrolled adult's token must carry to be worth storing. Without
+ * these hawk-mod cannot read their DMs, which is the entire reason the row
+ * exists.
+ */
+const DM_SCOPES = ["im:history", "mpim:history"];
+
+/**
+ * Thrown rather than swallowed: a caller about to destroy DM monitoring should
+ * fail loudly at the authorization, not succeed and go quiet for a month.
+ */
+export class ScopeDowngradeError extends Error {}
+
 export function saveInstallation(args: {
   teamId: string;
   enterpriseId?: string | null;
   slackUserId: string;
-  kind: "bot" | "user";
+  kind: InstallationKind;
   payload: unknown;
   scopes?: string | null;
 }): void {
+  // Belt and braces on the one failure nobody would notice. A 'user' row is
+  // what makes an adult's DMs visible; overwriting it with a token that cannot
+  // read DMs would end their monitoring while /hawkmod status still counted
+  // them as enrolled — an absent alert, not a wrong one. The routing in
+  // installStore should mean this never fires; it exists because if the
+  // routing ever breaks, nothing else in the system would tell us.
+  if (args.kind === "user") {
+    const granted = (args.scopes ?? "").split(",").filter(Boolean);
+    const missing = DM_SCOPES.filter((s) => !granted.includes(s));
+    const existing = getInstallation(args.teamId, "user", args.slackUserId);
+    if (missing.length && existing && !existing.revokedAt) {
+      throw new ScopeDowngradeError(
+        `Refusing to replace ${args.slackUserId}'s enrolment token with one ` +
+          `missing ${missing.join(", ")}; that would silently end their DM ` +
+          `monitoring.`
+      );
+    }
+  }
+
   const now = nowIso();
   db()
     .prepare(
@@ -399,7 +556,7 @@ function hydrate(row: InstallationRow): StoredInstallation {
 
 export function getInstallation(
   teamId: string,
-  kind: "bot" | "user",
+  kind: InstallationKind,
   slackUserId: string
 ): StoredInstallation | undefined {
   const row = db()
@@ -432,7 +589,7 @@ export function listUserInstallations(
 
 export function markInstallationRevoked(
   teamId: string,
-  kind: "bot" | "user",
+  kind: InstallationKind,
   slackUserId: string
 ): void {
   db()
@@ -446,7 +603,7 @@ export function markInstallationRevoked(
 
 export function deleteInstallation(
   teamId: string,
-  kind: "bot" | "user",
+  kind: InstallationKind,
   slackUserId: string
 ): void {
   db()

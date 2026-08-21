@@ -45,7 +45,8 @@ code that carries it, and records which controls are deliberately manual.
 
 ## Architecture
 
-**Two token planes.** The bot token posts alerts and reads channel membership.
+**Two token planes, and a third narrow one.** The bot token posts alerts and
+reads channel membership.
 Each adult's _user_ token is what makes DMs visible at all — Slack exposes no
 other way below Enterprise Grid. `src/slack/installStore.ts` keeps one `bot` row
 per workspace and one `user` row per enrolled adult, and `fetchInstallation`
@@ -53,6 +54,18 @@ merges them so an event carries both; a bot-only context has any user token
 stripped so one adult's token never rides along to a request that did not ask
 for it. Tokens are encrypted at rest (`src/crypto.ts`); the DB file alone is not
 enough to read anyone's DMs.
+
+The third is an `admin` row: an administrator's token scoped to
+`usergroups:write` and nothing else, granted at `/slack/authorize-groups`. It
+exists because Slack accepts a _bot_ token for `usergroups.users.update` only
+when the workspace lets everyone edit user groups — which §6 forbids — so group
+edits go out as a named person. It is a separate row rather than extra scopes on
+that person's `user` row because Slack issues one token per authorization
+carrying only that authorization's scopes: sharing a row would mean an
+administrator who is also an enrolled mentor losing their DM token the moment
+they authorized group editing, with coverage still reading 100%.
+`saveInstallation` refuses a `user` write whose scopes lack `im:history` for
+exactly that reason. Never merge these two grants.
 
 **Students may not enroll.** `storeInstallation` throws on a student's user
 token, and the sweep revokes and deletes one that appears later (a person can be
@@ -88,12 +101,42 @@ policy that lands in a handler is policy nothing covers.
 in the sweep, because everything after it reads roles, and again on
 `subteam_*` events so an edit applies immediately rather than at 3am (the sync
 is idempotent, which is what makes the duplicate events harmless). The
-reconciliation in `domain/rules/rosterSync.ts` is pure and **add-only by
-design**: a person dropped from the students group stays a student, since the
-alternative is silently ending someone's monitoring. Only an explicit move into
-the adults group leaves `student`, and that raises `roster_drift`. Every change
-lands in `role_changes` — Slack's audit log API is Grid-only, so that table is
-the only trail. Do not make this bidirectional.
+reconciliation in `domain/rules/rosterSync.ts` is pure and **may only ever add
+monitoring, never subtract it**: a person dropped from the students group stays
+a student, since the alternative is silently ending someone's monitoring. Only
+an explicit move into the adults group leaves `student`, and that raises
+`roster_drift`. Every change lands in `role_changes` — Slack's audit log API is
+Grid-only, so that table is the only trail. Do not make this bidirectional.
+
+The invariant is about _direction_, not about writes, which is why `reactivate`
+belongs there: a deactivated person who reappears in a role group is monitored
+again immediately, for the same reason `create` needs nobody's approval. Ending
+monitoring is `/hawkmod deactivate`, which demands a person and a reason — the
+only operation in hawk-mod that makes it see less, and the only one no rule, job
+or sync can reach.
+
+**Group membership is declaration; the roster is monitoring.** `/hawkmod group
+add|remove` edits the Slack user group and nothing else. Removing someone from
+`@students` leaves them a student on the roster, and the command says so in its
+reply rather than letting the caller assume otherwise. `CONTEXT.md` keeps the
+two words apart; conflating them is how a graduated student ends up monitored
+forever, or a returning one ends up invisible.
+
+**Group edits go through a plan.** `domain/rules/groupMembership.ts` is pure and
+diffs intended membership against actual, because `usergroups.users.update`
+_replaces_ a group's whole member list — there is no add-one endpoint. So a bad
+input does not corrupt a group, it empties one. The plan carries its own refusal
+(over-large removals, emptying a group) so a caller cannot apply a bad one by
+forgetting to check a flag elsewhere. `slack/groupAdmin.ts` serializes writes and
+re-reads membership inside the lock. The single-user command is the degenerate
+case of the spreadsheet-driven sync this was built for — one planner, two
+callers. Editable groups are an allowlist (`MANAGED_USERGROUPS`), which is blast
+radius rather than authorization: every caller is already a Slack admin who could
+edit any group by hand.
+
+`group_changes` records who asked for an edit. `role_changes` cannot: it is
+written by the sync, which runs from a Slack event long after the human is gone,
+and most group edits will change no role at all once subteams are managed here.
 
 **Findings are the output, and have exactly one door each way.** `src/raise.ts`
 persists then alerts, and only alerts when the finding is new or has recurred.
@@ -221,7 +264,7 @@ Building locally on macOS can trip the "access data from other apps" prompt;
   detectable without message text; only investigation needs the text.
 - Non-students with no screening on file do not count toward the two-adult rule,
   whatever their role. Do not loosen `isScreenedAdult`.
-- **Every Slack entry point is gated on `mayAdministerWorkspace`**, and each one
+- **Every Slack entry point is gated on `administrator()`**, and each one
   checks for itself: the slash command (`commands.ts`), the alert buttons and
   their note modal (`actions.ts`), and the screening and consent submissions
   (`modals.ts`). There is no middleware doing this centrally — anyone who can

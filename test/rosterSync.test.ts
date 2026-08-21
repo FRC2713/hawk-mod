@@ -24,6 +24,11 @@ function person(slackId: string, role: Role): Person {
   };
 }
 
+/** Someone the roster remembers but no longer monitors. */
+function deactivated(p: Person): Person {
+  return { ...p, active: 0 };
+}
+
 function roster(...people: Person[]): Map<string, Person> {
   return new Map(people.map((p) => [p.slack_user_id!, p]));
 }
@@ -109,5 +114,86 @@ describe("user group reconciliation", () => {
     assert.deepEqual(decisions, [
       { kind: "conflict", slackId: "U9", personId: null },
     ]);
+  });
+
+  /**
+   * The mirror of the property above. Monitoring is sticky on the way out and
+   * automatic on the way back in: a deactivated student who is declared again
+   * is monitored again, without waiting for anyone to notice and approve it.
+   */
+  describe("returning after deactivation", () => {
+    it("resumes monitoring when a deactivated student is declared again", () => {
+      const p = deactivated(person("U1", "student"));
+      const decisions = reconcileRoles(roster(p), groups(["U1"], []));
+      assert.deepEqual(decisions, [
+        { kind: "reactivate", personId: p.id, slackId: "U1", role: "student" },
+      ]);
+    });
+
+    it("resumes monitoring for a deactivated adult too", () => {
+      const p = deactivated(person("U1", "adult"));
+      const decisions = reconcileRoles(roster(p), groups([], ["U1"]));
+      assert.deepEqual(decisions, [
+        { kind: "reactivate", personId: p.id, slackId: "U1", role: "adult" },
+      ]);
+    });
+
+    it("keeps a deactivated district observer's role while resuming them", () => {
+      const p = deactivated(person("U1", "district_observer"));
+      const decisions = reconcileRoles(roster(p), groups([], ["U1"]));
+      assert.deepEqual(decisions, [
+        {
+          kind: "reactivate",
+          personId: p.id,
+          slackId: "U1",
+          role: "district_observer",
+        },
+      ]);
+    });
+
+    it("reactivates and changes role in one decision", () => {
+      const p = deactivated(person("U1", "student"));
+      const decisions = reconcileRoles(roster(p), groups([], ["U1"]));
+      const d = decisions[0]!;
+      assert.equal(d.kind, "change");
+      if (d.kind !== "change") return;
+      assert.equal(d.to, "adult");
+      assert.equal(d.reactivates, true);
+      assert.equal(d.reducesProtection, true);
+    });
+
+    it("does not reactivate someone who is in no group", () => {
+      const p = deactivated(person("U1", "student"));
+      assert.deepEqual(reconcileRoles(roster(p), groups([], [])), []);
+    });
+
+    it("says nothing about an active person who is already right", () => {
+      const decisions = reconcileRoles(
+        roster(person("U1", "student")),
+        groups(["U1"], [])
+      );
+      assert.deepEqual(decisions, [{ kind: "unchanged", slackId: "U1" }]);
+    });
+
+    /**
+     * There is no decision that deactivates anybody. If one ever appears here,
+     * the sync has gained the power to end monitoring on its own.
+     */
+    it("never produces a decision that ends monitoring", () => {
+      const people = [
+        person("U1", "student"),
+        person("U2", "adult"),
+        deactivated(person("U3", "student")),
+        deactivated(person("U4", "adult")),
+      ];
+      const decisions = reconcileRoles(
+        roster(...people),
+        groups(["U1", "U3"], ["U2", "U4"])
+      );
+      for (const d of decisions) {
+        assert.notEqual(d.kind, "deactivate");
+        if (d.kind === "change") assert.notEqual(d.reactivates, undefined);
+      }
+    });
   });
 });

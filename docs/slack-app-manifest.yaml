@@ -22,7 +22,7 @@ features:
     - command: /hawkmod
       url: https://hawk-mod.example.org/slack/events
       description: Coverage, findings, and audits
-      usage_hint: status | findings | whois @user | resolve <id> <note>
+      usage_hint: status | findings | whois @user | group add @user @group
       should_escape: true
 
 oauth_config:
@@ -42,14 +42,28 @@ oauth_config:
       - users:read
       - users:read.email
       - usergroups:read
-    # Granted per adult, by that adult. This is the only way to see DMs
-    # without Enterprise Grid.
+    # Two separate per-person grants live in this one list, and Slack has no
+    # way to say so: an authorization asks for whichever subset it needs.
+    #
+    #   im:*/mpim:*  — enrolment. Granted per adult, by that adult, at
+    #                  /slack/install. The only way to see DMs without
+    #                  Enterprise Grid.
+    #   usergroups:write
+    #                — group editing. Granted per administrator at
+    #                  /slack/authorize-groups, and asked for on its own so
+    #                  nobody hands over their DMs to manage the roster. A bot
+    #                  token cannot do this while user group editing is
+    #                  restricted to Owners/Admins, which §6 requires it to be.
+    #
+    # Both must be listed here or the matching authorization link is rejected
+    # by Slack before anyone sees a consent screen.
     user:
       - im:read
       - im:history
       - mpim:read
       - mpim:history
       - users:read
+      - usergroups:write
 
 settings:
   interactivity:

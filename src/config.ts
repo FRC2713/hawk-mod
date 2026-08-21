@@ -15,6 +15,16 @@ const schema = z.object({
   // the roster is maintained purely by CSV import.
   STUDENT_USERGROUP: z.string().optional(),
   ADULT_USERGROUP: z.string().optional(),
+  // Further user group handles hawk-mod may edit, comma separated. The two
+  // role groups above are always editable; this widens the allowlist to
+  // subteams (@programming, @drive-team) without widening it to everything.
+  //
+  // The allowlist is not authorization — every caller is already a Workspace
+  // Owner or Admin who could edit any group in Slack's own UI. It is blast
+  // radius. `usergroups.users.update` replaces a group's entire membership, so
+  // a bad plan does not corrupt a group, it empties one, and this bounds how
+  // many groups a single bug can reach.
+  MANAGED_USERGROUPS: z.string().optional(),
   TZ: z.string().default("America/New_York"),
   SWEEP_CRON: z.string().default("0 3 * * *"),
   BACKFILL_CRON: z.string().default("15 * * * *"),
@@ -51,4 +61,18 @@ export function dataDir(): string {
 /** LOG_MODE without requiring the full Slack environment. */
 export function logMode(): "full" | "metadata" {
   return process.env.LOG_MODE === "metadata" ? "metadata" : "full";
+}
+
+/** Handles hawk-mod is permitted to edit, lowercased and without the `@`. */
+export function managedGroupHandles(): Set<string> {
+  const cfg = config();
+  const extra = (cfg.MANAGED_USERGROUPS ?? "")
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
+  return new Set(
+    [cfg.STUDENT_USERGROUP, cfg.ADULT_USERGROUP, ...extra]
+      .filter((h): h is string => Boolean(h))
+      .map((h) => h.replace(/^@/, "").toLowerCase())
+  );
 }

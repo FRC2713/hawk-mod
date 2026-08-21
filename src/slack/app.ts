@@ -1,4 +1,4 @@
-import { App } from "@slack/bolt";
+import { App, type InstallURLOptions } from "@slack/bolt";
 import { APP_NAME, BRAND, ICON_SVG } from "../brand.js";
 import { config } from "../config.js";
 import { healthHandler } from "../health.js";
@@ -7,7 +7,7 @@ import { registerActions } from "./actions.js";
 import { registerCommands } from "./commands.js";
 import { registerEvents } from "./events.js";
 import { registerViews } from "./modals.js";
-import { installationStore } from "./installStore.js";
+import { GROUP_ADMIN_METADATA, installationStore } from "./installStore.js";
 
 /** Read-only apart from posting alerts. hawk-mod never needs to act as a user. */
 export const BOT_SCOPES = [
@@ -41,8 +41,72 @@ export const USER_SCOPES = [
   "users:read",
 ];
 
+/**
+ * Scopes for the group-editing grant, and deliberately nothing else.
+ *
+ * Slack issues one token per authorization carrying only what that
+ * authorization asked for, so this list is exactly what an administrator hands
+ * over: permission to edit user groups. It asks for no DM access, because an
+ * administrator is not necessarily a monitored mentor and the two consents
+ * should never be bundled — enrolment is a deliberate, named act, and burying
+ * it inside "let me edit user groups" would be a trick.
+ */
+export const GROUP_ADMIN_USER_SCOPES = ["usergroups:write"];
+
 export function createApp(): App {
   const cfg = config();
+
+  /**
+   * Bolt builds an `InstallProvider` inside its receiver but does not put
+   * either on `App`'s public type, so reaching the URL generator needs this
+   * shape. `receiver` is private, hence the double assertion; keeping the
+   * target structural rather than `any` still means a Bolt upgrade that changes
+   * `generateInstallUrl` breaks here at compile time rather than at an
+   * administrator's first click.
+   */
+  type WithInstaller = {
+    receiver?: {
+      installer?: {
+        generateInstallUrl(options: InstallURLOptions): Promise<string>;
+      };
+    };
+  };
+
+  // Assigned immediately after construction; the route handler below only runs
+  // once a request arrives, long after that.
+  let self: App;
+
+  /**
+   * Sends an administrator to Slack to grant group-editing permission.
+   *
+   * A second authorization route rather than a wider `/slack/install`, because
+   * the two grants must land in different rows. `metadata` is what tells the
+   * callback which one came back.
+   */
+  const authorizeGroups = async (
+    _req: import("http").IncomingMessage,
+    res: import("http").ServerResponse
+  ): Promise<void> => {
+    try {
+      const installer = (self as unknown as WithInstaller).receiver?.installer;
+      if (!installer) throw new Error("no install provider on the receiver");
+      const url = await installer.generateInstallUrl({
+        // No bot scopes: this authorization adds a permission to one person's
+        // token and must not re-grant or alter the workspace installation.
+        scopes: [],
+        userScopes: GROUP_ADMIN_USER_SCOPES,
+        metadata: GROUP_ADMIN_METADATA,
+      });
+      res.writeHead(302, { location: url });
+      res.end();
+    } catch (err) {
+      log.error("could not build group authorization url", {
+        error: String(err),
+      });
+      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Could not start authorization. Tell a coach.");
+    }
+  };
 
   const app = new App({
     signingSecret: cfg.SLACK_SIGNING_SECRET,
@@ -53,6 +117,11 @@ export function createApp(): App {
     installationStore,
     customRoutes: [
       { path: "/health", method: ["GET"], handler: healthHandler },
+      {
+        path: "/slack/authorize-groups",
+        method: ["GET"],
+        handler: authorizeGroups,
+      },
     ],
     redirectUri: `${cfg.PUBLIC_URL}/slack/oauth_redirect`,
     installerOptions: {
@@ -61,10 +130,27 @@ export function createApp(): App {
       installPath: "/slack/install",
       directInstall: true,
       callbackOptions: {
-        success: (_installation, _options, _req, res) => {
+        success: (installation, _options, _req, res) => {
+          const groupAdmin = installation.metadata === GROUP_ADMIN_METADATA;
           res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
           res.end(
-            `<!doctype html><meta charset="utf-8">
+            groupAdmin
+              ? `<!doctype html><meta charset="utf-8">
+             <meta name="viewport" content="width=device-width,initial-scale=1">
+             <title>${APP_NAME}</title>
+             <div style="font:16px/1.6 system-ui,sans-serif;color:#1f2023;max-width:34rem;margin:4rem auto;padding:0 1.25rem">
+               ${ICON_SVG}
+               <h1 style="font-size:1.6rem;margin:1.25rem 0 .25rem">You can manage user groups.</h1>
+               <p style="margin:0 0 1.5rem;color:${BRAND.red};font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:.8rem">${APP_NAME}</p>
+               <p>${APP_NAME} can now edit Slack user groups on your behalf when
+               you run <code>/hawkmod group</code>. Changes will show in Slack as
+               made by you, which is the point &mdash; every roster change has a
+               name against it.</p>
+               <p>This grants no access to your messages. If you are also an
+               enrolled mentor, that is a separate permission and this has not
+               touched it.</p>
+             </div>`
+              : `<!doctype html><meta charset="utf-8">
              <meta name="viewport" content="width=device-width,initial-scale=1">
              <title>${APP_NAME}</title>
              <div style="font:16px/1.6 system-ui,sans-serif;color:#1f2023;max-width:34rem;margin:4rem auto;padding:0 1.25rem">
@@ -88,6 +174,8 @@ export function createApp(): App {
       },
     },
   });
+
+  self = app;
 
   registerEvents(app);
   registerCommands(app);

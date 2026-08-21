@@ -28,16 +28,30 @@ function teamKey(
   return id;
 }
 
+/** Marks an authorization that came from the group-editing flow. */
+export const GROUP_ADMIN_METADATA = "group-admin";
+
 /**
- * Two kinds of row live here:
+ * Three kinds of row live here:
  *
- *   'bot'  — one per workspace, installed once by a workspace admin. Posts alerts.
- *   'user' — one per enrolled adult, holding that adult's user token. This is
- *            what lets hawk-mod see DMs at all; Slack exposes no other way to
- *            read them below Enterprise Grid.
+ *   'bot'   — one per workspace, installed once by a workspace admin. Posts alerts.
+ *   'user'  — one per enrolled adult, holding that adult's user token. This is
+ *             what lets hawk-mod see DMs at all; Slack exposes no other way to
+ *             read them below Enterprise Grid.
+ *   'admin' — one per administrator who authorized group editing, holding a
+ *             token scoped to `usergroups:write` and nothing else.
  *
- * A fetch merges the two so a single event can carry both a bot token (to reply)
- * and the observing adult's user token (to read the conversation).
+ * A fetch merges bot and user so a single event can carry both a bot token (to
+ * reply) and the observing adult's user token (to read the conversation).
+ * 'admin' rows are deliberately *not* part of that merge: they are fetched by
+ * name, by the one code path that edits groups, and never ride along on
+ * anything else.
+ *
+ * The reason 'admin' is a separate row rather than extra scopes on 'user' is
+ * that Slack issues one token per authorization carrying only the scopes
+ * granted at that moment. An administrator who is also an enrolled mentor would
+ * otherwise have their DM token overwritten the first time they authorized
+ * group editing, ending their monitoring while coverage still read 100%.
  */
 export const installationStore: InstallationStore = {
   async storeInstallation(installation) {
@@ -56,6 +70,25 @@ export const installationStore: InstallationStore = {
     }
 
     if (installation.user?.token) {
+      // The group-editing grant is a different consent for a different purpose
+      // and gets its own row. Critically it must not fall through to the
+      // enrolment branch below, which would overwrite a mentor's DM token.
+      if (installation.metadata === GROUP_ADMIN_METADATA) {
+        saveInstallation({
+          teamId,
+          enterpriseId,
+          slackUserId: installation.user.id,
+          kind: "admin",
+          payload: installation,
+          scopes: (installation.user.scopes ?? []).join(","),
+        });
+        log.info("administrator authorized group editing", {
+          user: installation.user.id,
+          teamId,
+        });
+        return;
+      }
+
       // Enrolling grants hawk-mod that account's DM history. For a student
       // that would expose student-to-student conversations, which are
       // deliberately never recorded — so the enrolment is refused outright

@@ -11,7 +11,9 @@ import {
   listFindings,
   listPeople,
   personByEmail,
+  personById,
   personBySlackId,
+  setPersonActive,
 } from "../db/repo.js";
 import { today } from "../domain/dates.js";
 import { severityEmoji } from "../domain/findings.js";
@@ -20,7 +22,8 @@ import { consentStatus } from "../domain/rules/consent.js";
 import { screeningStatus } from "../domain/rules/screening.js";
 import { log } from "../logger.js";
 import { backfillAll } from "../monitor/backfill.js";
-import { administrator, NOT_PERMITTED } from "./authz.js";
+import { administrator, type Actor, NOT_PERMITTED } from "./authz.js";
+import { applyGroupEdit } from "./groupAdmin.js";
 import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
 import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
@@ -31,6 +34,9 @@ const HELP = [
   "`/hawkmod enroll` — link for a adult to authorize monitoring",
   "`/hawkmod findings [kind]` — open findings",
   "`/hawkmod whois @user` — role, consent, screening, enrollment",
+  "`/hawkmod group add @user @group` — put someone in a user group",
+  "`/hawkmod group remove @user @group` — take someone out of a user group",
+  "`/hawkmod deactivate @user <reason>` — stop monitoring someone",
   "`/hawkmod screening @user` — record YPP / Mentor Ready / CORI dates",
   "`/hawkmod consent @user` — record a signed parental consent",
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
@@ -141,6 +147,22 @@ export function registerCommands(app: App): void {
           await respond({
             response_type: "ephemeral",
             text: `Finding #${id} ${sub === "ack" ? "acknowledged" : "resolved"}.`,
+          });
+          return;
+        }
+
+        case "group": {
+          await respond({
+            response_type: "ephemeral",
+            text: await groupText(client, teamId, caller, rest),
+          });
+          return;
+        }
+
+        case "deactivate": {
+          await respond({
+            response_type: "ephemeral",
+            text: await deactivateText(client, caller, rest),
           });
           return;
         }
@@ -317,5 +339,153 @@ async function whoisText(
     );
   }
 
+  return lines.join("\n");
+}
+
+/**
+ * Pulls the group out of a mention. With link escaping on, Slack sends a user
+ * group as `<!subteam^S123|students>`; with it off, the raw `@students`. Both
+ * reach `resolveGroup`, which accepts an id or a handle.
+ */
+function groupRef(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const escaped = trimmed.match(/^<!subteam\^([A-Z0-9]+)/i)?.[1];
+  if (escaped) return escaped.toUpperCase();
+  return trimmed.replace(/^@/, "");
+}
+
+/**
+ * `/hawkmod group add|remove @user @group`.
+ *
+ * Moving a student into the adults group requires a written reason. Refusing it
+ * outright would be worse than allowing it: the action would simply happen in
+ * Slack's own UI instead, where hawk-mod learns of it from an event carrying no
+ * reason and no author. Requiring a sentence keeps the most consequential edit
+ * on the path that records the most about it — and no one fat-fingers a
+ * sentence, so it also kills the typo case.
+ */
+async function groupText(
+  client: WebClient,
+  teamId: string,
+  caller: Actor,
+  rest: string[]
+): Promise<string> {
+  const [action, mention, group, ...reasonWords] = rest;
+  if (action !== "add" && action !== "remove") {
+    return "Usage: `/hawkmod group add|remove @user @group`.";
+  }
+  const ref = groupRef(group ?? "");
+  if (!mention || !ref) {
+    return `Usage: \`/hawkmod group ${action} @user @group\`.`;
+  }
+
+  const person = await resolvePerson(client, mention);
+  if (!person) {
+    return (
+      `Couldn't find \`${mention}\` on the roster. hawk-mod only edits groups ` +
+      `for people it already knows, so the edit is never the first thing it ` +
+      `learns about someone.`
+    );
+  }
+
+  const reason = reasonWords.join(" ").trim();
+
+  const outcome = await applyGroupEdit({
+    teamId,
+    actor: caller,
+    groupRef: ref,
+    action,
+    subject: person,
+    reason: reason || null,
+    source: "command",
+  });
+
+  if (!outcome.ok) {
+    // The group's handle is only known once it has been resolved, so the
+    // needs-a-reason refusal comes back from there and is dressed up here,
+    // where the caller's own words are still to hand.
+    if ("needsReason" in outcome) {
+      return (
+        `*${person.full_name}* is a student. ${outcome.reason}\n` +
+        `\`/hawkmod group add ${mention} ${group} <why>\``
+      );
+    }
+    return outcome.reason;
+  }
+  if (outcome.noop) {
+    return `*${person.full_name}* was already ${
+      action === "add" ? "in" : "out of"
+    } @${outcome.handle}. Nothing changed.`;
+  }
+
+  const lines = [
+    `${action === "add" ? "Added" : "Removed"} *${person.full_name}* ` +
+      `${action === "add" ? "to" : "from"} @${outcome.handle}.`,
+  ];
+
+  // The honest half. Group membership declares a role; it does not end
+  // monitoring, and saying otherwise here would be the quiet failure this
+  // project exists to avoid.
+  if (action === "remove") {
+    lines.push(
+      `_${person.full_name} is still a ${person.role} on the roster and still ` +
+        `monitored. Leaving a group never ends monitoring — use ` +
+        `\`/hawkmod deactivate\` for that._`
+    );
+  }
+  if (outcome.reducedMonitoring) {
+    lines.push(
+      `_${person.full_name} is no longer monitored as a student. Recorded ` +
+        `against your name: ${reason}_`
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * `/hawkmod deactivate @user <reason>` — the only thing here that makes hawk-mod
+ * see less, which is why it names a person and demands a reason in the same
+ * breath, exactly as `ack` and `resolve` do.
+ */
+async function deactivateText(
+  client: WebClient,
+  caller: Actor,
+  rest: string[]
+): Promise<string> {
+  const [mention, ...reasonWords] = rest;
+  const reason = reasonWords.join(" ").trim();
+  if (!mention || !reason) {
+    return (
+      "Usage: `/hawkmod deactivate @user <reason>` — the reason is required.\n" +
+      "This is the one command that stops hawk-mod watching somebody."
+    );
+  }
+
+  const person = await resolvePerson(client, mention);
+  if (!person) return `No roster entry for \`${mention}\`.`;
+  if (person.active !== 1) {
+    return `*${person.full_name}* is already deactivated.`;
+  }
+
+  setPersonActive({
+    personId: person.id,
+    active: false,
+    source: "command",
+    actor: caller.name,
+    reason,
+  });
+
+  const after = personById(person.id);
+  const lines = [
+    `*${person.full_name}* is no longer monitored. Recorded against your name, ` +
+      `with the reason you gave.`,
+  ];
+  if (after?.role === "student") {
+    lines.push(
+      `_This was a student. Their recorded messages are kept; nothing new will ` +
+        `be recorded. Adding them back to a role user group resumes monitoring._`
+    );
+  }
   return lines.join("\n");
 }
