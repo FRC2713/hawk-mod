@@ -294,6 +294,43 @@ async function resolvePerson(
   return undefined;
 }
 
+/**
+ * Resolves a Slack account, roster row or not.
+ *
+ * `resolvePerson` answers "who is this on the roster", which is the right
+ * question almost everywhere and the wrong one for group edits: joining a role
+ * user group is *how* somebody gets a roster row, so demanding one first is a
+ * deadlock. This answers the smaller question — which Slack account did they
+ * mean — so the edit can proceed and the sync can create the row from it.
+ */
+async function resolveSlackId(
+  client: WebClient,
+  mention: string
+): Promise<string | undefined> {
+  const raw = mention.trim();
+  if (!raw) return undefined;
+
+  const escaped = raw.match(/^<@([A-Z0-9]+)/i)?.[1];
+  if (escaped) return escaped.toUpperCase();
+  if (/^U[A-Z0-9]{4,}$/i.test(raw)) return raw.toUpperCase();
+
+  const wanted = raw.replace(/^@/, "").toLowerCase();
+  try {
+    const list = await client.users.list({ limit: 500 });
+    const match = (list.members ?? []).find(
+      (m) =>
+        !m.deleted &&
+        !m.is_bot &&
+        [m.name, m.profile?.display_name, m.profile?.real_name]
+          .filter(Boolean)
+          .some((n) => (n as string).toLowerCase() === wanted)
+    );
+    return match?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 async function whoisText(
   client: WebClient,
   teamId: string,
@@ -380,14 +417,21 @@ async function groupText(
     return `Usage: \`/hawkmod group ${action} @user @group\`.`;
   }
 
+  // A roster row is not a precondition here, and requiring one was a deadlock:
+  // the sync only creates rows for people already in a role group, so the
+  // command meant to put somebody in their first group refused everybody who
+  // needed it. Slack's account is enough — `subteam_members_changed` fires on
+  // the write and the sync creates the roster row moments later.
   const person = await resolvePerson(client, mention);
-  if (!person) {
+  const slackId =
+    person?.slack_user_id ?? (await resolveSlackId(client, mention));
+  if (!slackId) {
     return (
-      `Couldn't find \`${mention}\` on the roster. hawk-mod only edits groups ` +
-      `for people it already knows, so the edit is never the first thing it ` +
-      `learns about someone.`
+      `Couldn't work out who \`${mention}\` is. Mention them with @ so Slack ` +
+      `sends their account, or paste their Slack member ID.`
     );
   }
+  const who = person?.full_name ?? `<@${slackId}>`;
 
   const reason = reasonWords.join(" ").trim();
 
@@ -396,7 +440,7 @@ async function groupText(
     actor: caller,
     groupRef: ref,
     action,
-    subject: person,
+    subject: person ?? { slackUserId: slackId },
     reason: reason || null,
     source: "command",
   });
@@ -407,27 +451,36 @@ async function groupText(
     // where the caller's own words are still to hand.
     if ("needsReason" in outcome) {
       return (
-        `*${person.full_name}* is a student. ${outcome.reason}\n` +
+        `*${who}* is a student. ${outcome.reason}\n` +
         `\`/hawkmod group add ${mention} ${group} <why>\``
       );
     }
     return outcome.reason;
   }
   if (outcome.noop) {
-    return `*${person.full_name}* was already ${
+    return `*${who}* was already ${
       action === "add" ? "in" : "out of"
     } @${outcome.handle}. Nothing changed.`;
   }
 
   const lines = [
-    `${action === "add" ? "Added" : "Removed"} *${person.full_name}* ` +
+    `${action === "add" ? "Added" : "Removed"} *${who}* ` +
       `${action === "add" ? "to" : "from"} @${outcome.handle}.`,
   ];
+
+  // Says out loud that the roster is about to catch up, so a caller who runs
+  // `whois` a second later and sees nothing knows to wait rather than to worry.
+  if (!person && action === "add") {
+    lines.push(
+      `_hawk-mod had no roster entry for them. The user group sync creates one ` +
+        `within a few seconds; \`/hawkmod whois\` will show it._`
+    );
+  }
 
   // The honest half. Group membership declares a role; it does not end
   // monitoring, and saying otherwise here would be the quiet failure this
   // project exists to avoid.
-  if (action === "remove") {
+  if (action === "remove" && person) {
     lines.push(
       `_${person.full_name} is still a ${person.role} on the roster and still ` +
         `monitored. Leaving a group never ends monitoring — use ` +
@@ -436,7 +489,7 @@ async function groupText(
   }
   if (outcome.reducedMonitoring) {
     lines.push(
-      `_${person.full_name} is no longer monitored as a student. Recorded ` +
+      `_${who} is no longer monitored as a student. Recorded ` +
         `against your name: ${reason}_`
     );
   }
