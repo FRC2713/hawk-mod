@@ -24,6 +24,7 @@ import { screeningStatus } from "../domain/rules/screening.js";
 import { log } from "../logger.js";
 import {
   isSettingKey,
+  parseHandles,
   SETTING_KEYS,
   SETTINGS,
   setting,
@@ -583,7 +584,7 @@ async function configText(
 ): Promise<string> {
   const [verb, key, ...valueWords] = rest;
 
-  if (!verb) return configListing();
+  if (!verb) return configListing(client);
 
   if (verb !== "set") {
     return (
@@ -615,11 +616,14 @@ async function configText(
     actorName: caller.name,
   });
 
+  const now = await describeValue(client, key, cleaned.value);
+  const was = before.value
+    ? await describeValue(client, key, before.value)
+    : null;
+
   const lines = [
-    `*${SETTINGS[key].label}* is now \`${cleaned.value}\`` +
-      (before.value
-        ? ` (was \`${before.value}\`, from ${before.source})`
-        : "") +
+    `*${SETTINGS[key].label}* is now ${now}` +
+      (was ? ` (was ${was}, from ${before.source})` : "") +
       ".",
   ];
 
@@ -636,17 +640,49 @@ async function configText(
   return lines.join("\n");
 }
 
-function configListing(): string {
-  const rows = SETTING_KEYS.map((key) => {
-    const { value, source } = setting(key);
-    const where =
-      source === "slack"
-        ? "set here"
-        : source === "env"
-          ? `from ${SETTINGS[key].env}`
-          : "*not set*";
-    return `• \`${key}\` — ${value ?? "—"}  _(${where})_`;
-  });
+/**
+ * Renders a stored value the way a person wrote it.
+ *
+ * Channels are stored by id, deliberately — an id survives the channel being
+ * renamed, and a stored `#name` would quietly stop resolving the day somebody
+ * tidied it up. But `C0BPAV78LKZ` tells a reader nothing, so the id is what is
+ * kept and the name is what is shown. Falls back to the raw value if Slack
+ * cannot be asked: a settings listing that throws is worse than one that is
+ * briefly ugly.
+ */
+async function describeValue(
+  client: WebClient,
+  key: SettingKey,
+  value: string
+): Promise<string> {
+  if (SETTINGS[key].kind === "channel") {
+    try {
+      const info = await client.conversations.info({ channel: value });
+      return info.channel?.name ? `#${info.channel.name}` : `\`${value}\``;
+    } catch {
+      return `\`${value}\``;
+    }
+  }
+  const handles = parseHandles(value);
+  return handles.length
+    ? handles.map((h) => `@${h}`).join(", ")
+    : `\`${value}\``;
+}
+
+async function configListing(client: WebClient): Promise<string> {
+  const rows = await Promise.all(
+    SETTING_KEYS.map(async (key) => {
+      const { value, source } = setting(key);
+      const where =
+        source === "slack"
+          ? "set here"
+          : source === "env"
+            ? `from ${SETTINGS[key].env}`
+            : "*not set*";
+      const shown = value ? await describeValue(client, key, value) : "—";
+      return `• \`${key}\` — ${shown}  _(${where})_`;
+    })
+  );
 
   const unset = SETTING_KEYS.filter((k) => setting(k).source === "unset");
 
