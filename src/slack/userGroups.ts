@@ -8,16 +8,37 @@ export type ResolvedGroup = {
   members: Set<string>;
 };
 
-/** Slack ids for user groups are `S` followed by uppercase alphanumerics. */
-const GROUP_ID = /^S[A-Z0-9]{4,}$/;
-
-export function isGroupId(ref: string): boolean {
-  return GROUP_ID.test(ref.toUpperCase());
+/**
+ * Whether a group is the one being asked for, by handle or by id.
+ *
+ * Matches on *either*, deliberately, rather than deciding up front which kind
+ * of reference it was handed. A previous version guessed with a pattern for
+ * Slack ids — `S` followed by alphanumerics — and `students` matches it:
+ * uppercased it is `STUDENTS`, which is an `S` and seven more characters. So
+ * the most important handle in this entire project was read as an opaque id,
+ * matched against nothing, and reported as a group that does not exist. The
+ * role sync said the same thing, which meant no student was being rostered at
+ * all.
+ *
+ * Handles and ids cannot realistically collide — a handle would have to be
+ * spelled exactly like some other group's id — so there is nothing to gain by
+ * telling them apart, and this cannot be wrong in the way guessing was.
+ */
+export function matchesGroup(
+  group: { id?: string; handle?: string },
+  ref: string
+): boolean {
+  const raw = ref.trim().replace(/^@/, "");
+  if (!raw) return false;
+  return (
+    (group.handle ?? "").toLowerCase() === raw.toLowerCase() ||
+    (group.id ?? "") === raw.toUpperCase()
+  );
 }
 
 /**
  * Resolves a user group by its @handle or its id. Handles are what people
- * actually type and see, so they are what the config names; ids are opaque —
+ * actually type and see, so they are what the settings name; ids are opaque —
  * but an id is what Slack sends when a slash command has link escaping on and
  * somebody types `@students`, which arrives as `<!subteam^S123|students>`.
  *
@@ -28,15 +49,16 @@ export async function resolveGroup(
   client: WebClient,
   ref: string
 ): Promise<ResolvedGroup | null> {
-  const raw = ref.replace(/^@/, "");
-  const wanted = raw.toLowerCase();
-  const byId = isGroupId(raw) ? raw.toUpperCase() : null;
+  const wanted = ref.trim().replace(/^@/, "");
   const list = await client.usergroups.list({ include_disabled: false });
-  const group = (list.usergroups ?? []).find((g) =>
-    byId ? g.id === byId : (g.handle ?? "").toLowerCase() === wanted
-  );
+  const group = (list.usergroups ?? []).find((g) => matchesGroup(g, wanted));
   if (!group?.id) {
-    log.warn("user group not found", { ref });
+    // Naming what does exist turns "it says my group is missing" into a
+    // one-glance answer, which is how this bug should have been found.
+    log.warn("user group not found", {
+      ref,
+      available: (list.usergroups ?? []).map((g) => g.handle).filter(Boolean),
+    });
     return null;
   }
 
@@ -105,4 +127,13 @@ export async function setGroupMembership(
     usergroup: usergroupId,
     users: userIds.join(","),
   });
+}
+
+/** Every user group handle in the workspace, for "did you mean" messages. */
+export async function listGroupHandles(client: WebClient): Promise<string[]> {
+  const list = await client.usergroups.list({ include_disabled: false });
+  return (list.usergroups ?? [])
+    .map((g) => g.handle)
+    .filter((h): h is string => Boolean(h))
+    .sort();
 }
