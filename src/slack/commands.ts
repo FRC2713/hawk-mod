@@ -46,7 +46,7 @@ const HELP = [
   "`/hawkmod backfill` — walk enrolled adults' DM history now",
   "",
   "_Roles come from Slack user groups. To add someone to the roster, add them",
-  "to the students or adults group — it applies straight away._",
+  "to the @students or @mentors group — it applies straight away._",
 ].join("\n");
 
 export function registerCommands(app: App): void {
@@ -101,7 +101,7 @@ export function registerCommands(app: App): void {
                 `Couldn't find \`${rest.join(" ") || "(nobody)"}\` on the roster.\n` +
                 `Usage: \`/hawkmod ${sub} @user\`. Roster membership comes from ` +
                 `the user groups, so add them to @${config().STUDENT_USERGROUP ?? "students"} ` +
-                `or @${config().ADULT_USERGROUP ?? "adults"} first.`,
+                `or @${config().ADULT_USERGROUP ?? "mentors"} first.`,
             });
             return;
           }
@@ -395,7 +395,7 @@ function groupRef(raw: string): string | null {
 /**
  * `/hawkmod group add|remove @user @group`.
  *
- * Moving a student into the adults group requires a written reason. Refusing it
+ * Moving a student into the mentors group requires a written reason. Refusing it
  * outright would be worse than allowing it: the action would simply happen in
  * Slack's own UI instead, where hawk-mod learns of it from an event carrying no
  * reason and no author. Requiring a sentence keeps the most consequential edit

@@ -104,7 +104,7 @@ is idempotent, which is what makes the duplicate events harmless). The
 reconciliation in `domain/rules/rosterSync.ts` is pure and **may only ever add
 monitoring, never subtract it**: a person dropped from the students group stays
 a student, since the alternative is silently ending someone's monitoring. Only
-an explicit move into the adults group leaves `student`, and that raises
+an explicit move into the mentors group leaves `student`, and that raises
 `roster_drift`. Every change lands in `role_changes` — Slack's audit log API is
 Grid-only, so that table is the only trail. Do not make this bidirectional.
 

@@ -38,7 +38,7 @@ _Avoid_: Lead coach, admin role, superuser
 These two are the distinction most easily lost, and the one that matters most.
 
 **Declared**:
-Present in the Slack user group that names a role — `@students` or `@adults`.
+Present in the Slack user group that names a role — `@students` or `@mentors`.
 Cheap, reversible, and edited by hand in Slack or through hawk-mod. A
 declaration is a statement of intent, not a fact about monitoring.
 _Avoid_: Enrolled, rostered, assigned

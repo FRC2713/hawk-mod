@@ -3,7 +3,7 @@ import { type Person, type Role } from "../people.js";
 export type GroupMembership = {
   /** Slack ids in the group designating students. */
   students: ReadonlySet<string>;
-  /** Slack ids in the group designating adults/adults. */
+  /** Slack ids in the group designating adults — @mentors, in this team. */
   adults: ReadonlySet<string>;
 };
 
