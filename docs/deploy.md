@@ -96,6 +96,18 @@ before setup — running and waiting.
 4. Send every adult the same install URL, and watch `/hawkmod status` until
    coverage reads N/N.
 
+## Web pages
+
+The root URL serves a landing page — what a person who types the domain into a
+browser should see — with the enrollment link and a link to `/config`, a
+configuration page equivalent to `/hawkmod config`. It uses Sign in with Slack
+(OpenID Connect, identity only — no scopes, no stored token) and then applies
+the same rule as every other entry point: workspace Owners and Admins only.
+Both redirect URLs in the manifest must be registered or the matching flow
+fails at Slack before anyone sees a consent screen:
+`/slack/oauth_redirect` for installs and enrollment, `/auth/slack/callback`
+for sign-in.
+
 ## Upgrades
 
 Migrations are applied on boot, so an upgrade is:

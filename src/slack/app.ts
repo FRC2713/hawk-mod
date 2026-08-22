@@ -8,6 +8,7 @@ import { registerCommands } from "./commands.js";
 import { registerEvents } from "./events.js";
 import { registerViews } from "./modals.js";
 import { GROUP_ADMIN_METADATA, installationStore } from "./installStore.js";
+import { webRoutes } from "../web/routes.js";
 
 /** Read-only apart from posting alerts. hawk-mod never needs to act as a user. */
 export const BOT_SCOPES = [
@@ -122,6 +123,9 @@ export function createApp(): App {
         method: ["GET"],
         handler: authorizeGroups,
       },
+      // The landing page and the Sign in with Slack–gated configuration page —
+      // what mod.redhawkrobotics.org serves to a browser.
+      ...webRoutes,
     ],
     redirectUri: `${cfg.PUBLIC_URL}/slack/oauth_redirect`,
     installerOptions: {
