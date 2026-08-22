@@ -227,6 +227,20 @@ Activity after the fact is the only thing that separates a genuine remedy from a
 old thread being used to launder a fresh violation. Acknowledged, not resolved:
 the 1:1 still happened.
 
+**The browser gets two pages, and the second is the same door as Slack.**
+`src/web/` serves a landing page at `/` and a configuration page at `/config`
+(this is what mod.redhawkrobotics.org shows). `/config` signs people in with
+Slack — OpenID Connect against the same app, identity only, no stored token —
+and then asks `administrator()` exactly as the slash command does, on every
+request, so the cookie only says _who_ and losing Slack admin locks the page
+within a minute. Writes go through `slack/settingsAdmin.ts`, the one
+implementation of setting validation shared with `/hawkmod config set`; keep it
+that way, or a value one door refuses becomes reachable through the other. The
+session cookie and OAuth state are stateless HMAC tokens (`web/session.ts`,
+signed with `SLACK_STATE_SECRET`, purpose-bound so one kind can never replay as
+the other). Every string a page interpolates goes through `esc()` — setting
+values and display names are whatever their owner typed.
+
 **Two paths reach the same log.** Events (`src/slack/events.ts`) give real-time
 capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each adult's
 DM list to catch history predating enrollment and anything missed while the
