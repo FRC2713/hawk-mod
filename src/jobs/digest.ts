@@ -1,24 +1,103 @@
 import { APP_NAME } from "../brand.js";
 import { listFindings, listPeople, lastAuditRun } from "../db/repo.js";
+import type { Finding, Severity } from "../domain/findings.js";
 import { severityEmoji } from "../domain/findings.js";
 import { requiresEnrollment } from "../domain/people.js";
 import { postToAlertChannel } from "../slack/alerts.js";
+
+const DIGEST_CAP = 20;
+
+const SEVERITY_ORDER: { severity: Severity; label: string }[] = [
+  { severity: "violation", label: "Violations" },
+  { severity: "warn", label: "Warnings" },
+  { severity: "info", label: "Notices" },
+];
+
+/** Slack caps a section at 3000 characters; chunking keeps long summaries safe. */
+function lineSections(lines: string[]): unknown[] {
+  const sections: unknown[] = [];
+  for (let i = 0; i < lines.length; i += 8) {
+    sections.push({
+      type: "section",
+      text: { type: "mrkdwn", text: lines.slice(i, i + 8).join("\n") },
+    });
+  }
+  return sections;
+}
+
+/**
+ * The digest names findings, never message content — same rule as the alerts
+ * it summarizes. Grouped by severity so the reader triages top-down, and each
+ * line stays short: the finding's own alert in this channel carries the kind,
+ * the buttons, and the detail.
+ */
+export function digestBlocks(open: Finding[]): unknown[] {
+  const blocks: unknown[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `Morning report — ${open.length} open finding${open.length === 1 ? "" : "s"}`,
+        emoji: true,
+      },
+    },
+  ];
+
+  let shown = 0;
+  for (const { severity, label } of SEVERITY_ORDER) {
+    const group = open.filter((f) => f.severity === severity);
+    if (group.length === 0) continue;
+    const room = Math.max(0, DIGEST_CAP - shown);
+    const lines = group.slice(0, room).map((f) => `• *#${f.id}* ${f.summary}`);
+    shown += lines.length;
+    if (lines.length === 0) continue;
+    blocks.push(
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${severityEmoji(severity)} *${label}* — ${group.length}`,
+        },
+      },
+      ...lineSections(lines)
+    );
+  }
+
+  if (open.length > shown) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `…and ${open.length - shown} more — \`/hawkmod findings\` has the full list.`,
+      },
+    });
+  }
+
+  blocks.push(
+    { type: "divider" },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text:
+            "Resolve or acknowledge on each finding's own alert in this " +
+            "channel · `/hawkmod status` for coverage",
+        },
+      ],
+    }
+  );
+  return blocks;
+}
 
 /** One message a day, only when there is something open. Silence means clean. */
 export async function postDigest(): Promise<void> {
   const open = listFindings("open");
   if (open.length === 0) return;
 
-  const lines = open
-    .slice(0, 20)
-    .map(
-      (f) =>
-        `${severityEmoji(f.severity)} *#${f.id}* \`${f.kind}\` — ${f.summary}`
-    );
-  const extra = open.length > 20 ? `\n…and ${open.length - 20} more.` : "";
-
   await postToAlertChannel(
-    `*${APP_NAME}: ${open.length} open finding(s)*\n${lines.join("\n")}${extra}`
+    `${APP_NAME}: ${open.length} open finding(s)`,
+    digestBlocks(open)
   );
 }
 
@@ -29,19 +108,46 @@ export async function postDigest(): Promise<void> {
  */
 export async function postQuarterlyReminder(): Promise<void> {
   const people = listPeople(true);
-  const adults = people.filter(requiresEnrollment);
+  const students = people.filter((p) => p.role === "student").length;
+  const adults = people.filter(requiresEnrollment).length;
+  const open = listFindings("open").length;
   const last = lastAuditRun("quarterly");
 
-  await postToAlertChannel(
-    [
-      "*Quarterly youth-protection audit is due.*",
-      `Roster: ${people.filter((p) => p.role === "student").length} students, ${adults.length} adults expected to be enrolled.`,
-      last?.signed_off_at
-        ? `Last sign-off: ${last.signed_off_at.slice(0, 10)}.`
-        : "No previous audit has been signed off.",
-      "",
-      "Runbook: `docs/runbooks/quarterly-audit.md`.",
-      "Start with `/hawkmod status`, then work the open findings.",
-    ].join("\n")
-  );
+  const blocks: unknown[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Quarterly youth-protection audit is due",
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: `*Students*\n${students}` },
+        { type: "mrkdwn", text: `*Adults expected to enroll*\n${adults}` },
+        {
+          type: "mrkdwn",
+          text: `*Last sign-off*\n${last?.signed_off_at ? last.signed_off_at.slice(0, 10) : "never"}`,
+        },
+        { type: "mrkdwn", text: `*Open findings*\n${open}` },
+      ],
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "Start with `/hawkmod status`, then work the open findings.",
+      },
+    },
+    {
+      type: "context",
+      elements: [
+        { type: "mrkdwn", text: "Runbook: `docs/runbooks/quarterly-audit.md`" },
+      ],
+    },
+  ];
+
+  await postToAlertChannel("Quarterly youth-protection audit is due.", blocks);
 }

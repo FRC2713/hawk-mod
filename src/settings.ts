@@ -14,7 +14,7 @@ import { getSetting } from "./db/repo.js";
  * so nothing breaks for a host that already has one and there is no flag day.
  */
 
-export type SettingKind = "usergroup" | "usergroup_list" | "channel";
+export type SettingKind = "usergroup" | "usergroup_list" | "channel" | "time";
 
 export type SettingSpec = {
   /** The environment variable this used to live in, and still falls back to. */
@@ -56,6 +56,12 @@ export const SETTINGS = {
     kind: "channel",
     hint: "where findings are posted",
   },
+  "report-time": {
+    env: "REPORT_TIME",
+    label: "Morning report time",
+    kind: "time",
+    hint: "HH:MM (24-hour, workspace timezone) for the daily digest and the quarterly reminder",
+  },
 } as const satisfies Record<string, SettingSpec>;
 
 export type SettingKey = keyof typeof SETTINGS;
@@ -85,6 +91,24 @@ export function resolveSetting(
   const env = fromEnv?.trim();
   if (env) return { value: env, source: "env" };
   return { value: undefined, source: "unset" };
+}
+
+export const REPORT_TIME_DEFAULT = "08:00";
+
+/**
+ * "08:00" → `{ hour: 8, minute: 0 }`, or null for anything that is not a
+ * 24-hour clock time. Pure, like `resolveSetting`: the scheduler and the
+ * validator must agree on what a time is, so they share this.
+ */
+export function parseReportTime(
+  raw: string | undefined
+): { hour: number; minute: number } | null {
+  const m = raw?.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
 }
 
 /** Splits a comma-separated setting into handles, without `@` and lowercased. */

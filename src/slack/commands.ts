@@ -35,6 +35,7 @@ import { administrator, type Actor, NOT_PERMITTED } from "./authz.js";
 import { applyGroupEdit } from "./groupAdmin.js";
 import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
+import { rescheduleReports } from "../jobs/schedule.js";
 import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 
 const HELP = [
@@ -633,6 +634,17 @@ async function configText(
       `_Re-synced: ${stats.created} rostered, ${stats.changed} changed, ` +
         `${stats.reactivated} resumed._`
     );
+  }
+
+  // Same argument as the role groups: the new time takes effect now, not at
+  // whatever the old time happened to be.
+  if (key === "report-time") {
+    const next = rescheduleReports();
+    if (next) {
+      lines.push(
+        `_Next daily report: ${next.toLocaleString("en-US", { timeZone: config().TZ })}._`
+      );
+    }
   }
 
   return lines.join("\n");

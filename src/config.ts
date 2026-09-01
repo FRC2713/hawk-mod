@@ -25,8 +25,10 @@ const schema = z.object({
   TZ: z.string().default("America/New_York"),
   SWEEP_CRON: z.string().default("0 3 * * *"),
   BACKFILL_CRON: z.string().default("15 * * * *"),
-  DIGEST_CRON: z.string().default("0 8 * * *"),
-  QUARTERLY_CRON: z.string().default("0 9 1 1,4,7,10 *"),
+  // Seed for the `report-time` setting: HH:MM for both morning reports (the
+  // daily digest and the quarterly reminder). Replaces DIGEST_CRON and
+  // QUARTERLY_CRON, which let the two drift apart.
+  REPORT_TIME: z.string().optional(),
 });
 
 export type Config = z.infer<typeof schema>;

@@ -1,5 +1,10 @@
 import type { WebClient } from "@slack/web-api";
-import { parseHandles, SETTINGS, type SettingKey } from "../settings.js";
+import {
+  parseHandles,
+  parseReportTime,
+  SETTINGS,
+  type SettingKey,
+} from "../settings.js";
 import { resolveGroup } from "./userGroups.js";
 
 /**
@@ -33,6 +38,7 @@ export async function describeValue(
       return value;
     }
   }
+  if (SETTINGS[key].kind === "time") return value;
   const handles = parseHandles(value);
   return handles.length ? handles.map((h) => `@${h}`).join(", ") : value;
 }
@@ -51,6 +57,20 @@ export async function validateSetting(
   raw: string
 ): Promise<{ value: string } | { error: string }> {
   const kind = SETTINGS[key].kind;
+
+  if (kind === "time") {
+    // Normalized to two-digit form so `7:30` and `07:30` store identically and
+    // the settings listing never shows two spellings of one time.
+    const time = parseReportTime(raw);
+    if (!time) {
+      return {
+        error: `\`${raw}\` is not a time. Use 24-hour \`HH:MM\`, e.g. \`08:00\`.`,
+      };
+    }
+    return {
+      value: `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`,
+    };
+  }
 
   if (kind === "channel") {
     // `<#C123|name>` when escaping is on, a bare id or #name when it is not.

@@ -5,6 +5,7 @@ import type { CustomRoute } from "@slack/bolt";
 import { APP_NAME } from "../brand.js";
 import { config } from "../config.js";
 import { anyBotInstallation, setSetting } from "../db/repo.js";
+import { rescheduleReports } from "../jobs/schedule.js";
 import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 import { log } from "../logger.js";
 import { isSettingKey, SETTING_KEYS, SETTINGS, setting } from "../settings.js";
@@ -222,6 +223,17 @@ async function handleConfigPost(
     note +=
       ` Re-synced: ${stats.created} rostered, ${stats.changed} changed, ` +
       `${stats.reactivated} resumed.`;
+  }
+
+  // Same argument as the role groups: the new time takes effect now, not at
+  // whatever the old time happened to be.
+  if (key === "report-time") {
+    const next = rescheduleReports();
+    if (next) {
+      note += ` Next daily report: ${next.toLocaleString("en-US", {
+        timeZone: config().TZ,
+      })}.`;
+    }
   }
 
   redirect(res, `/config?ok=${encodeURIComponent(note)}`);

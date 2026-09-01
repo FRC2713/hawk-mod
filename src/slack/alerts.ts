@@ -187,13 +187,18 @@ export async function refreshFinding(findingId: number): Promise<void> {
   }
 }
 
-export async function postToAlertChannel(text: string): Promise<void> {
+/** `text` is the notification fallback when `blocks` carry the real layout. */
+export async function postToAlertChannel(
+  text: string,
+  blocks?: unknown[]
+): Promise<void> {
   try {
     const channel = alertChannel("digest");
     if (!channel) return;
     await botClient().chat.postMessage({
       channel,
       text,
+      ...(blocks ? { blocks: blocks as never } : {}),
     });
   } catch (err) {
     log.error("could not post to alert channel", { error: String(err) });

@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   isSettingKey,
   parseHandles,
+  parseReportTime,
+  REPORT_TIME_DEFAULT,
   resolveSetting,
   SETTINGS,
   SETTING_KEYS,
@@ -69,6 +71,33 @@ describe("handle parsing", () => {
     assert.deepEqual(parseHandles("a,,b,"), ["a", "b"]);
     assert.deepEqual(parseHandles(undefined), []);
     assert.deepEqual(parseHandles(""), []);
+  });
+});
+
+describe("report time parsing", () => {
+  it("reads a 24-hour clock time", () => {
+    assert.deepEqual(parseReportTime("08:00"), { hour: 8, minute: 0 });
+    assert.deepEqual(parseReportTime("23:59"), { hour: 23, minute: 59 });
+  });
+
+  it("accepts the one-digit-hour spelling people actually type", () => {
+    assert.deepEqual(parseReportTime("7:30"), { hour: 7, minute: 30 });
+  });
+
+  it("trims, matching how the rest of the settings treat whitespace", () => {
+    assert.deepEqual(parseReportTime(" 08:00 "), { hour: 8, minute: 0 });
+  });
+
+  it("rejects what is not a time of day", () => {
+    // The scheduler falls back to the default on any of these; the validator
+    // refuses to store them at all.
+    for (const bad of ["24:00", "08:60", "8", "8:5", "eight", "", undefined]) {
+      assert.equal(parseReportTime(bad), null, `accepted ${bad}`);
+    }
+  });
+
+  it("has a default that itself parses", () => {
+    assert.ok(parseReportTime(REPORT_TIME_DEFAULT));
   });
 });
 
