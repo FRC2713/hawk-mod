@@ -54,8 +54,10 @@ services:
       TZ: ${TZ:-America/New_York}
       SWEEP_CRON: ${SWEEP_CRON:-0 3 * * *}
       BACKFILL_CRON: ${BACKFILL_CRON:-15 * * * *}
-      DIGEST_CRON: ${DIGEST_CRON:-0 8 * * *}
-      QUARTERLY_CRON: ${QUARTERLY_CRON:-0 9 1 1,4,7,10 *}
+      # Seed for the `report-time` setting: HH:MM when both morning reports
+      # (daily digest, quarterly reminder) go out. A value set from Slack or
+      # the web configuration page wins over this.
+      REPORT_TIME: ${REPORT_TIME:-08:00}
     volumes:
       # Minors' message content lives here. Back it up; see the data-handling
       # note in docs/deploy-linode.md before pointing this at a host path.

@@ -118,7 +118,13 @@ export function configPage(args: {
     <form method="post" action="/config">
       <input type="hidden" name="key" value="${row.key}">
       <input type="text" name="value" value="${esc(row.raw ?? "")}"
-             placeholder="${spec.kind === "channel" ? "#channel" : "@group"}"
+             placeholder="${
+               spec.kind === "channel"
+                 ? "#channel"
+                 : spec.kind === "time"
+                   ? "08:00"
+                   : "@group"
+             }"
              autocomplete="off">
       <button>Save</button>
     </form>
