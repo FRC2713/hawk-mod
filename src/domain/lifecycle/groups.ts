@@ -67,14 +67,15 @@ function has(p: SheetPerson, role: SheetRole): boolean {
  * conservative reading is the right one here. (The planner's refusals are what
  * stop a sheet-wide mistake from emptying a group.)
  *
- * `grp-all-team` reaches students, so a mentor joins it only once cleared —
- * the same gate as the Slack invite list — and leaves it if a blocking
- * requirement lapses.
+ * `grp-all-team` is every active mentor and student, screened or not. Screening
+ * gates Slack, not email: an uncleared mentor stays off the Slack invite list
+ * and is flagged if already in Slack, but is on the team's mailing list. Group
+ * email is observable and interruptible — the whole group sees it — and a
+ * mentor is only set Active once they have started screening and are trusted.
+ * The reasoning is in docs/lifecycle-sync.md; do not re-gate this on screening
+ * without revisiting it there.
  */
-export function intendedGroups(
-  people: readonly SheetPerson[],
-  asOf: IsoDate
-): IntendedGroups {
+export function intendedGroups(people: readonly SheetPerson[]): IntendedGroups {
   const active = people.filter((p) => p.status === "active");
   const mentors = active.filter((p) => has(p, "Mentor"));
   const students = active.filter((p) => has(p, "Student"));
@@ -86,9 +87,25 @@ export function intendedGroups(
     "grp-mentor-leads": mentors.filter((p) => p.mentor?.lead),
     "grp-student-leads": students.filter((p) => p.student?.lead),
     "grp-ra": mentors.filter((p) => p.mentor?.ra),
-    "grp-all-team": [...students, ...mentors.filter((p) => isCleared(p, asOf))],
+    // Literally the union of the two role groups, so it cannot drift from them.
+    "grp-all-team": [...new Set([...mentors, ...students])],
   };
 }
+
+/**
+ * Every group that sits inside another, as [subset, superset]. Google Groups
+ * are kept flat — each holds its people directly, never another group —
+ * because nested groups behave inconsistently across Drive, Calendar and
+ * Slack. So "a lead is also a mentor" is not something Google enforces; it is
+ * this list, and a test that checks every subset member is in its superset.
+ * Adding a group that belongs inside another means adding it here.
+ */
+export const SUBSETS: readonly (readonly [GroupName, GroupName])[] = [
+  ["grp-mentor-leads", "grp-mentors"],
+  ["grp-student-leads", "grp-students"],
+  ["grp-mentors", "grp-all-team"],
+  ["grp-students", "grp-all-team"],
+];
 
 /** Group members as addresses, sorted; people without one are left out. */
 export function addresses(members: readonly SheetPerson[]): string[] {

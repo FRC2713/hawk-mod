@@ -481,10 +481,17 @@ export function parseSheet(data: SheetData): ParsedSheet {
  * student with no school address is left out and reported rather than reached
  * some other way. This holds even for a student who also has another role.
  *
- * Adults: a mentor by their RHR address; volunteers and alumni by their
- * personal one, which is the only address they have.
+ * A mentor is added by their RHR address and nothing else, for the same kind
+ * of reason: the access plan makes the mentor groups domain accounts only,
+ * because adults reach students from official accounts, never personal ones.
+ * A mentor with no RHR address is left out and reported. (Also true of a
+ * mentor who is an alum: one address per person, and it is the RHR one.)
+ *
+ * Volunteers and alumni are added by their personal address, which is the only
+ * one they have.
  */
 export function groupAddress(p: SheetPerson): string | null {
   if (p.roles.includes("Student")) return p.student?.schoolEmail ?? null;
-  return p.mentor?.rhrEmail ?? p.personalEmail;
+  if (p.roles.includes("Mentor")) return p.mentor?.rhrEmail ?? null;
+  return p.personalEmail;
 }

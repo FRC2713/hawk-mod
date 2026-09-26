@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { addresses, intendedGroups } from "../src/domain/lifecycle/groups.js";
+import {
+  addresses,
+  intendedGroups,
+  SUBSETS,
+} from "../src/domain/lifecycle/groups.js";
 import { planLifecycle } from "../src/domain/lifecycle/plan.js";
 import {
   locateHeaders,
@@ -291,7 +295,7 @@ describe("computed groups", () => {
       }
     )
   ).people;
-  const groups = intendedGroups(people, AS_OF);
+  const groups = intendedGroups(people);
   const ids = (name: keyof typeof groups) =>
     groups[name].map((p) => p.personId).sort();
 
@@ -305,19 +309,31 @@ describe("computed groups", () => {
     assert.deepEqual(ids("grp-ra"), ["P0010"]);
   });
 
-  it("keeps an uncleared mentor out of grp-all-team but in grp-mentors", () => {
-    assert.deepEqual(ids("grp-mentors"), ["P0010", "P0011", "P0012", "P0040"]);
+  it("puts uncleared mentors in grp-all-team too; screening gates Slack", () => {
     // P0011 has no screening on file; P0012's training lapsed on 1 August.
-    assert.deepEqual(ids("grp-all-team"), ["P0010", "P0020", "P0021", "P0040"]);
+    // Both are on the mailing list; the plan lists them as not cleared.
+    assert.deepEqual(ids("grp-all-team"), [
+      "P0010",
+      "P0011",
+      "P0012",
+      "P0020",
+      "P0021",
+      "P0040",
+    ]);
+    const plan = planLifecycle({ people, problems: [] }, AS_OF);
+    assert.deepEqual(
+      plan.notCleared.map((m) => m.personId),
+      ["P0011", "P0012"]
+    );
   });
 
   it("counts an expiry date as still valid on the day itself", () => {
-    const [p] = parseSheet(
+    const { people } = parseSheet(
       sheet(mentor("P0010", { "YPT Expiry": AS_OF }))
-    ).people;
+    );
     assert.deepEqual(
-      intendedGroups([p!], AS_OF)["grp-all-team"].map((x) => x.personId),
-      ["P0010"]
+      planLifecycle({ people, problems: [] }, AS_OF).notCleared,
+      []
     );
   });
 
@@ -348,7 +364,7 @@ describe("computed groups", () => {
         }
       )
     );
-    const intended = intendedGroups(people, AS_OF);
+    const intended = intendedGroups(people);
     assert.deepEqual(addresses(intended["grp-students"]), [
       "p0051@school.example",
     ]);
@@ -377,8 +393,69 @@ describe("computed groups", () => {
         personalEmail: "alum@home.example",
       })
     );
-    assert.deepEqual(addresses(intendedGroups(people, AS_OF)["grp-alumni"]), [
+    assert.deepEqual(addresses(intendedGroups(people)["grp-alumni"]), [
       "p0052@school.example",
+    ]);
+  });
+
+  it("keeps every subset group inside its superset, with no nesting", () => {
+    // Flat groups mean Google does not enforce "a lead is a mentor" or "a
+    // mentor is on the team"; the sync has to. Checked over a roster with
+    // leads, RA, a mentor who is also an alum, an uncleared mentor, a student
+    // with no school address and someone inactive.
+    const { people } = parseSheet(
+      sheet(
+        mentor("P0010", { "Mentor Lead (Y/N)": "Y", "RA (Y/N)": "Y" }),
+        mentor("P0011", { "Background Screening Expiry": "" }),
+        { ...mentor("P0012"), roles: ["Mentor", "Alumni"] },
+        student("P0020", { "Student Lead (Y/N)": "Y" }),
+        student("P0021", { "School Email": "" }),
+        { ...student("P0022"), status: "Inactive" }
+      )
+    );
+    const groups = intendedGroups(people);
+    for (const [subset, superset] of SUBSETS) {
+      const outer = new Set(groups[superset]);
+      for (const p of groups[subset]) {
+        assert.ok(
+          outer.has(p),
+          `${p.personId} is in ${subset} but not ${superset}`
+        );
+      }
+      const outerAddresses = new Set(addresses(groups[superset]));
+      for (const a of addresses(groups[subset])) {
+        assert.ok(outerAddresses.has(a), `${a}: ${subset} but not ${superset}`);
+      }
+    }
+  });
+
+  it("never adds a mentor by their personal email", () => {
+    // The access plan makes mentor groups domain accounts only.
+    const { people } = parseSheet(
+      sheet({
+        ...mentor("P0013", { "RHR Email": "" }),
+        personalEmail: "mentor@home.example",
+      })
+    );
+    const intended = intendedGroups(people);
+    for (const members of Object.values(intended)) {
+      assert.deepEqual(addresses(members), []);
+    }
+    assert.deepEqual(planLifecycle({ people, problems: [] }, AS_OF).noAddress, [
+      "P0013",
+    ]);
+  });
+
+  it("adds volunteers and alumni by their personal email", () => {
+    const { people } = parseSheet(
+      sheet({
+        id: "P0031",
+        roles: ["Volunteer"],
+        personalEmail: "v@home.example",
+      })
+    );
+    assert.deepEqual(addresses(intendedGroups(people)["grp-volunteers"]), [
+      "v@home.example",
     ]);
   });
 
