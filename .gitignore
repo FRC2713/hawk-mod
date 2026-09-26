@@ -16,6 +16,9 @@
 *.zip
 /exports
 
+# The Google service account key reads the lifecycle sheet. Never commit it.
+google-key.json
+
 # misc
 .DS_Store
 npm-debug.log*

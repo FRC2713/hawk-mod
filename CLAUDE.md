@@ -28,7 +28,8 @@ npx tsx --test --test-name-pattern "two adults" test/rules.test.ts
 ```
 
 CLI subcommands: `import-roster`, `import-consents`, `set-role`, `sweep`,
-`backfill`, `findings [status]`, `export-conversation <id> [out.json]`. None of
+`backfill`, `findings [status]`, `export-conversation <id> [out.json]`,
+`lifecycle plan [--members]`. None of
 them is a bootstrap step: administrative access is Slack's Workspace
 Owner/Admin flags, read live in `src/slack/authz.ts`, so a fresh install is
 usable by whoever installed it without anyone touching the host. Don't
@@ -240,6 +241,20 @@ session cookie and OAuth state are stateless HMAC tokens (`web/session.ts`,
 signed with `SLACK_STATE_SECRET`, purpose-bound so one kind can never replay as
 the other). Every string a page interpolates goes through `esc()` — setting
 values and display names are whatever their owner typed.
+
+**The lifecycle sheet is being made the source of people** (in progress; the
+scope and build order are `docs/lifecycle-sync.md`). The sheet declares, the
+Slack user groups mirror it, and the roster monitors — the add-only rule
+carries over to the new source. So far it is read-only: `google/sheets.ts`
+reads the header rows, then requests **only** the columns `SHEET_TABS` in
+`domain/lifecycle/schema.ts` names, so addresses, birthdays and medical notes
+never leave Google. A renamed tab or header refuses the read rather than being
+read as blank — a blank `YPT Expiry` would unclear every mentor. The parse is
+pure and never stops on a bad cell: it reports the cell by Person ID and never
+by value. Google is optional (`google/credentials.ts`, read from the
+environment like `dataDir()`, never `config()`); credentials are environment,
+never a setting. The sheet stores expiry dates, and nothing should compute one:
+FIRST expires annual items on 1 August, not a year after completion.
 
 **Two paths reach the same log.** Events (`src/slack/events.ts`) give real-time
 capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each adult's

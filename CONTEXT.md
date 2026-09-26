@@ -140,3 +140,44 @@ _Avoid_: Diff, changeset, patch
 **Drift**:
 A disagreement between what Slack declares and what the roster monitors. Drift
 is reported, never silently reconciled in the direction that reduces monitoring.
+
+## Lifecycle
+
+The lifecycle sync is being built in steps; see `docs/lifecycle-sync.md`.
+
+**Lifecycle sheet**:
+The RHR User Lifecycle Management DB, a Google Sheet holding one row per person
+the program has ever had. It is where people are edited. hawk-mod reads it and
+never edits it, except to write back a Slack User ID.
+_Avoid_: Database, spreadsheet, roster
+
+**Person ID**:
+A person's `P####` key in the lifecycle sheet. Never reused, never reassigned.
+
+**Cleared**:
+A mentor whose Youth Protection Training, background screening and CORI are
+all current, going by the expiry dates in the lifecycle sheet. Consent &
+Release, Data Privacy and Mentor Ready are reported, and never affect it.
+_Avoid_: Screened (until the roster reads the sheet, **screened adult** is still
+computed from hawk-mod's own dates)
+
+**Mirrored group**:
+A Slack user group whose membership is copied from a Google Group the lifecycle
+sheet computes. Edited only through the sheet; a hand edit is drift, and is
+undone.
+
+**Ready to invite**:
+Active in the lifecycle sheet and not yet in Slack: a mentor once cleared, a
+student once their Slack consent is current. Listed for an administrator to
+invite, because Slack Pro has no invite API.
+
+**Suspension**:
+Switching off a person's Google Workspace account. Reversible; nothing is
+deleted. Distinct from **deactivation**, which ends hawk-mod monitoring and is
+never a consequence of suspension.
+_Avoid_: Deactivating an account, removal
+
+**Offboarding**:
+Everything that follows a person turning Inactive in the lifecycle sheet:
+leaving groups, which happens on its own, and suspension, admin-role
+revocation and Slack deactivation, which wait for an administrator.
