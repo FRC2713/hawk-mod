@@ -179,5 +179,6 @@ _Avoid_: Deactivating an account, removal
 
 **Offboarding**:
 Everything that follows a person turning Inactive in the lifecycle sheet:
-leaving groups, which happens on its own, and suspension, admin-role
-revocation and Slack deactivation, which wait for an administrator.
+leaving groups, which happens on its own; suspension, which waits for an
+administrator's approval; and admin-role revocation and Slack deactivation,
+which hawk-mod cannot do and reminds a person to.

@@ -152,8 +152,9 @@ Recorded here so the whole picture is in one place.
    - `https://www.googleapis.com/auth/admin.directory.group` — group membership
    - `https://www.googleapis.com/auth/admin.directory.user` — read accounts,
      and suspend or restore them after an admin approves it
-   - `https://www.googleapis.com/auth/admin.directory.rolemanagement` — the
-     Groups Admin and Help Desk Admin roles, after approval
+   - `https://www.googleapis.com/auth/admin.directory.rolemanagement.readonly`
+     — to report who holds Groups Admin and Help Desk Admin. Read-only: only a
+     Super Admin can grant those roles, so hawk-mod reports and a person acts
 3. **An account to act as.** Every change hawk-mod makes appears in the Admin
    audit log as the account it impersonates. A dedicated
    `hawk-mod@redhawkrobotics.org` admin makes that log say what actually

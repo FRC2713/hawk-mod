@@ -100,8 +100,8 @@ expiry dates come from the sheet the window only feeds the sanity check.
 | D   | Keep computed Google Groups right     | **automatically** | `grp-mentors`, `grp-students`, `grp-volunteers`, `grp-alumni`, `grp-mentor-leads`, `grp-student-leads`, `grp-all-team`, `grp-ra` |
 | E   | Mirror chosen Google Groups to Slack  | **automatically** | Slack user groups, via `slack/groupAdmin.ts`                                                                                     |
 | F   | ~~Create Workspace accounts~~         | **out of scope**  | done by hand                                                                                                                     |
-| G   | Delegated admin roles                 | approval          | Groups Admin, Help Desk Admin from `Mentor_Admin_Roles`                                                                          |
-| H   | "Ready to invite to Slack" list       | report            | morning report section                                                                                                           |
+| G   | Delegated admin roles report          | **report only**   | Super Admin makes each change; hawk-mod lists what differs from `Mentor_Admin_Roles`                                             |
+| H   | "Ready to invite to Slack" list       | report            | `#bot-slack-invite-requests`, plus a count in the morning report                                                                 |
 | I   | Offboarding / reactivation prompts    | approval          | Google suspension, Slack deactivation reminder                                                                                   |
 
 **Groups follow the sheet automatically**, including removals — with the
@@ -136,19 +136,28 @@ are in Slack — a mentor not yet invited is in the Google group and absent from
 the Slack one, which is not drift.
 
 **Slack invites (H).** Slack Pro has no invite API, and open domain sign-up
-would let a mentor join before screening. So no domain sign-up: hawk-mod lists,
-in the morning report, mentors whose YPT + screening + CORI are all current and
-students whose Slack Consent is current, who have no Slack account yet. An admin
-pastes the emails into Slack's invite dialog. The person leaves the list when
+would let a mentor join before screening. So no domain sign-up: hawk-mod posts
+to `#bot-slack-invite-requests` when a person becomes ready — a mentor whose
+YPT + screening + CORI are all current, or a student whose Slack Consent is
+current, with no Slack account yet — once per person, with the address to
+invite (RHR Email or School Email; never a personal one). The morning report
+carries only a count of who is still waiting. An admin pastes the address into
+Slack's invite dialog. The channel is chosen over the morning report because an
+invite is a task: one message per person can be acted on and marked done,
+where a daily list repeats itself until nobody reads it. The channel is in the
+Adult-only Restricted tier of the access plan, which is where students' school
+addresses may appear. The person leaves the list when
 they appear in Slack and their ID is written back. Safety net: a Slack member
 who is not a sheet mentor or student is a finding (extends `unknown_account`),
 as is a mentor who joined while unscreened.
 
 **Inactive (I).** Active → Inactive raises one approval alert: suspend the
-Google account, revoke admin roles, and a reminder to deactivate them in Slack
-(manual on Pro), plus whether to end hawk-mod monitoring (always a separate
-`/hawkmod deactivate`). Group removal does not wait — it follows the sheet.
-Inactive → Active raises the reverse: un-suspend and restore roles.
+Google account, plus reminders for what hawk-mod cannot do itself — a Super
+Admin revokes any delegated admin role (step 8 reports it), and an admin
+deactivates them in Slack (manual on Pro) — and whether to end hawk-mod
+monitoring (always a separate `/hawkmod deactivate`). Group removal does not
+wait — it follows the sheet. Inactive → Active raises the reverse: un-suspend,
+with a reminder to restore roles.
 
 **Nothing deletes an account.** Offboarding suspends.
 
@@ -221,7 +230,14 @@ working if Google is not configured.
    and joined-unscreened findings. _Verify:_ readiness rule tests per role.
 7. **Offboarding / reactivation (I).** Approval alerts, suspend / un-suspend.
    _Verify:_ nothing changes without the click; a non-admin click is refused.
-8. **Delegated admin roles (G).** Approval-gated grant and revoke.
+8. **Delegated admin roles (G).** **Report only** (decided 2026-09-26). Only a
+   Super Admin can grant Groups Admin or Help Desk Admin, and the access plan
+   keeps Super Admin to three named people — so `hawk-mod@` is never one.
+   hawk-mod reads who holds each role and posts the differences from
+   `Mentor_Admin_Roles` as actions ("grant Help Desk Admin to P0012", "revoke
+   Groups Admin from P0007") for a Super Admin to do by hand. Needs only the
+   read-only role-management scope. _Verify:_ the diff is pure and tested;
+   nothing is ever granted.
 9. **Running it.** Scheduled run and a run-now control on `/config`.
    `/hawkmod lifecycle plan` and `slack-ids [apply]` already exist — pulled
    forward because production is deployed by hawk_suite's workflow and has no
@@ -232,16 +248,41 @@ The sheet edits in [Screening requirements](#screening-requirements) were made
 on 2026-09-25 (headers verified; the `_Instructions` wording and date validation
 are confirmed in step 0). Step 0's header check keeps the two aligned after.
 
+## Later: quarantine instead of a wall
+
+Not scoped yet (noted 2026-09-26). People go stale: forms lapse, a mentor gets
+busy and steps away, an alum drifts off. Removing them outright is a bad
+experience — someone who comes back finds themselves walled out with no way to
+ask to return. The intent is a **quarantine**: a stale member is moved into an
+isolation channel (probably split as `#z-youth-inactive` and
+`#z-adult-inactive`, replacing today's `#z-inactive`) where they can still ask
+to come back but cannot reach other members. Most common for alumni, whose
+lifecycle is not fully scoped either. Whatever is built must keep the rules
+above: it never ends monitoring by itself, and a quarantined student is still a
+student.
+
+## RA access and training
+
+`grp-ra` follows the `RA (Y/N)` flag today. The intent (2026-09-26) is that RA
+membership also requires being **cleared** — YPT, background screening and
+CORI current — possibly with a **shorter grace period** than other mentors get.
+Details are decided at step 4, not before: gating now would empty `grp-ra`,
+since no mentor has requirement dates entered yet, and FIRST's 1 August
+rollover lapses everyone's training on the same day, which is what a grace
+period is for.
+
 ## Open
 
 - Whether training completed in May–July expires on the _coming_ 1 August no
   longer affects correctness, since expiry dates come from the sheet. It only
   tunes the sanity check, which should accept either answer (an annual expiry
   on 1 August, at most two rollovers ahead).
-- Slack handles for student leads, mentor leads and RA. Rachel creates these
-  groups by hand before step 5, and the mapping is set then.
-- `consents` wants guardian name and form version, which the sheet lacks for
-  Slack Consent. Decide in step 3.
-- `CONTEXT.md` terms to add: **suspension** (Google account off, reversible),
-  **offboarding** (the set of steps when a row goes Inactive), **mirrored
-  group**, **ready to invite**. **Deactivation** keeps its meaning.
+- Slack mirror mapping (decided): `grp-students`→`@students`,
+  `grp-mentors`→`@mentors`, `grp-student-leads`→`@student-leads`,
+  `grp-mentor-leads`→`@mentor-leads`, `grp-ra`→`@ra-adults`.
+- Consent (decided for step 3): only `Student_Details.Slack Consent Expiry`.
+  No guardian name or form version is stored; the paper forms are the record.
+  `/hawkmod consent` and `import-consents` are retired, and existing consent
+  rows are kept as read-only history.
+- The account hawk-mod acts as in Google is `hawk-mod@redhawkrobotics.org`
+  (created 2026-09-26, no admin roles). Its privileges are set in step 4.
