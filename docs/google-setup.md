@@ -133,8 +133,8 @@ plan`). It changes nothing, anywhere. Expect:
 - **A header error** if a tab or column has been renamed. It names the column,
   and nothing is read until it's fixed.
 - **A 403** if step 5 did not take.
-- Otherwise, counts of people and of each computed group, the mentors kept out
-  of `grp-all-team` and why, and a list of sheet problems by Person ID. The
+- Otherwise, counts of people and of each computed group, the mentors not
+  cleared (so not eligible for Slack) and why, and a list of sheet problems by Person ID. The
   sample people P0001–P0003 are ignored and reported until they're deleted.
 
 The output names Person IDs and counts only. The CLI's `--members` adds each

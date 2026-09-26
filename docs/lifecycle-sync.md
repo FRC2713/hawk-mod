@@ -106,11 +106,15 @@ empty a group or remove more than the threshold is held and raised as a finding
 rather than applied, because a sheet mistake (a deleted block of role rows)
 must not empty `grp-students`.
 
-`grp-all-team` is every Active student, and every Active mentor **whose YPT,
-background screening and CORI are all current** — not volunteers or alumni. It
-reaches students, so it uses the same gate as the Slack invite list: a new
-mentor joins it when screening completes, not when the row is added, and leaves
-it if a blocking requirement lapses.
+`grp-all-team` is every Active student and every Active mentor — not
+volunteers or alumni — **whether or not the mentor is screened**. Screening
+gates Slack, not email: an uncleared mentor is left off the Slack invite list
+and flagged if already in Slack, but is on the mailing list from the day their
+row is Active. Decided 2026-09-26, reversing an earlier gate. The group does
+reach students, but it meets the team's standard that all contact be
+**observable and interruptible**: a message to a group is seen by the whole
+group. And "Active" is itself a gate — a mentor is not set Active until they
+have started the screening process and are within a trusted group.
 
 **Mirrored to Slack (E):** `grp-students`, `grp-mentors`, `grp-student-leads`,
 `grp-mentor-leads` and `grp-ra`, each to a Slack user group. The Google →

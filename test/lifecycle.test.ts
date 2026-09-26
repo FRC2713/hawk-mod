@@ -291,7 +291,7 @@ describe("computed groups", () => {
       }
     )
   ).people;
-  const groups = intendedGroups(people, AS_OF);
+  const groups = intendedGroups(people);
   const ids = (name: keyof typeof groups) =>
     groups[name].map((p) => p.personId).sort();
 
@@ -305,19 +305,31 @@ describe("computed groups", () => {
     assert.deepEqual(ids("grp-ra"), ["P0010"]);
   });
 
-  it("keeps an uncleared mentor out of grp-all-team but in grp-mentors", () => {
-    assert.deepEqual(ids("grp-mentors"), ["P0010", "P0011", "P0012", "P0040"]);
+  it("puts uncleared mentors in grp-all-team too; screening gates Slack", () => {
     // P0011 has no screening on file; P0012's training lapsed on 1 August.
-    assert.deepEqual(ids("grp-all-team"), ["P0010", "P0020", "P0021", "P0040"]);
+    // Both are on the mailing list; the plan lists them as not cleared.
+    assert.deepEqual(ids("grp-all-team"), [
+      "P0010",
+      "P0011",
+      "P0012",
+      "P0020",
+      "P0021",
+      "P0040",
+    ]);
+    const plan = planLifecycle({ people, problems: [] }, AS_OF);
+    assert.deepEqual(
+      plan.notCleared.map((m) => m.personId),
+      ["P0011", "P0012"]
+    );
   });
 
   it("counts an expiry date as still valid on the day itself", () => {
-    const [p] = parseSheet(
+    const { people } = parseSheet(
       sheet(mentor("P0010", { "YPT Expiry": AS_OF }))
-    ).people;
+    );
     assert.deepEqual(
-      intendedGroups([p!], AS_OF)["grp-all-team"].map((x) => x.personId),
-      ["P0010"]
+      planLifecycle({ people, problems: [] }, AS_OF).notCleared,
+      []
     );
   });
 
@@ -348,7 +360,7 @@ describe("computed groups", () => {
         }
       )
     );
-    const intended = intendedGroups(people, AS_OF);
+    const intended = intendedGroups(people);
     assert.deepEqual(addresses(intended["grp-students"]), [
       "p0051@school.example",
     ]);
@@ -377,7 +389,7 @@ describe("computed groups", () => {
         personalEmail: "alum@home.example",
       })
     );
-    assert.deepEqual(addresses(intendedGroups(people, AS_OF)["grp-alumni"]), [
+    assert.deepEqual(addresses(intendedGroups(people)["grp-alumni"]), [
       "p0052@school.example",
     ]);
   });

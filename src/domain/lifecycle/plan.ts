@@ -29,7 +29,10 @@ export type LifecyclePlan = {
     byRole: Record<SheetRole, number>;
   };
   groups: { name: GroupName; members: string[] }[];
-  /** Active mentors kept out of grp-all-team, and why. By Person ID. */
+  /**
+   * Active mentors not cleared, and why. By Person ID. They are in their
+   * Google Groups, but not eligible for Slack.
+   */
   notCleared: { personId: string; missing: string[] }[];
   /** Active people who would be in a group but have no address to add. */
   noAddress: string[];
@@ -54,7 +57,7 @@ export function planLifecycle(
     for (const r of p.roles) byRole[r] += 1;
   }
 
-  const intended = intendedGroups(parsed.people, asOf);
+  const intended = intendedGroups(parsed.people);
   const inAnyGroup = new Set(GROUPS.flatMap((g) => intended[g]));
 
   return {

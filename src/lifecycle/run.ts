@@ -59,7 +59,7 @@ function formatPlan(plan: LifecyclePlan, members: boolean): string {
     if (members) for (const m of g.members) lines.push(`      ${m}`);
   }
   if (plan.notCleared.length) {
-    lines.push("", "Active mentors not cleared (kept out of grp-all-team):");
+    lines.push("", "Active mentors not cleared (not eligible for Slack):");
     for (const m of plan.notCleared) {
       lines.push(`  ${m.personId}: ${m.missing.join(", ")}`);
     }
