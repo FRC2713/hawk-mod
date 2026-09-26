@@ -242,13 +242,16 @@ projection of Slack — not a second roster to keep in sync.
 ### Roster CSV
 
 ```
-email,full_name,role,ypp_completed_on,mentor_ready_on,cori_completed_on,active,notes
+email,full_name,role,screening_expires_on,training_expires_on,cori_expires_on,consent_release_expires_on,data_privacy_expires_on,mentor_ready_completed_on,active,notes
 ```
 
 `role` is one of `student`, `adult`, `district_observer` — the last being the
 MPS administrator seat from §8. Nothing in this file grants access to
 `/hawkmod`; that is Slack's Owner/Admin, and only Slack's. Dates
-are `YYYY-MM-DD`. Email is the join key; Slack IDs are matched automatically
+are `YYYY-MM-DD`, and requirement dates are the **expiry** FIRST (or district
+HR, for CORI) shows, never a completion date; only Mentor Ready, a one-time
+badge, is the date it was earned. A file with the old `ypp_completed_on`-style
+columns is refused. Email is the join key; Slack IDs are matched automatically
 once people sign up. **If a Slack account's email doesn't match a roster row it
 resolves to an unknown account, not a student** — which produces silence rather
 than an alert, so the `unknown_account` findings that catch it must never be

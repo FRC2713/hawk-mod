@@ -26,8 +26,8 @@ and what carries it.
 | 6   | User group editing restricted to Owners/Admins                                | workspace setting — **manual**, and now load-bearing for more than itself: Slack accepts a _bot_ token for `usergroups.users.update` only when editing is open to everyone, so keeping this restricted is what forces `slack/groupAdmin.ts` to write as a named administrator. `/hawkmod group` is gated on `slack/authz.ts` — the same Owner/Admin population, plus a refusal for students |
 | 6   | Real names enforced                                                           | workspace setting — **manual**                                                                                                                                                                                                                                                                                                                                                              |
 | 6   | Huddles off                                                                   | no API to observe huddles — **manual**, and the reason it matters is in the README's gap list                                                                                                                                                                                                                                                                                               |
-| 7   | Youth Protection Training annually (the part FIRST requires for clearance)    | `screening.ts`, `YPT_VALID_YEARS = 1`                                                                                                                                                                                                                                                                                                                                                       |
-| 7   | CORI + national fingerprints every 3 years (M.G.L. c. 71 §38R, 603 CMR 51.00) | `screening.ts`, `CORI_VALID_YEARS = 3`                                                                                                                                                                                                                                                                                                                                                      |
+| 7   | Youth Protection Training annually (the part FIRST requires for clearance)    | `screening.ts`, `training_expires_on` as FIRST shows it (1 August)                                                                                                                                                                                                                                                                                                                          |
+| 7   | CORI + national fingerprints every 3 years (M.G.L. c. 71 §38R, 603 CMR 51.00) | `screening.ts`, `cori_expires_on`; `CORI_VALID_YEARS = 3` bounds it                                                                                                                                                                                                                                                                                                                         |
 | 8   | MPS administrator added to the workspace                                      | roster role `district_observer`; counts as an adult only with screening dates recorded. Voluntary — IJNDD does not require it (see the correction below)                                                                                                                                                                                                                                    |
 | 8   | Employee-mentor keeps to channels, no student DMs (IJNDD clause k)            | **manual**, and deliberately so: the employee manual binds that one person more tightly than §4.1 does, and hawk-mod is not the enforcer of it                                                                                                                                                                                                                                              |
 | 8   | Public-records retention for the employee-mentor (M.G.L. c. 66 §10)           | substantively covered — messages are retained and producible via `export-conversation`; IJNDD's forward-to-school-e-mail expectation is **manual**                                                                                                                                                                                                                                          |
@@ -65,11 +65,15 @@ it asks the question of the people who demonstrably hold the authority rather
 than of a self-assigned label. A student holding Owner or Admin is refused
 regardless (§6), and reported.
 
-**The screening and the training run on different clocks.** The background
-screening is valid for longer than a year; the training is annual. Treating
-both as annual flags people who are current, and an alert channel that cries
-wolf is one nobody reads. `SCREENING_VALID_YEARS` is set to 4 — confirm it
-against FIRST before each season.
+**The screening and the training run on different clocks, and hawk-mod keeps
+neither.** It stores the expiry date FIRST and the state show, because FIRST
+expires annual items on 1 August rather than a year after completion. The
+background screening lasts 3 years — confirmed against FIRST's Youth
+Protection tracking form, which sets renewal at 36 months ("Key Updates for
+Youth Protection Program, Mentors, Volunteers", FIRST Community Blog, June
+2026); it was 4 until FRC2713/hawk-mod#17. `SCREENING_VALID_YEARS` now only
+bounds how far out a real expiry can be — a date beyond it is treated as a
+typo and not current. Recheck it against FIRST before each season.
 
 ## Deliberate non-goals
 

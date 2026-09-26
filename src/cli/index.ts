@@ -7,6 +7,7 @@ import {
   listFindings,
   personByEmail,
   personBySlackId,
+  SCREENING_FIELDS,
   setPersonRole,
   upsertPerson,
 } from "../db/repo.js";
@@ -19,9 +20,12 @@ import { botClient } from "../slack/tokens.js";
 
 const USAGE = `hawk-mod cli
 
-  import-roster <file.csv>     email,full_name,role,ypp_completed_on,
-                               ypt_completed_on,mentor_ready_on,
-                               cori_completed_on,active,notes
+  import-roster <file.csv>     email,full_name,role,screening_expires_on,
+                               training_expires_on,cori_expires_on,
+                               consent_release_expires_on,
+                               data_privacy_expires_on,
+                               mentor_ready_completed_on,active,notes
+                               Dates are EXPIRY dates, as FIRST shows them
   import-consents <file.csv>   email,signed_on,form_version,guardian_name,
                                guardian_email,document_ref,recorded_by[,expires_on]
   set-role <email|U…> <role>   role: student|adult|district_observer.
@@ -56,6 +60,13 @@ function optional(value: string | undefined): string | null {
   return value && value.length > 0 ? value : null;
 }
 
+const RETIRED_COLUMNS = [
+  "ypp_completed_on",
+  "ypt_completed_on",
+  "mentor_ready_on",
+  "cori_completed_on",
+];
+
 function importRoster(path: string) {
   let count = 0;
   for (const r of rows(path)) {
@@ -66,15 +77,25 @@ function importRoster(path: string) {
     if (!r.email || !r.full_name) {
       throw new Error("Every row needs an email and a full_name");
     }
+    const old = RETIRED_COLUMNS.filter((c) => c in r);
+    if (old.length) {
+      // These held COMPLETION dates. Read under the new names they would be
+      // taken as expiry dates and shorten or lengthen someone's clearance; left
+      // unread they would import every adult as unscreened with no warning.
+      throw new Error(
+        `This CSV uses retired columns (${old.join(", ")}). Requirements are ` +
+          "now expiry dates, as FIRST shows them: " +
+          SCREENING_FIELDS.join(", ")
+      );
+    }
     upsertPerson({
       email: r.email,
       fullName: r.full_name,
       role,
       active: r.active === undefined ? true : r.active !== "0",
-      yppCompletedOn: optional(r.ypp_completed_on),
-      yptCompletedOn: optional(r.ypt_completed_on),
-      mentorReadyOn: optional(r.mentor_ready_on),
-      coriCompletedOn: optional(r.cori_completed_on),
+      requirements: Object.fromEntries(
+        SCREENING_FIELDS.map((f) => [f, optional(r[f])])
+      ),
       notes: optional(r.notes),
     });
     count += 1;

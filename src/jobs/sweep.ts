@@ -16,7 +16,10 @@ import {
 } from "../domain/findings.js";
 import { requiresEnrollment } from "../domain/people.js";
 import { consentStatus, mayHoldAccount } from "../domain/rules/consent.js";
-import { screeningStatus } from "../domain/rules/screening.js";
+import {
+  describeScreening,
+  screeningStatus,
+} from "../domain/rules/screening.js";
 import { evaluateTwoAdultRule } from "../domain/rules/twoAdults.js";
 import { log } from "../logger.js";
 import { reevaluateRecorded } from "../monitor/conversations.js";
@@ -160,18 +163,7 @@ export async function runSweep(): Promise<SweepStats> {
           kind: "screening_lapsed",
           dedupeKey: dedupeKey("screening_lapsed", String(p.id)),
           severity: "warn",
-          summary:
-            `${p.full_name}: ` +
-            [
-              screening.missing.length
-                ? `missing ${screening.missing.join(", ")}`
-                : "",
-              screening.expired.length
-                ? `expired ${screening.expired.map((e) => `${e.item} (${e.expiredOn})`).join(", ")}`
-                : "",
-            ]
-              .filter(Boolean)
-              .join("; "),
+          summary: `${p.full_name}: ${describeScreening(screening)}`,
           subjectPersonId: p.id,
           detail: screening,
         });

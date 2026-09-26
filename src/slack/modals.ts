@@ -7,6 +7,7 @@ import {
   listConsents,
   personById,
   setScreeningDates,
+  SCREENING_FIELDS,
   type ScreeningField,
 } from "../db/repo.js";
 import { closeFinding } from "../close.js";
@@ -19,7 +20,10 @@ import {
   defaultExpiry,
   mayHoldAccount,
 } from "../domain/rules/consent.js";
-import { screeningStatus } from "../domain/rules/screening.js";
+import {
+  screeningEntryErrors,
+  screeningStatus,
+} from "../domain/rules/screening.js";
 import { log } from "../logger.js";
 
 export const SCREENING_MODAL = "hawkmod_screening";
@@ -96,36 +100,50 @@ export function screeningView(person: Person) {
           {
             type: "mrkdwn" as const,
             text:
-              "Enter the date each was *completed*; expiry is worked out from " +
-              "it. Training is annual, the background screening runs longer, " +
-              "CORI every three years. Mentor Ready is optional — FIRST " +
-              "requires only the Youth Protection Training inside it.",
+              "Enter the date each one *expires*, exactly as FIRST's " +
+              "dashboard (or district HR, for CORI) shows it — hawk-mod never " +
+              "works one out, because FIRST's annual items expire on 1 August " +
+              "rather than a year after completion. The first three decide " +
+              "whether this person counts as screened; the rest are reported " +
+              "only. Once the lifecycle sheet is the roster, record them there.",
           },
         ],
       },
       dateInput(
-        "ypp",
-        "Youth Protection Screening (required)",
-        person.ypp_completed_on,
-        "The FIRST background check"
+        "training_expires_on",
+        "Youth Protection Training expires (required)",
+        person.training_expires_on,
+        "Annual; FIRST expires it on 1 August"
       ),
       dateInput(
-        "ypt",
-        "Youth Protection Training (required)",
-        person.ypt_completed_on,
+        "screening_expires_on",
+        "Background Screening expires (required)",
+        person.screening_expires_on,
+        "FIRST renews it every 3 years"
+      ),
+      dateInput(
+        "cori_expires_on",
+        "CORI + national fingerprints expire (required)",
+        person.cori_expires_on,
+        "M.G.L. c. 71 §38R; every 3 years, through district HR"
+      ),
+      dateInput(
+        "consent_release_expires_on",
+        "Consent & Release expires (reported only)",
+        person.consent_release_expires_on,
+        "Annual FIRST registration"
+      ),
+      dateInput(
+        "data_privacy_expires_on",
+        "Data Privacy for Mentors expires (reported only)",
+        person.data_privacy_expires_on,
         "Annual"
       ),
       dateInput(
-        "cori",
-        "CORI + national fingerprints (required)",
-        person.cori_completed_on,
-        "M.G.L. c. 71 §38R; run through district HR"
-      ),
-      dateInput(
-        "mentor_ready",
-        "Mentor Ready (optional)",
-        person.mentor_ready_on,
-        "Encouraged by FIRST, but not needed for clearance"
+        "mentor_ready_completed_on",
+        "Mentor Ready completed (reported only)",
+        person.mentor_ready_completed_on,
+        "One-time badge: the date it was earned"
       ),
     ],
   };
@@ -240,7 +258,8 @@ export function registerViews(app: App): void {
       await ack({
         response_action: "errors",
         errors: {
-          ypp: "Only Slack workspace Owners and Admins can record screening.",
+          training_expires_on:
+            "Only Slack workspace Owners and Admins can record screening.",
         },
       });
       return;
@@ -249,26 +268,12 @@ export function registerViews(app: App): void {
     const { personId } = JSON.parse(view.private_metadata) as Meta;
     const state = view.state as ViewState;
     const values: Partial<Record<ScreeningField, string | null>> = {};
-    const pairs: [string, ScreeningField][] = [
-      ["ypp", "ypp_completed_on"],
-      ["ypt", "ypt_completed_on"],
-      ["mentor_ready", "mentor_ready_on"],
-      ["cori", "cori_completed_on"],
-    ];
+    for (const field of SCREENING_FIELDS) values[field] = dateOf(state, field);
 
-    const now = today();
-    for (const [block, field] of pairs) {
-      const value = dateOf(state, block);
-      if (value && value > now) {
-        // A completion date in the future is a typo, and it would silently
-        // extend someone's screening past when it really expires.
-        await ack({
-          response_action: "errors",
-          errors: { [block]: "That date is in the future." },
-        });
-        return;
-      }
-      values[field] = value;
+    const errors = screeningEntryErrors(values, today());
+    if (Object.keys(errors).length) {
+      await ack({ response_action: "errors", errors });
+      return;
     }
 
     try {
@@ -294,7 +299,7 @@ export function registerViews(app: App): void {
       });
       await ack({
         response_action: "errors",
-        errors: { ypp: `Could not save: ${String(err)}` },
+        errors: { training_expires_on: `Could not save: ${String(err)}` },
       });
     }
   });

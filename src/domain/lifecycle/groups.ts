@@ -1,4 +1,5 @@
-import { notExpired, type IsoDate } from "../dates.js";
+import type { IsoDate } from "../dates.js";
+import { screeningStatus, type RequirementDates } from "../rules/screening.js";
 import {
   groupAddress,
   type MentorDetails,
@@ -7,26 +8,30 @@ import {
 } from "./sheet.js";
 
 /**
- * The three requirements that decide whether a mentor is cleared to be around
- * students. Consent & Release, Data Privacy and Mentor Ready are reported and
- * never block (docs/lifecycle-sync.md, "Screening requirements").
- *
- * Expiry dates are the sheet's, as written; nothing here computes one. FIRST
- * expires annual items on 1 August rather than a year after completion, so a
- * computed date would be wrong in a direction that matters.
+ * A sheet row's dates in the roster's terms. The lifecycle sync and the
+ * two-adult rule must agree on who is screened, so "cleared" here is exactly
+ * `screeningStatus(...).current` — one definition, including its refusal of
+ * an expiry too far out to be real.
  */
-const BLOCKING = [
-  ["Youth Protection Training", "yptExpiry"],
-  ["Background Screening", "screeningExpiry"],
-  ["CORI + fingerprints", "coriExpiry"],
-] as const satisfies readonly (readonly [string, keyof MentorDetails])[];
+export function requirementDates(m: MentorDetails): RequirementDates {
+  return {
+    training_expires_on: m.yptExpiry,
+    screening_expires_on: m.screeningExpiry,
+    cori_expires_on: m.coriExpiry,
+    consent_release_expires_on: m.consentReleaseExpiry,
+    data_privacy_expires_on: m.dataPrivacyExpiry,
+    mentor_ready_completed_on: m.mentorReadyCompleted,
+  };
+}
 
-/** Blocking requirements that are blank or past on `asOf`. Empty = cleared. */
+/** Why a mentor is not cleared on `asOf`; empty when they are. */
 export function uncleared(m: MentorDetails, asOf: IsoDate): string[] {
-  return BLOCKING.filter(([, key]) => {
-    const expiry = m[key];
-    return !expiry || !notExpired(expiry, asOf);
-  }).map(([item]) => item);
+  const s = screeningStatus(requirementDates(m), asOf);
+  return [
+    ...s.missing,
+    ...s.expired.map((e) => e.item),
+    ...s.implausible.map((e) => `${e.item} (date too far out)`),
+  ];
 }
 
 export function isCleared(p: SheetPerson, asOf: IsoDate): boolean {

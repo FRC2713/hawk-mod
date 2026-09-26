@@ -10,7 +10,9 @@ let nextId = 1;
 
 function person(role: Role, screened: boolean): Person {
   const id = nextId++;
-  const on = screened ? "2026-08-01" : null;
+  // Expiry dates, current on ASOF.
+  const training = screened ? "2027-08-01" : null;
+  const checks = screened ? "2028-06-01" : null;
   return {
     id,
     slack_user_id: `U${String(id).padStart(3, "0")}`,
@@ -18,10 +20,12 @@ function person(role: Role, screened: boolean): Person {
     full_name: `Person ${id}`,
     role,
     active: 1,
-    ypp_completed_on: on,
-    ypt_completed_on: on,
-    mentor_ready_on: on,
-    cori_completed_on: on,
+    screening_expires_on: checks,
+    training_expires_on: training,
+    cori_expires_on: checks,
+    consent_release_expires_on: training,
+    data_privacy_expires_on: training,
+    mentor_ready_completed_on: screened ? "2026-08-01" : null,
     notes: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
