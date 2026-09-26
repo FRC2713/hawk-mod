@@ -49,10 +49,13 @@ monitors.**
 | Student            | `Student_Details.School Email` | No                      | Yes, once consent current | `student`         |
 | Volunteer / Alumni | `People.Personal Email`        | No                      | **No**                    | not on the roster |
 
-Google Group membership uses one address per person: RHR Email if they have
-one, else School Email, else Personal Email. Groups containing students and
-volunteers therefore hold external addresses, which the groups must be set to
-allow (one-time Google setup).
+Google Group membership uses one address per person: a mentor's RHR Email, a
+student's School Email, and a volunteer's or alumnus's Personal Email.
+**A student's Personal Email is never used to add them to a group or to
+Slack** — it may only help match records. A student with no School Email is
+left out and reported. Groups containing students and volunteers hold
+external addresses, which the groups must be set to allow (one-time Google
+setup).
 
 ## Screening requirements
 

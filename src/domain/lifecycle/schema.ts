@@ -20,8 +20,8 @@ export const SHEET_TABS = {
     "Legal First Name",
     "Preferred First Name",
     "Legal Last Name",
-    // The group address for anyone without an RHR or school email —
-    // volunteers and alumni.
+    // The group address for volunteers and alumni, who have no other. Never a
+    // student's group address: see groupAddress in sheet.ts.
     "Personal Email",
     "Active/Inactive",
   ],
