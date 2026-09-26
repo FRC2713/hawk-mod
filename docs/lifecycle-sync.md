@@ -182,7 +182,7 @@ working if Google is not configured.
    drift refuses; dry run against the real sheet.
 1. **Slack ID write-back (B).** Look up by identity email, write the ID.
    _Verify:_ dry run lists matches; apply writes; second run is a no-op.
-2. **Requirements migration.** Expiry-based columns with unambiguous names,
+2. **Requirements migration.** _Done: migration 0008, `rules/screening.ts`._ Expiry-based columns with unambiguous names,
    `screening.ts` reads expiry dates, 1-August sanity check, report-only items.
    _Verify:_ tests for each row of the table, including a `YPT Expiry` → training
    mapping test; `SCREENING_VALID_YEARS = 3` with the sanity-check test from

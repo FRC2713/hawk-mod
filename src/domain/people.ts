@@ -17,13 +17,20 @@ export type Person = {
   full_name: string;
   role: Role;
   active: number;
-  /** Youth Protection Screening — the background check. */
-  ypp_completed_on: IsoDate | null;
-  /** Youth Protection Training — annual, and the part FIRST requires. */
-  ypt_completed_on: IsoDate | null;
-  /** Mentor Ready — optional, encouraged. Never blocks screened status. */
-  mentor_ready_on: IsoDate | null;
-  cori_completed_on: IsoDate | null;
+  // Requirement dates are EXPIRY dates, as FIRST and the state show them —
+  // never computed here. See rules/screening.ts for which ones block.
+  /** Background screening. Blocking. FIRST renews it every 3 years. */
+  screening_expires_on: IsoDate | null;
+  /** Youth Protection Training. Blocking. Annual, expiring 1 August. */
+  training_expires_on: IsoDate | null;
+  /** CORI + national fingerprints. Blocking. Massachusetts, every 3 years. */
+  cori_expires_on: IsoDate | null;
+  /** Consent & Release. Reported only: registration, not safety. */
+  consent_release_expires_on: IsoDate | null;
+  /** Data Privacy for Mentors. Reported only. */
+  data_privacy_expires_on: IsoDate | null;
+  /** Mentor Ready — a one-time badge, so a completion date. Reported only. */
+  mentor_ready_completed_on: IsoDate | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

@@ -25,8 +25,9 @@ Seniority is never an exemption.
 _Avoid_: Mentor, coach, grown-up, leader
 
 **Screened adult**:
-An adult with current Youth Protection Screening, Youth Protection Training, and
-CORI on file. Only screened adults count toward the two-adult rule.
+An adult whose Youth Protection Training, background screening and CORI all
+have an expiry date on file that has not passed, and is not further out than
+the item can last. Only screened adults count toward the two-adult rule.
 
 **Administrator**:
 Someone Slack records as a Workspace Owner or Admin. It is not a roster role and
@@ -158,8 +159,8 @@ A person's `P####` key in the lifecycle sheet. Never reused, never reassigned.
 A mentor whose Youth Protection Training, background screening and CORI are
 all current, going by the expiry dates in the lifecycle sheet. Consent &
 Release, Data Privacy and Mentor Ready are reported, and never affect it.
-_Avoid_: Screened (until the roster reads the sheet, **screened adult** is still
-computed from hawk-mod's own dates)
+Computed by the same rule as **screened adult**, from the sheet's dates rather
+than the roster's.
 
 **Mirrored group**:
 A Slack user group whose membership is copied from a Google Group the lifecycle

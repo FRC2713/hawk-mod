@@ -262,15 +262,24 @@ DM list to catch history predating enrollment and anything missed while the
 process was down. `UNIQUE (conversation_id, ts)` is what keeps the two from
 double-counting — both adults in a group DM also deliver the same event twice.
 
-**Screening has three required items on different clocks** (`rules/screening.ts`):
-Youth Protection Screening (4 years), Youth Protection Training (1 year), and
-CORI + fingerprints (3 years, state law). Mentor Ready is reported as
-outstanding but is **never blocking** — FIRST encourages it rather than
-requiring it, and gating on it would flag adults who have done everything
-actually asked of them. Mind the column names: `ypp_completed_on` holds the
-_screening_, `ypt_completed_on` holds the _training_, and they run on different
-clocks. Reading `ypp` as "the annual one" shortens a four-year window to one and
-flags adults who are perfectly current.
+**Screening is stored as expiry dates, and nothing computes one**
+(`rules/screening.ts`). Three items block: Youth Protection Training
+(`training_expires_on`, annual), Background Screening (`screening_expires_on`,
+3 years — it was 4, FRC2713/hawk-mod#17) and CORI + fingerprints
+(`cori_expires_on`, 3 years, state law). Consent & Release, Data Privacy and
+Mentor Ready are reported and **never block** — gating on them would flag
+adults who have done everything the safety rules actually ask. FIRST expires
+its annual items on **1 August**, not a year after completion, so any
+"completed + N years" arithmetic is wrong, by up to a year for training taken
+in July. The windows survive only as a bound: an expiry further out than the
+item can last is a typo, reported and treated as **not current**, because the
+alternative is a mistyped year silently extending someone's clearance. The
+lifecycle sync's "cleared" is `screeningStatus().current` on the sheet's dates
+— one definition, so the sheet and the two-adult rule cannot disagree. The old
+column names (`ypp_completed_on` holding the screening, the sheet's old "YPP
+Expiry" holding the training) were exactly the mix-up that shortens or
+stretches a window; migration 0008 dropped them. `today()` is the team's
+calendar day (`TZ`), not UTC, which rolls over at 8pm Eastern.
 
 ## Container
 

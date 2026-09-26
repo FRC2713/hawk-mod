@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { addYears, daysBetween } from "../src/domain/dates.js";
+import { addYears, daysBetween, today } from "../src/domain/dates.js";
 import type { Person, Role } from "../src/domain/people.js";
 import {
   consentStatus,
@@ -9,6 +9,8 @@ import {
 } from "../src/domain/rules/consent.js";
 import {
   isScreenedAdult,
+  latestAnnualExpiry,
+  screeningEntryErrors,
   screeningStatus,
 } from "../src/domain/rules/screening.js";
 import { classifyConversation } from "../src/domain/rules/dmPolicy.js";
@@ -25,10 +27,12 @@ function person(role: Role, overrides: Partial<Person> = {}): Person {
     full_name: `Person ${id}`,
     role,
     active: 1,
-    ypp_completed_on: null,
-    ypt_completed_on: null,
-    mentor_ready_on: null,
-    cori_completed_on: null,
+    screening_expires_on: null,
+    training_expires_on: null,
+    cori_expires_on: null,
+    consent_release_expires_on: null,
+    data_privacy_expires_on: null,
+    mentor_ready_completed_on: null,
     notes: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
@@ -36,12 +40,12 @@ function person(role: Role, overrides: Partial<Person> = {}): Person {
   };
 }
 
-/** Current on everything FIRST and Massachusetts require. */
+/** Current on everything FIRST and Massachusetts require, as expiry dates. */
 function screened(role: Role = "adult"): Person {
   return person(role, {
-    ypp_completed_on: "2024-01-15",
-    ypt_completed_on: "2026-01-15",
-    cori_completed_on: "2024-06-01",
+    screening_expires_on: "2027-01-15",
+    training_expires_on: "2027-08-01",
+    cori_expires_on: "2027-06-01",
   });
 }
 
@@ -129,54 +133,87 @@ describe("consent", () => {
 });
 
 describe("screening", () => {
-  it("expires training annually and CORI after three years", () => {
+  const AS_OF = "2026-09-26";
+
+  it("reads expiry dates as given, valid through the day itself", () => {
     const p = person("adult", {
-      ypp_completed_on: "2024-01-01",
-      ypt_completed_on: "2025-01-01",
-      cori_completed_on: "2023-01-01",
+      screening_expires_on: "2029-01-01",
+      training_expires_on: "2027-08-01",
+      cori_expires_on: "2028-01-01",
     });
-    const status = screeningStatus(p, "2026-08-12");
-    assert.equal(status.current, false);
-    assert.deepEqual(status.expired.map((e) => e.item).sort(), [
-      "CORI + fingerprints",
-      "Youth Protection Training",
+    assert.equal(screeningStatus(p, "2027-08-01").current, true);
+    assert.deepEqual(screeningStatus(p, "2027-08-02").expired, [
+      { item: "Youth Protection Training", expiredOn: "2027-08-01" },
     ]);
-  });
-
-  it("keeps the background screening valid longer than the training", () => {
-    const p = person("adult", {
-      ypp_completed_on: "2024-01-01",
-      ypt_completed_on: "2026-01-01",
-      cori_completed_on: "2024-01-01",
-    });
-    assert.equal(screeningStatus(p, "2026-08-12").current, true);
-  });
-
-  /**
-   * Mentor Ready is optional per FIRST — a path whose Youth Protection
-   * Training component is the only part required for clearance. Requiring it
-   * would block adults who have done everything actually asked of them.
-   */
-  it("does not require Mentor Ready to count as screened", () => {
-    const p = person("adult", {
-      ypp_completed_on: "2024-01-01",
-      ypt_completed_on: "2026-01-01",
-      cori_completed_on: "2024-01-01",
-      mentor_ready_on: null,
-    });
-    const status = screeningStatus(p, "2026-08-12");
-    assert.equal(status.current, true);
-    assert.deepEqual(status.optionalOutstanding, ["Mentor Ready"]);
   });
 
   it("reports what was never recorded separately from what lapsed", () => {
-    const p = person("adult", { ypp_completed_on: "2026-01-01" });
-    const status = screeningStatus(p, "2026-08-12");
-    assert.deepEqual(status.missing.sort(), [
-      "CORI + fingerprints",
+    const p = person("adult", {
+      screening_expires_on: "2026-01-01",
+      training_expires_on: null,
+      cori_expires_on: null,
+    });
+    const status = screeningStatus(p, AS_OF);
+    assert.deepEqual(status.missing, [
       "Youth Protection Training",
+      "CORI + fingerprints",
     ]);
-    assert.equal(status.expired.length, 0);
+    assert.deepEqual(status.expired, [
+      { item: "Background Screening", expiredOn: "2026-01-01" },
+    ]);
+  });
+
+  /**
+   * FRC2713/hawk-mod#17. FIRST renews the background screening at 36
+   * months; a screening expiry further out than that is a typo, and a typo
+   * must not extend someone's clearance.
+   */
+  it("refuses a screening expiry more than three years out", () => {
+    const ok = screened();
+    ok.screening_expires_on = "2029-09-26";
+    assert.equal(screeningStatus(ok, AS_OF).current, true);
+
+    const typo = screened();
+    typo.screening_expires_on = "2029-09-27";
+    const status = screeningStatus(typo, AS_OF);
+    assert.equal(status.current, false);
+    assert.deepEqual(status.implausible, [
+      { item: "Background Screening", expiresOn: "2029-09-27" },
+    ]);
+    assert.equal(isScreenedAdult(typo, AS_OF), false);
+  });
+
+  it("refuses an annual expiry beyond the next season", () => {
+    // On 26 Sep 2026 the latest real training expiry is 1 Aug 2028: the next
+    // rollover, plus one season for training counted toward the following one.
+    const p = screened();
+    p.training_expires_on = "2028-08-01";
+    assert.equal(screeningStatus(p, AS_OF).current, true);
+    p.training_expires_on = "2029-08-01";
+    assert.equal(screeningStatus(p, AS_OF).current, false);
+  });
+
+  it("finds the rollover on the right side of 1 August", () => {
+    assert.equal(latestAnnualExpiry("2026-07-31"), "2027-08-01");
+    assert.equal(latestAnnualExpiry("2026-08-01"), "2028-08-01");
+    assert.equal(latestAnnualExpiry("2026-09-26"), "2028-08-01");
+  });
+
+  /**
+   * Consent & Release is registration, Data Privacy is data handling, and
+   * Mentor Ready is encouraged rather than required. Blocking on any of them
+   * would flag adults who have done everything the safety rules ask.
+   */
+  it("reports Consent & Release, Data Privacy and Mentor Ready, never blocks", () => {
+    const p = screened();
+    p.consent_release_expires_on = "2026-08-01";
+    const status = screeningStatus(p, AS_OF);
+    assert.equal(status.current, true);
+    assert.deepEqual(status.optionalOutstanding, [
+      "Consent & Release",
+      "Data Privacy for Mentors",
+      "Mentor Ready",
+    ]);
   });
 
   it("does not count students, inactive people, or unknown accounts as adults", () => {
@@ -186,6 +223,53 @@ describe("screening", () => {
     const inactive = screened("adult");
     inactive.active = 0;
     assert.equal(isScreenedAdult(inactive, "2026-08-12"), false);
+  });
+});
+
+describe("recording screening dates", () => {
+  const AS_OF = "2026-09-26";
+
+  it("accepts an expiry in the past: recording a lapse is legitimate", () => {
+    assert.deepEqual(
+      screeningEntryErrors({ training_expires_on: "2025-08-01" }, AS_OF),
+      {}
+    );
+  });
+
+  it("refuses an expiry further out than the item lasts", () => {
+    const errors = screeningEntryErrors(
+      {
+        training_expires_on: "2030-08-01",
+        screening_expires_on: "2031-01-01",
+        cori_expires_on: "2029-09-26",
+      },
+      AS_OF
+    );
+    assert.deepEqual(Object.keys(errors).sort(), [
+      "screening_expires_on",
+      "training_expires_on",
+    ]);
+  });
+
+  it("refuses a Mentor Ready completion in the future", () => {
+    assert.ok(
+      screeningEntryErrors({ mentor_ready_completed_on: "2026-09-27" }, AS_OF)
+        .mentor_ready_completed_on
+    );
+  });
+});
+
+describe("today", () => {
+  it("is the date in the team's timezone, not UTC", () => {
+    const previous = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      // 9:30pm Eastern on 26 Sep is already 27 Sep in UTC.
+      assert.equal(today(new Date("2026-09-27T01:30:00Z")), "2026-09-26");
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
   });
 });
 

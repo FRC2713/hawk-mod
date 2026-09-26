@@ -1,8 +1,34 @@
 /** Date-only values are ISO `YYYY-MM-DD`; instants are full ISO-8601. */
 export type IsoDate = string;
 
+/** The team's timezone; `TZ` is set in both compose files, and this is its default. */
+const TEAM_TZ = "America/New_York";
+
+function dayFormatter(): Intl.DateTimeFormat {
+  const options = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  } as const;
+  try {
+    // en-CA formats a date as YYYY-MM-DD.
+    return new Intl.DateTimeFormat("en-CA", {
+      ...options,
+      timeZone: process.env.TZ || TEAM_TZ,
+    });
+  } catch {
+    // An unrecognised TZ must not stop every date comparison in the app.
+    return new Intl.DateTimeFormat("en-CA", { ...options, timeZone: TEAM_TZ });
+  }
+}
+
+/**
+ * Today's date where the team is, not in UTC. Expiry dates are calendar days in
+ * Massachusetts; in UTC, "today" rolls over at 8pm Eastern, and a date that is
+ * still valid tonight would read as expired four hours early.
+ */
 export function today(now: Date = new Date()): IsoDate {
-  return now.toISOString().slice(0, 10);
+  return dayFormatter().format(now);
 }
 
 export function nowIso(now: Date = new Date()): string {

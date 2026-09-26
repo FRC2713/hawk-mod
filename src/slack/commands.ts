@@ -20,7 +20,10 @@ import { today } from "../domain/dates.js";
 import { severityEmoji } from "../domain/findings.js";
 import { requiresEnrollment, type Person } from "../domain/people.js";
 import { consentStatus } from "../domain/rules/consent.js";
-import { screeningStatus } from "../domain/rules/screening.js";
+import {
+  describeScreening,
+  screeningStatus,
+} from "../domain/rules/screening.js";
 import { log } from "../logger.js";
 import {
   isSettingKey,
@@ -48,7 +51,7 @@ const HELP = [
   "`/hawkmod group remove @user @group` — take someone out of a user group",
   "`/hawkmod deactivate @user <reason>` — stop monitoring someone",
   "`/hawkmod config` — show settings; `config set <key> <value>` to change one",
-  "`/hawkmod screening @user` — record YPP / Mentor Ready / CORI dates",
+  "`/hawkmod screening @user` — record YPT / screening / CORI expiry dates",
   "`/hawkmod consent @user` — record a signed parental consent",
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
   "`/hawkmod resolve <id> <note>` — close a finding, with a reason",
@@ -368,17 +371,11 @@ async function whoisText(
     lines.push(`Consent: ${consentStatus(person, listConsents(), asOf).state}`);
   } else {
     const s = screeningStatus(person, asOf);
-    lines.push(
-      `Screening: ${
-        s.current
-          ? "current"
-          : `${s.missing.join(", ")}${s.missing.length && s.expired.length ? "; " : ""}${s.expired
-              .map((e) => `${e.item} expired ${e.expiredOn}`)
-              .join(", ")}`
-      }`
-    );
+    lines.push(`Screening: ${describeScreening(s)}`);
     if (s.optionalOutstanding.length) {
-      lines.push(`Optional, outstanding: ${s.optionalOutstanding.join(", ")}`);
+      lines.push(
+        `Reported only, outstanding: ${s.optionalOutstanding.join(", ")}`
+      );
     }
   }
 
