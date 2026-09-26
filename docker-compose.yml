@@ -58,10 +58,18 @@ services:
       # (daily digest, quarterly reminder) go out. A value set from Slack or
       # the web configuration page wins over this.
       REPORT_TIME: ${REPORT_TIME:-08:00}
+
+      # --- Lifecycle sync (optional; docs/google-setup.md) -----------------
+      # Unset means no Google access at all, and nothing else changes.
+      GOOGLE_SERVICE_ACCOUNT_KEY_FILE: ${GOOGLE_SERVICE_ACCOUNT_KEY_FILE:-}
+      LIFECYCLE_SHEET_ID: ${LIFECYCLE_SHEET_ID:-}
     volumes:
       # Minors' message content lives here. Back it up; see the data-handling
       # note in docs/deploy-linode.md before pointing this at a host path.
       - hawk-mod-data:/data
+      # The Google service account key, read-only. Uncomment once the file
+      # exists on the host; it reads the lifecycle sheet, which names minors.
+      # - ./google-key.json:/run/secrets/google-key.json:ro
     networks:
       - edge
     # Uncomment ONLY for a standalone run with no proxy in front. Slack still
