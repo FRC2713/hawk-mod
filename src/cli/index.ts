@@ -18,7 +18,18 @@ import { today } from "../domain/dates.js";
 import { planLifecycle, type LifecyclePlan } from "../domain/lifecycle/plan.js";
 import { parseSheet } from "../domain/lifecycle/sheet.js";
 import { googleEnv, serviceAccountClient } from "../google/credentials.js";
-import { readLifecycleSheet, SHEETS_READONLY } from "../google/sheets.js";
+import {
+  fillBlankCells,
+  readLifecycleSheet,
+  SHEETS_READONLY,
+  SHEETS_READWRITE,
+} from "../google/sheets.js";
+import {
+  planSlackIds,
+  type SlackIdDecision,
+} from "../domain/lifecycle/slackIds.js";
+import { fetchWorkspaceUsers } from "../slack/roster.js";
+import { botClient } from "../slack/tokens.js";
 
 const USAGE = `hawk-mod cli
 
@@ -39,6 +50,11 @@ const USAGE = `hawk-mod cli
                                would do. Changes nothing. Needs
                                GOOGLE_SERVICE_ACCOUNT_KEY_FILE and
                                LIFECYCLE_SHEET_ID; --members lists addresses
+  lifecycle slack-ids [--apply]
+                               match sheet people to Slack accounts by email
+                               and show which Slack User ID cells would be
+                               filled; --apply fills them. Only ever fills a
+                               blank cell. Needs the Slack install too
 `;
 
 function rows(path: string): Record<string, string>[] {
@@ -199,7 +215,7 @@ function printPlan(plan: LifecyclePlan, members: boolean) {
  * the default output is safe to paste into a channel, since it names Person
  * IDs and counts, and most of the addresses belong to minors.
  */
-async function lifecyclePlan(args: string[]) {
+function requireGoogle() {
   const env = googleEnv();
   if (!env) {
     throw new Error(
@@ -207,12 +223,83 @@ async function lifecyclePlan(args: string[]) {
     );
   }
   if (!env.sheetId) throw new Error("LIFECYCLE_SHEET_ID is not set");
+  return { ...env, sheetId: env.sheetId };
+}
+
+async function lifecyclePlan(args: string[]) {
+  const env = requireGoogle();
   const client = serviceAccountClient(env, [SHEETS_READONLY]);
   const data = await readLifecycleSheet(client, env.sheetId);
   printPlan(
     planLifecycle(parseSheet(data), today()),
     args.includes("--members")
   );
+}
+
+const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {
+  write: "To fill in",
+  unchanged: "Already correct",
+  not_in_slack: "Not in Slack yet",
+  conflict: "Needs a person to look at",
+};
+
+/**
+ * Step 1 of the lifecycle sync. Dry run unless `--apply`; the dry run and the
+ * write print the same plan, so what is approved is what is written.
+ */
+async function lifecycleSlackIds(args: string[]) {
+  const apply = args.includes("--apply");
+  const env = requireGoogle();
+  const sheets = serviceAccountClient(env, [
+    apply ? SHEETS_READWRITE : SHEETS_READONLY,
+  ]);
+  const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
+  const accounts = (await fetchWorkspaceUsers(botClient())).map((u) => ({
+    id: u.id,
+    email: u.email,
+    live: !u.isBot && !u.isDeleted,
+  }));
+  const decisions = planSlackIds(parsed.people, accounts);
+
+  console.log(`Slack User IDs${apply ? "" : " (dry run: nothing changed)"}\n`);
+  for (const kind of Object.keys(SLACK_ID_LABEL) as SlackIdDecision["kind"][]) {
+    const these = decisions.filter((d) => d.kind === kind);
+    console.log(`${SLACK_ID_LABEL[kind]}: ${these.length}`);
+    for (const d of these) {
+      const where = `${d.personId} (${d.tab} row ${d.row})`;
+      if (d.kind === "write") console.log(`  ${where} -> ${d.slackUserId}`);
+      else if (d.kind === "conflict") console.log(`  ${where}: ${d.reason}`);
+      else if (d.kind === "not_in_slack") console.log(`  ${where}`);
+    }
+  }
+  if (parsed.problems.length) {
+    console.log(
+      `\n${parsed.problems.length} sheet problem(s); run "lifecycle plan" to see them.`
+    );
+  }
+
+  const writes = decisions.flatMap((d) =>
+    d.kind === "write"
+      ? [
+          {
+            tab: d.tab,
+            row: d.row,
+            header: "Slack User ID" as const,
+            personId: d.personId,
+            value: d.slackUserId,
+          },
+        ]
+      : []
+  );
+  if (!apply) {
+    if (writes.length) console.log("\nRun again with --apply to fill them in.");
+    return;
+  }
+  const result = await fillBlankCells(sheets, env.sheetId, writes);
+  console.log(`\nFilled ${result.written.length} cell(s).`);
+  for (const s of result.skipped) {
+    console.log(`  skipped ${s.write.personId}: ${s.reason}; run it again`);
+  }
 }
 
 async function main() {
@@ -251,9 +338,9 @@ async function main() {
       exportConversation(args[0], args[1]);
       return;
     case "lifecycle":
-      if (args[0] !== "plan")
-        throw new Error("usage: lifecycle plan [--members]");
-      await lifecyclePlan(args.slice(1));
+      if (args[0] === "plan") await lifecyclePlan(args.slice(1));
+      else if (args[0] === "slack-ids") await lifecycleSlackIds(args.slice(1));
+      else throw new Error("usage: lifecycle plan|slack-ids");
       return;
     default:
       console.log(USAGE);

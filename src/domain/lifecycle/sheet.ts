@@ -28,6 +28,8 @@ export type AdminRole = (typeof ADMIN_ROLES)[number];
 export type SheetStatus = "active" | "inactive" | "unknown";
 
 export type MentorDetails = {
+  /** Sheet row this came from, so a write-back can find the cell. */
+  row: number;
   rhrEmail: string | null;
   slackUserId: string | null;
   /** Blocking: Youth Protection Training. Annual, to 1 August. */
@@ -47,6 +49,8 @@ export type MentorDetails = {
 };
 
 export type StudentDetails = {
+  /** Sheet row this came from, so a write-back can find the cell. */
+  row: number;
   schoolEmail: string | null;
   slackUserId: string | null;
   lead: boolean;
@@ -316,6 +320,7 @@ export function parseSheet(data: SheetData): ParsedSheet {
     const d = (column: Header<"Mentor_Details">) =>
       date(r[column], column, tab, r, id, problems);
     people.get(id)!.mentor = {
+      row: r._row,
       rhrEmail: email(r["RHR Email"], "RHR Email", tab, r, id, problems),
       slackUserId: slackId(r["Slack User ID"], tab, r, id, problems),
       yptExpiry: d("YPT Expiry"),
@@ -346,6 +351,7 @@ export function parseSheet(data: SheetData): ParsedSheet {
     const tab = "Student_Details";
     const r = row!;
     people.get(id)!.student = {
+      row: r._row,
       schoolEmail: email(
         r["School Email"],
         "School Email",
