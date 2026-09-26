@@ -64,9 +64,10 @@ organization-wide policies alone.
 the sheet (every minor's name, school email and form dates), and after Part 2 it
 can act as a Google admin. Unlike `TOKEN_ENCRYPTION_KEY`, it is replaceable: if
 it's lost, create a new key on the same service account and delete the old one;
-nothing else changes. So the only long-term copy is the one on the hawk-mod
-host (`chmod 600`). Delete any laptop copy you tested with, and delete that key
-in the console.
+nothing else changes. So the only long-term copy is the GitHub secret in step
+6, which GitHub will never show again once saved. Delete the downloaded file
+once it's there, and delete any laptop key you tested with — in the console
+too, not only the file.
 
 Don't keep it in a shared Drive folder, even a restricted one, and especially
 not beside the lifecycle sheet. Everyone who can open the folder would hold an
@@ -93,28 +94,42 @@ before loosening it, and we'll switch the sheet read to impersonation from Part
 
 ### 6. Tell hawk-mod where things are
 
-The sheet ID is the long part of its URL:
-`https://docs.google.com/spreadsheets/d/`**`173wwf6y…cBjo`**`/edit`.
+hawk-mod needs two values: the key, and the sheet's ID. The sheet ID is the long
+part of its URL: `https://docs.google.com/spreadsheets/d/`**`173wwf6y…cBjo`**`/edit`.
 
-To try it from a laptop checkout, with the key file somewhere outside the repo:
+**In production** nothing is put on the server by hand. hawk_suite's Deploy
+workflow renders the server's `.env` from GitHub, so both values go into
+[hawk_suite's settings](https://github.com/FRC2713/hawk_suite/settings/secrets/actions)
+— the same place hawk-bot's Google key lives:
+
+1. Turn the key into one line of base64, on the Mac where it downloaded:
+
+   ```bash
+   base64 -i ~/Downloads/hawk-mod-XXXXXX.json | tr -d '\n' | pbcopy
+   ```
+
+   That copies it to the clipboard without showing it.
+
+2. **Secrets → New repository secret**: name
+   `HAWK_MOD_GOOGLE_SERVICE_ACCOUNT_KEY_BASE64`, paste, save. Then delete the
+   downloaded file.
+3. **Variables → New repository variable**: name `LIFECYCLE_SHEET_ID`, value
+   the sheet ID. It is not a secret; the sheet is useless without access.
+4. Run **Actions → Deploy → Run workflow**, and approve it.
+
+**From a laptop checkout**, for testing, point at the key file instead:
 
 ```bash
 GOOGLE_SERVICE_ACCOUNT_KEY_FILE=~/secrets/hawk-mod-google.json LIFECYCLE_SHEET_ID=173wwf6yNjvHQY_Vw--9MQzNb_1Irk_I2lyBe3whcBjo npm run cli -- lifecycle plan
 ```
 
-On the host, copy the key next to the stack (`chmod 600`), then in `.env`:
-
-```bash
-GOOGLE_SERVICE_ACCOUNT_KEY_FILE=/run/secrets/google-key.json
-LIFECYCLE_SHEET_ID=173wwf6yNjvHQY_Vw--9MQzNb_1Irk_I2lyBe3whcBjo
-```
-
-and uncomment the key's volume line in `docker-compose.yml`.
-
 ### 7. Check it
 
-`lifecycle plan` changes nothing, anywhere. Expect:
+In Slack, `/hawkmod lifecycle plan` (from a laptop, `npm run cli -- lifecycle
+plan`). It changes nothing, anywhere. Expect:
 
+- **"Google is not configured"** if the secret did not reach the container —
+  check the name, and that the deploy ran after it was set.
 - **A header error** if a tab or column has been renamed. It names the column,
   and nothing is read until it's fixed.
 - **A 403** if step 5 did not take.
@@ -122,9 +137,9 @@ and uncomment the key's volume line in `docker-compose.yml`.
   of `grp-all-team` and why, and a list of sheet problems by Person ID. The
   sample people P0001–P0003 are ignored and reported until they're deleted.
 
-The default output names Person IDs and counts only, so it's safe to paste into
-a channel. `--members` adds each group's addresses; most of those belong to
-minors, so keep that output to yourself.
+The output names Person IDs and counts only. The CLI's `--members` adds each
+group's addresses; most of those belong to minors, so keep that output to
+yourself. Slack never offers it.
 
 ## Part 2 — manage groups (step 4 onwards; not yet)
 

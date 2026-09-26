@@ -61,6 +61,9 @@ services:
 
       # --- Lifecycle sync (optional; docs/google-setup.md) -----------------
       # Unset means no Google access at all, and nothing else changes.
+      # Production (hawk_suite) passes the key as base64; a key file mounted
+      # below works too.
+      GOOGLE_SERVICE_ACCOUNT_KEY_BASE64: ${GOOGLE_SERVICE_ACCOUNT_KEY_BASE64:-}
       GOOGLE_SERVICE_ACCOUNT_KEY_FILE: ${GOOGLE_SERVICE_ACCOUNT_KEY_FILE:-}
       LIFECYCLE_SHEET_ID: ${LIFECYCLE_SHEET_ID:-}
     volumes:
