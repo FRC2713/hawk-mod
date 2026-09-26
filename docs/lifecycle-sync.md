@@ -204,8 +204,11 @@ working if Google is not configured.
 7. **Offboarding / reactivation (I).** Approval alerts, suspend / un-suspend.
    _Verify:_ nothing changes without the click; a non-admin click is refused.
 8. **Delegated admin roles (G).** Approval-gated grant and revoke.
-9. **Running it.** Scheduled run, `/hawkmod lifecycle plan|apply`, and a
-   run-now control on `/config`.
+9. **Running it.** Scheduled run and a run-now control on `/config`.
+   `/hawkmod lifecycle plan` and `slack-ids [apply]` already exist — pulled
+   forward because production is deployed by hawk_suite's workflow and has no
+   shell, so Slack is the only place an administrator can run them. Each later
+   step adds its own subcommand there as it lands.
 
 The sheet edits in [Screening requirements](#screening-requirements) were made
 on 2026-09-25 (headers verified; the `_Instructions` wording and date validation
