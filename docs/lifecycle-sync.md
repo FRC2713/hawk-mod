@@ -50,7 +50,11 @@ monitors.**
 | Volunteer / Alumni | `People.Personal Email`        | No                      | **No**                    | not on the roster |
 
 Google Group membership uses one address per person: a mentor's RHR Email, a
-student's School Email, and a volunteer's or alumnus's Personal Email.
+student's School Email, and a volunteer's or alumnus's Personal Email. **A
+mentor is only ever added by RHR Email** — the mentor groups are domain
+accounts only in the RHR Systems Access & Security Plan, because adults reach
+students from official accounts — and a mentor without one is left out and
+reported.
 **A student's Personal Email is never used to add them to a group or to
 Slack** — it may only help match records. A student with no School Email is
 left out and reported. Groups containing students and volunteers hold
@@ -105,6 +109,13 @@ refusals `domain/rules/groupMembership.ts` already carries. A plan that would
 empty a group or remove more than the threshold is held and raised as a finding
 rather than applied, because a sheet mistake (a deleted block of role rows)
 must not empty `grp-students`.
+
+Groups are kept **flat**, as the access plan specifies: each Google Group
+holds its people directly and never contains another group, because nested
+groups behave inconsistently across Drive, Calendar and Slack. The subset
+relationships — leads inside their role group, both role groups inside
+`grp-all-team` — are enforced by the sync (`SUBSETS` in
+`domain/lifecycle/groups.ts`, with a test), not by Google.
 
 `grp-all-team` is every Active student and every Active mentor — not
 volunteers or alumni — **whether or not the mentor is screened**. Screening

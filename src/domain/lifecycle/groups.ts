@@ -82,9 +82,25 @@ export function intendedGroups(people: readonly SheetPerson[]): IntendedGroups {
     "grp-mentor-leads": mentors.filter((p) => p.mentor?.lead),
     "grp-student-leads": students.filter((p) => p.student?.lead),
     "grp-ra": mentors.filter((p) => p.mentor?.ra),
-    "grp-all-team": [...students, ...mentors],
+    // Literally the union of the two role groups, so it cannot drift from them.
+    "grp-all-team": [...new Set([...mentors, ...students])],
   };
 }
+
+/**
+ * Every group that sits inside another, as [subset, superset]. Google Groups
+ * are kept flat — each holds its people directly, never another group —
+ * because nested groups behave inconsistently across Drive, Calendar and
+ * Slack. So "a lead is also a mentor" is not something Google enforces; it is
+ * this list, and a test that checks every subset member is in its superset.
+ * Adding a group that belongs inside another means adding it here.
+ */
+export const SUBSETS: readonly (readonly [GroupName, GroupName])[] = [
+  ["grp-mentor-leads", "grp-mentors"],
+  ["grp-student-leads", "grp-students"],
+  ["grp-mentors", "grp-all-team"],
+  ["grp-students", "grp-all-team"],
+];
 
 /** Group members as addresses, sorted; people without one are left out. */
 export function addresses(members: readonly SheetPerson[]): string[] {
