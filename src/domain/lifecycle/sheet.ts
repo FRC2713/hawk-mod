@@ -473,9 +473,18 @@ export function parseSheet(data: SheetData): ParsedSheet {
 }
 
 /**
- * The one address a person is known by in Google Groups: their RHR address if
- * they have one, else their school address, else their personal one.
+ * The one address a person is added to Google Groups (and so Slack) by.
+ *
+ * A student is added by their School Email and nothing else. Their Personal
+ * Email may identify them — it can match records — but it is never an address
+ * hawk-mod adds anywhere: a minor's private inbox is not a team channel, and a
+ * student with no school address is left out and reported rather than reached
+ * some other way. This holds even for a student who also has another role.
+ *
+ * Adults: a mentor by their RHR address; volunteers and alumni by their
+ * personal one, which is the only address they have.
  */
 export function groupAddress(p: SheetPerson): string | null {
-  return p.mentor?.rhrEmail ?? p.student?.schoolEmail ?? p.personalEmail;
+  if (p.roles.includes("Student")) return p.student?.schoolEmail ?? null;
+  return p.mentor?.rhrEmail ?? p.personalEmail;
 }

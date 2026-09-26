@@ -332,6 +332,56 @@ describe("computed groups", () => {
     ]);
   });
 
+  it("never adds a student by their personal email", () => {
+    // A student with no school address is left out and reported. Their
+    // personal inbox is never where hawk-mod adds them — not to a group, and
+    // so not to Slack.
+    const { people } = parseSheet(
+      sheet(
+        {
+          ...student("P0050", { "School Email": "" }),
+          personalEmail: "kid@home.example",
+        },
+        {
+          ...student("P0051"),
+          personalEmail: "other@home.example",
+        }
+      )
+    );
+    const intended = intendedGroups(people, AS_OF);
+    assert.deepEqual(addresses(intended["grp-students"]), [
+      "p0051@school.example",
+    ]);
+    for (const members of Object.values(intended)) {
+      for (const a of addresses(members))
+        assert.ok(!a.endsWith("home.example"));
+    }
+    const plan = planLifecycle(
+      parseSheet(
+        sheet({
+          ...student("P0050", { "School Email": "" }),
+          personalEmail: "kid@home.example",
+        })
+      ),
+      AS_OF
+    );
+    assert.deepEqual(plan.noAddress, ["P0050"]);
+  });
+
+  it("uses a student's school email even when they also hold another role", () => {
+    const { people } = parseSheet(
+      sheet({
+        id: "P0052",
+        roles: ["Student", "Alumni"],
+        student: {},
+        personalEmail: "alum@home.example",
+      })
+    );
+    assert.deepEqual(addresses(intendedGroups(people, AS_OF)["grp-alumni"]), [
+      "p0052@school.example",
+    ]);
+  });
+
   it("plans with reasons for each uncleared mentor", () => {
     const plan = planLifecycle(
       parseSheet(sheet(mentor("P0011", { "Background Screening Expiry": "" }))),
