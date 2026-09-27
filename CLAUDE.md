@@ -243,7 +243,8 @@ the other). Every string a page interpolates goes through `esc()` — setting
 values and display names are whatever their owner typed.
 
 **The lifecycle sheet is being made the source of people** (in progress; the
-scope and build order are `docs/lifecycle-sync.md`). The sheet declares, the
+scope and build order are `docs/lifecycle-sync.md`, the sheet's schema is
+`docs/lifecycle-sheet.md`). The sheet declares, the
 Slack user groups mirror it, and the roster monitors — the add-only rule
 carries over to the new source. So far it is read-only: `google/sheets.ts`
 reads the header rows, then requests **only** the columns `SHEET_TABS` in
