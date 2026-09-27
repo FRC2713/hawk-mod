@@ -90,7 +90,11 @@ came from**, which is the question actually asked when the roster looks wrong.
 from Slack, and `TOKEN_ENCRYPTION_KEY` must never be reachable — changing it
 makes every stored token undecryptable and every enrolled adult invisible while
 coverage still reads 100%. A user group handle is validated against Slack before
-it is stored, because a stored typo reads exactly like an empty group. Changing
+it is stored, because a stored typo reads exactly like an empty group. A
+channel is stored by **id, never by name**, so renaming it breaks nothing, and
+wherever an id is shown the channel's current name is shown with it
+(`#alerts (C0123ABC)`, via `describeValue`). Never refer to a channel by name in
+code or config. Changing
 a role group re-syncs immediately; leaving it until 3am would mean the setting
 looked applied and was not. Every change lands in `setting_changes`.
 

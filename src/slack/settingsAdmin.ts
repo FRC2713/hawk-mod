@@ -19,9 +19,9 @@ import { resolveGroup } from "./userGroups.js";
  *
  * Channels are stored by id, deliberately — an id survives the channel being
  * renamed, and a stored `#name` would quietly stop resolving the day somebody
- * tidied it up. But `C0BPAV78LKZ` tells a reader nothing, so the id is what is
- * kept and the name is what is shown. Falls back to the raw value if Slack
- * cannot be asked: a settings listing that throws is worse than one that is
+ * tidied it up. But `C0BPAV78LKZ` tells a reader nothing, so both are shown:
+ * the current name, and the id that is actually stored. Falls back to the raw
+ * value if Slack cannot be asked: a settings listing that throws is worse than one that is
  * briefly ugly. Plain text — the caller decides what Slack mrkdwn or HTML to
  * wrap it in.
  */
@@ -33,7 +33,7 @@ export async function describeValue(
   if (SETTINGS[key].kind === "channel") {
     try {
       const info = await client.conversations.info({ channel: value });
-      return info.channel?.name ? `#${info.channel.name}` : value;
+      return info.channel?.name ? `#${info.channel.name} (${value})` : value;
     } catch {
       return value;
     }
