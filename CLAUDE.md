@@ -29,7 +29,8 @@ npx tsx --test --test-name-pattern "two adults" test/rules.test.ts
 
 CLI subcommands: `import-roster`, `import-consents`, `set-role`, `sweep`,
 `backfill`, `findings [status]`, `export-conversation <id> [out.json]`,
-`lifecycle plan [--members]`, `lifecycle slack-ids [--apply]`. None of
+`lifecycle plan [--members]`, `lifecycle slack-ids [--apply]`,
+`lifecycle roster`. None of
 them is a bootstrap step: administrative access is Slack's Workspace
 Owner/Admin flags, read live in `src/slack/authz.ts`, so a fresh install is
 usable by whoever installed it without anyone touching the host. Don't
