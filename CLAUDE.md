@@ -77,7 +77,10 @@ student-to-student DMs, which this deliberately never records.
 `src/db/client.ts` opens it, sets WAL and `foreign_keys = ON` (SQLite needs the
 latter per-connection or the cascades silently do nothing), and applies
 `migrations/NNNN_*.sql` in filename order on boot. Never hand-edit a migration
-that has shipped. All SQL lives in `src/db/repo.ts` and nowhere else, and
+that has shipped. A migration that rebuilds a table others reference starts
+with `-- foreign_keys: off`, and the runner turns them off around it: dropping
+`people` with them on runs every cascade and deletes every consent on record
+(0009 did, until `test/migration0009.test.ts` caught it). All SQL lives in `src/db/repo.ts` and nowhere else, and
 better-sqlite3 is synchronous — repo functions are not `async`, so anything
 `await`ed in this codebase is Slack, not the database.
 
