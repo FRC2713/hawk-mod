@@ -1,6 +1,8 @@
 import type { WebClient } from "@slack/web-api";
 import { today } from "../domain/dates.js";
 import { planLifecycle, type LifecyclePlan } from "../domain/lifecycle/plan.js";
+import { planRoster } from "../domain/lifecycle/roster.js";
+import { formatRosterPlan } from "../domain/lifecycle/rosterReport.js";
 import { parseSheet } from "../domain/lifecycle/sheet.js";
 import {
   planSlackIds,
@@ -13,6 +15,7 @@ import {
   SHEETS_READONLY,
   SHEETS_READWRITE,
 } from "../google/sheets.js";
+import { listPeople } from "../db/repo.js";
 import { log } from "../logger.js";
 import { fetchWorkspaceUsers } from "../slack/roster.js";
 
@@ -88,6 +91,38 @@ export async function lifecyclePlanReport(
     planLifecycle(parseSheet(data), today()),
     opts.members ?? false
   );
+}
+
+/**
+ * Step 3's dry run: what building the roster from the sheet would change,
+ * and what it would ask a person about. Reads the sheet, Slack's member list
+ * and the roster; writes nothing, anywhere.
+ *
+ * Planned as the first apply — the cutover — since nothing has applied yet,
+ * so it shows whether that apply would be refused and why.
+ */
+export async function rosterReport(slack: WebClient): Promise<string> {
+  const env = requireGoogle();
+  const client = serviceAccountClient(env, [SHEETS_READONLY]);
+  const parsed = parseSheet(await readLifecycleSheet(client, env.sheetId));
+  const accounts = (await fetchWorkspaceUsers(slack)).map((u) => ({
+    id: u.id,
+    email: u.email,
+    live: !u.isBot && !u.isDeleted,
+  }));
+  const roster = listPeople(false);
+  const plan = planRoster({
+    roster,
+    sheet: parsed.people,
+    accounts,
+    firstApply: true,
+  });
+  return formatRosterPlan({
+    plan,
+    roster,
+    sheetProblems: parsed.problems.length,
+    dryRun: true,
+  });
 }
 
 const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {

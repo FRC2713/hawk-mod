@@ -1,7 +1,7 @@
 # Lifecycle sync
 
-Status: **steps 0–2 deployed; step 3 in progress** (planner and migration
-0009 built, nothing wired in yet). The scope was
+Status: **steps 0–2 deployed; step 3 in progress** (planner, migration 0009
+and the `lifecycle roster` dry run built; nothing applies yet). The scope was
 settled with Rachel Moore on 2026-09-25 and 26. The big picture below was
 rewritten on 2026-09-27, after a first step 3 design showed it had never been
 written down; it replaces the earlier "direction of truth" section.
