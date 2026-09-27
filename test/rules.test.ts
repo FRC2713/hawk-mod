@@ -22,6 +22,7 @@ function person(role: Role, overrides: Partial<Person> = {}): Person {
   const id = nextId++;
   return {
     id,
+    person_id: null,
     slack_user_id: `U${String(id).padStart(3, "0")}`,
     email: `p${id}@example.org`,
     full_name: `Person ${id}`,
@@ -33,6 +34,7 @@ function person(role: Role, overrides: Partial<Person> = {}): Person {
     consent_release_expires_on: null,
     data_privacy_expires_on: null,
     mentor_ready_completed_on: null,
+    slack_consent_expires_on: null,
     notes: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",

@@ -34,6 +34,7 @@ function slack(flags: SlackFlags | Error): {
 function person(role: Role): Person {
   return {
     id: 1,
+    person_id: null,
     slack_user_id: "U1",
     email: "p1@example.org",
     full_name: "Roster Name",
@@ -45,6 +46,7 @@ function person(role: Role): Person {
     consent_release_expires_on: null,
     data_privacy_expires_on: null,
     mentor_ready_completed_on: null,
+    slack_consent_expires_on: null,
     notes: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",

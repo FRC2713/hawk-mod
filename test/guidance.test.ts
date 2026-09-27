@@ -15,6 +15,7 @@ function person(role: Role, screened: boolean): Person {
   const checks = screened ? "2028-06-01" : null;
   return {
     id,
+    person_id: null,
     slack_user_id: `U${String(id).padStart(3, "0")}`,
     email: `p${id}@example.org`,
     full_name: `Person ${id}`,
@@ -26,6 +27,7 @@ function person(role: Role, screened: boolean): Person {
     consent_release_expires_on: training,
     data_privacy_expires_on: training,
     mentor_ready_completed_on: screened ? "2026-08-01" : null,
+    slack_consent_expires_on: null,
     notes: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",

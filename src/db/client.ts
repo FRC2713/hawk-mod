@@ -29,17 +29,58 @@ function migrationsDir(): string {
   );
 }
 
+/** The first line a migration that rebuilds a parent table starts with. */
+const FOREIGN_KEYS_OFF = "-- foreign_keys: off";
+
 /**
- * Applies every migrations/NNNN_*.sql not yet recorded, in filename order,
- * each in its own transaction. Migrations that have shipped are never edited.
+ * Applies one migration in its own transaction, and records it.
+ *
+ * A migration that rebuilds a table other tables reference — `people` — must
+ * run with foreign keys off: dropping the old table with them on runs every ON
+ * DELETE CASCADE, and consents and role history go with it. SQLite ignores
+ * `PRAGMA foreign_keys` inside a transaction, so such a migration says so on
+ * its first line and the runner turns them off around it — SQLite's documented
+ * procedure for altering a table. `foreign_key_check` must then come back
+ * empty, or the whole migration rolls back.
  */
-function migrate(db: Db) {
+export function applyMigration(db: Db, name: string, sql: string): void {
+  const fkOff = sql.startsWith(FOREIGN_KEYS_OFF);
+  if (fkOff) db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      db.exec(sql);
+      if (fkOff) {
+        const broken = db.pragma("foreign_key_check") as unknown[];
+        if (broken.length) {
+          throw new Error(
+            `${name} left ${broken.length} broken foreign key(s)`
+          );
+        }
+      }
+      db.prepare(
+        "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)"
+      ).run(name, new Date().toISOString());
+    })();
+  } finally {
+    if (fkOff) db.pragma("foreign_keys = ON");
+  }
+}
+
+export function ensureMigrationsTable(db: Db): void {
   db.exec(
     `CREATE TABLE IF NOT EXISTS schema_migrations (
        name TEXT PRIMARY KEY,
        applied_at TEXT NOT NULL
      )`
   );
+}
+
+/**
+ * Applies every migrations/NNNN_*.sql not yet recorded, in filename order,
+ * each in its own transaction. Migrations that have shipped are never edited.
+ */
+function migrate(db: Db) {
+  ensureMigrationsTable(db);
   const applied = new Set(
     db
       .prepare<[], { name: string }>("SELECT name FROM schema_migrations")
@@ -52,13 +93,7 @@ function migrate(db: Db) {
     .sort();
   for (const file of files) {
     if (applied.has(file)) continue;
-    const sql = readFileSync(join(dir, file), "utf8");
-    db.transaction(() => {
-      db.exec(sql);
-      db.prepare(
-        "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)"
-      ).run(file, new Date().toISOString());
-    })();
+    applyMigration(db, file, readFileSync(join(dir, file), "utf8"));
     log.info("migration applied", { file });
   }
 }

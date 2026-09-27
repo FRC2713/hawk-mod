@@ -12,8 +12,17 @@ export type Role = (typeof ROLES)[number];
 
 export type Person = {
   id: number;
+  /**
+   * The lifecycle sheet's Person ID (`P####`), once the row is matched to the
+   * sheet. From then on it is the row's key; null only on rows not yet matched.
+   */
+  person_id: string | null;
   slack_user_id: string | null;
-  email: string;
+  /**
+   * The identity email: RHR Email for a mentor, School Email for a student.
+   * Null when the sheet has none yet — never filled with a personal address.
+   */
+  email: string | null;
   full_name: string;
   role: Role;
   active: number;
@@ -31,6 +40,8 @@ export type Person = {
   data_privacy_expires_on: IsoDate | null;
   /** Mentor Ready — a one-time badge, so a completion date. Reported only. */
   mentor_ready_completed_on: IsoDate | null;
+  /** Student_Details.Slack Consent Expiry, as the sheet has it. */
+  slack_consent_expires_on: IsoDate | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

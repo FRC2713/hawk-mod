@@ -1,6 +1,7 @@
 # Lifecycle sync
 
-Status: **steps 0–2 deployed; step 3 designed, not started.** The scope was
+Status: **steps 0–2 deployed; step 3 in progress** (planner and migration
+0009 built, nothing wired in yet). The scope was
 settled with Rachel Moore on 2026-09-25 and 26. The big picture below was
 rewritten on 2026-09-27, after a first step 3 design showed it had never been
 written down; it replaces the earlier "direction of truth" section.
@@ -497,7 +498,9 @@ is where an administrator runs them.
 
 ## Step 3 design — the roster from the sheet
 
-Status: **for review** (2026-09-27). No code yet.
+Status: **approved** (FRC2713/hawk-mod#24, 2026-09-27); being built in four
+pull requests: the planner and migration 0009, the dry run, apply with its
+findings and buttons, then the cutover.
 
 ### The local copy
 
@@ -508,6 +511,14 @@ Migration 0009 adds `people.person_id` (`P####`, unique) and
 identity email (RHR or School), so a Slack account is linked the moment it
 appears, at `team_join` or on the next run, by exact match, and the ID is
 written back to the sheet. Volunteers and Alumni get no row.
+
+`email` may be blank (decided 2026-09-27): an Active mentor still waiting for
+an account, or a student with no School Email, is monitored by Person ID and
+Slack User ID, and the missing address is reported. It is never filled with a
+personal address. Making the column optional rebuilds `people`, which is the
+parent of the consent and history tables, so the migration runner turns
+foreign keys off around a migration that starts `-- foreign_keys: off` —
+otherwise dropping the old table runs every `ON DELETE CASCADE`.
 
 Blank or unknown status counts as Active **for monitoring**, and as out **for
 group access**. Both are the cautious reading of the same cell.
@@ -534,10 +545,16 @@ Slack email is not their RHR address, whose IDs were typed in by hand on
 2026-09-27.
 
 `/hawkmod lifecycle roster` shows the match and every change, including every
-date that would be cleared. **The first apply is refused while any row with a
-Slack account is unmatched**, because creating a fresh row for that person
-would make them two rows: one holding their Slack account, one holding their
-screening. Typing their Slack User ID into the sheet clears it.
+date that would be cleared. **The first apply is refused while any active row
+with a Slack account is unmatched**, because creating a fresh row for that
+person would make them two rows: one holding their Slack account, one holding
+their screening. Typing their Slack User ID into the sheet clears it. A
+deactivated row does not refuse it; it is not monitored either way.
+
+For the same reason, **nobody the sheet contradicts itself about gets a new
+row**: two rows with one Slack User ID or identity email, a typed Slack User ID
+that is not a live account, or someone both Student and Mentor. Each is a
+`sheet_conflict`, and the person is created on the run after the cell is fixed.
 
 The first apply is the switch. From then on the hourly run keeps the roster,
 `syncRolesFromUserGroups` and the `subteam_*` role handling are removed, and

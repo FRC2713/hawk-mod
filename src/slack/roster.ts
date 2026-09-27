@@ -78,7 +78,7 @@ export async function syncSlackAccounts(
   }
 
   for (const p of listPeople(true)) {
-    if (!p.slack_user_id) sync.withoutAccounts.push(p.email);
+    if (!p.slack_user_id) sync.withoutAccounts.push(p.email ?? p.full_name);
   }
 
   return { sync, users };
