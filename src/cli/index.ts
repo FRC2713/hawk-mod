@@ -50,9 +50,9 @@ const USAGE = `hawk-mod cli
                                and show which Slack User ID cells would be
                                filled; --apply fills them. Only ever fills a
                                blank cell. Needs the Slack install too
-  lifecycle roster             what building the roster from the sheet would
-                               change, and what it would ask about. Changes
-                               nothing. Needs the Slack install too
+  lifecycle roster [--apply]   what building the roster from the sheet would
+                               change, and what it would ask about; --apply
+                               makes the changes. Needs the Slack install too
 `;
 
 function rows(path: string): Record<string, string>[] {
@@ -249,7 +249,14 @@ async function main() {
       if (args[0] === "plan") await lifecyclePlan(args.slice(1));
       else if (args[0] === "slack-ids") await lifecycleSlackIds(args.slice(1));
       else if (args[0] === "roster")
-        console.log(await rosterReport(botClient()));
+        console.log(
+          await rosterReport({
+            slack: botClient(),
+            apply: args.includes("--apply"),
+            applyHint: "run again with --apply",
+            by: "cli",
+          })
+        );
       else throw new Error("usage: lifecycle plan|slack-ids|roster");
       return;
     default:

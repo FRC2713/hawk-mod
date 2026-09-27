@@ -65,7 +65,7 @@ const HELP = [
   "`/hawkmod backfill` — walk enrolled adults' DM history now",
   "`/hawkmod lifecycle plan` — read the lifecycle sheet; changes nothing",
   "`/hawkmod lifecycle slack-ids` — which Slack User IDs the sheet is missing; add `apply` to fill them in",
-  "`/hawkmod lifecycle roster` — what building the roster from the sheet would change; changes nothing",
+  "`/hawkmod lifecycle roster` — what building the roster from the sheet would change; add `apply` to make the changes",
   "",
   "_Roles come from Slack user groups. To add someone to the roster, add them",
   "to the @students or @mentors group — it applies straight away._",
@@ -239,7 +239,7 @@ export function registerCommands(app: App): void {
               text:
                 "Usage: `/hawkmod lifecycle plan`, " +
                 "`/hawkmod lifecycle slack-ids [apply]` or " +
-                "`/hawkmod lifecycle roster`",
+                "`/hawkmod lifecycle roster [apply]`",
             });
             return;
           }
@@ -251,7 +251,12 @@ export function registerCommands(app: App): void {
             what === "plan"
               ? await lifecyclePlanReport()
               : what === "roster"
-                ? await rosterReport(client)
+                ? await rosterReport({
+                    slack: client,
+                    apply: flag === "apply",
+                    applyHint: "/hawkmod lifecycle roster apply",
+                    by: caller.name,
+                  })
                 : await slackIdsReport({
                     slack: client,
                     apply: flag === "apply",

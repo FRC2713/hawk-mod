@@ -246,6 +246,152 @@ export function createPersonFromSlack(args: {
   return person;
 }
 
+/* -------------------------------------------------- the lifecycle sheet */
+
+/** Who the lifecycle sync is, in `role_changes` and `screening_changes`. */
+export const SHEET_SOURCE = "lifecycle_sheet";
+
+/**
+ * Creates a roster row the lifecycle sheet declares. Records the creation in
+ * `role_changes` and each date in `screening_changes`, as every other writer
+ * does, so "who was monitored when, and why" has one answer.
+ */
+export function createPersonFromSheet(args: {
+  personId: string;
+  role: Role;
+  fullName: string;
+  email: string | null;
+  slackUserId: string | null;
+  dates: Partial<Record<RequirementField, string | null>>;
+}): Person {
+  const now = nowIso();
+  const person = db().transaction(() => {
+    const info = db()
+      .prepare(
+        `INSERT INTO people (person_id, slack_user_id, email, full_name, role,
+                             active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+      )
+      .run(
+        args.personId,
+        args.slackUserId,
+        args.email,
+        args.fullName,
+        args.role,
+        now,
+        now
+      );
+    const id = Number(info.lastInsertRowid);
+    db()
+      .prepare(
+        `INSERT INTO role_changes (person_id, slack_user_id, from_role, to_role,
+                                   source, detail, changed_at)
+         VALUES (?, ?, NULL, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        args.slackUserId,
+        args.role,
+        SHEET_SOURCE,
+        JSON.stringify({ created: true, personId: args.personId }),
+        now
+      );
+    // Blank dates are nothing to record on a row that had none.
+    const given = Object.fromEntries(
+      Object.entries(args.dates).filter(([, v]) => v)
+    );
+    if (Object.keys(given).length) {
+      setScreeningDates({
+        personId: id,
+        values: given,
+        recordedBy: "lifecycle sheet",
+        source: SHEET_SOURCE,
+      });
+    }
+    return personById(id)!;
+  })();
+  return person;
+}
+
+/**
+ * Applies what the sheet changes about an existing row. Only fields the
+ * roster planner may change on its own reach here — see RowUpdate in
+ * `domain/lifecycle/roster.ts` — and the role and activity changes it allows
+ * only ever add monitoring.
+ */
+export function updatePersonFromSheet(args: {
+  id: number;
+  personId?: string;
+  fullName?: string;
+  email?: string | null;
+  slackUserId?: string;
+  role?: "student";
+  reactivate?: true;
+  dates?: Partial<Record<RequirementField, string | null>>;
+}): void {
+  const now = nowIso();
+  db().transaction(() => {
+    const columns: [string, unknown][] = [];
+    if (args.personId !== undefined) columns.push(["person_id", args.personId]);
+    if (args.fullName !== undefined) columns.push(["full_name", args.fullName]);
+    if (args.email !== undefined) columns.push(["email", args.email]);
+    if (args.slackUserId !== undefined)
+      columns.push(["slack_user_id", args.slackUserId]);
+    if (columns.length) {
+      db()
+        .prepare(
+          `UPDATE people SET ${columns.map(([c]) => `${c} = ?`).join(", ")},
+                  updated_at = ? WHERE id = ?`
+        )
+        .run(...columns.map(([, v]) => v), now, args.id);
+    }
+    if (args.reactivate) {
+      setPersonActive({
+        personId: args.id,
+        active: true,
+        source: SHEET_SOURCE,
+        actor: "lifecycle sheet",
+        reason: "declared Active on the lifecycle sheet",
+      });
+    }
+    if (args.role) {
+      setPersonRole({
+        personId: args.id,
+        toRole: args.role,
+        source: SHEET_SOURCE,
+        detail: { personId: args.personId ?? null },
+      });
+    }
+    if (args.dates && Object.keys(args.dates).length) {
+      setScreeningDates({
+        personId: args.id,
+        values: args.dates,
+        recordedBy: "lifecycle sheet",
+        source: SHEET_SOURCE,
+      });
+    }
+  })();
+}
+
+/** The kind an applied roster run is recorded under in `audit_runs`. */
+export const ROSTER_RUN = "lifecycle_roster";
+
+/**
+ * Whether the roster has been built from the sheet at least once — the
+ * cutover. Until then, the first apply is refused while any monitored Slack
+ * account matches nobody on the sheet.
+ */
+export function rosterCutoverDone(): boolean {
+  return (
+    db()
+      .prepare<[string], { n: number }>(
+        `SELECT COUNT(*) AS n FROM audit_runs
+         WHERE kind = ? AND finished_at IS NOT NULL`
+      )
+      .get(ROSTER_RUN)!.n > 0
+  );
+}
+
 export const SCREENING_FIELDS = [
   "screening_expires_on",
   "training_expires_on",
@@ -258,23 +404,36 @@ export const SCREENING_FIELDS = [
 export type ScreeningField = (typeof SCREENING_FIELDS)[number];
 
 /**
+ * Every dated requirement the roster stores: the screening fields an adult's
+ * modal and import can set, plus a student's Slack consent, which only the
+ * lifecycle sheet sets. Kept apart so the screening modal does not grow a
+ * consent field.
+ */
+export const REQUIREMENT_FIELDS = [
+  ...SCREENING_FIELDS,
+  "slack_consent_expires_on",
+] as const;
+
+export type RequirementField = (typeof REQUIREMENT_FIELDS)[number];
+
+/**
  * Writes screening dates and records who supplied each one. Only fields
  * actually passed are touched, so a modal that fills one date does not erase
  * the other two. Returns the fields that changed.
  */
 export function setScreeningDates(args: {
   personId: number;
-  values: Partial<Record<ScreeningField, string | null>>;
+  values: Partial<Record<RequirementField, string | null>>;
   recordedBy: string;
   source: string;
-}): ScreeningField[] {
+}): RequirementField[] {
   const person = personById(args.personId);
   if (!person) throw new Error(`No person ${args.personId}`);
   const now = nowIso();
-  const changed: ScreeningField[] = [];
+  const changed: RequirementField[] = [];
 
   db().transaction(() => {
-    for (const field of SCREENING_FIELDS) {
+    for (const field of REQUIREMENT_FIELDS) {
       if (!(field in args.values)) continue;
       const to = args.values[field] ?? null;
       const from = person[field];
@@ -1049,6 +1208,33 @@ export function autoResolveMissing(
   for (const f of open) {
     if (seenKeys.has(f.dedupe_key)) continue;
     resolveFinding(f.id, APP_ACTOR, "No longer detected by the sweep.");
+    closed.push(f.id);
+  }
+  return closed;
+}
+
+/**
+ * `autoResolveMissing` by key prefix rather than kind, for a job that owns
+ * only some findings of a kind: the roster run owns `roster_drift:sheet:…`,
+ * not the user-group sync's `roster_drift` findings.
+ */
+export function resolveMissingWithPrefix(
+  prefixes: readonly string[],
+  seenKeys: ReadonlySet<string>,
+  note: string
+): number[] {
+  if (prefixes.length === 0) return [];
+  const open = db()
+    .prepare<string[], Finding>(
+      `SELECT * FROM findings WHERE status != 'resolved' AND (${prefixes
+        .map(() => "substr(dedupe_key, 1, length(?)) = ?")
+        .join(" OR ")})`
+    )
+    .all(...prefixes.flatMap((p) => [p, p]));
+  const closed: number[] = [];
+  for (const f of open) {
+    if (seenKeys.has(f.dedupe_key)) continue;
+    resolveFinding(f.id, APP_ACTOR, note);
     closed.push(f.id);
   }
   return closed;
