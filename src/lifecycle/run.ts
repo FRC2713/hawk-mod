@@ -8,7 +8,20 @@ import {
   planSlackIds,
   type SlackIdDecision,
 } from "../domain/lifecycle/slackIds.js";
-import { googleEnv, serviceAccountClient } from "../google/credentials.js";
+import {
+  googleActor,
+  googleDomain,
+  googleEnv,
+  serviceAccountClient,
+} from "../google/credentials.js";
+import {
+  DIRECTORY_GROUP_MEMBER,
+  DIRECTORY_GROUP_READONLY,
+  readGroupMembers,
+} from "../google/directory.js";
+import { planGoogleGroups } from "../domain/lifecycle/groupPlan.js";
+import { formatGroupPlans } from "../domain/lifecycle/groupReport.js";
+import { GROUPS, type GroupName } from "../domain/lifecycle/groups.js";
 import {
   fillBlankCells,
   readLifecycleSheet,
@@ -243,6 +256,49 @@ export async function rosterFindingStillTrue(
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Step 4's dry run: each computed Google Group against its real membership,
+ * read as hawk-mod@ through domain-wide delegation. Changes nothing, anywhere.
+ */
+export async function groupsReport(
+  opts: { members?: boolean } = {}
+): Promise<string> {
+  const env = requireGoogle();
+  const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
+  const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
+
+  const directory = serviceAccountClient(
+    env,
+    [DIRECTORY_GROUP_READONLY, DIRECTORY_GROUP_MEMBER],
+    googleActor()
+  );
+  const domain = googleDomain();
+  const actual: Partial<Record<GroupName, string[]>> = {};
+  const current: Partial<Record<GroupName, number>> = {};
+  const missing: GroupName[] = [];
+  for (const group of GROUPS) {
+    const members = await readGroupMembers(directory, `${group}@${domain}`);
+    if (members === null) missing.push(group);
+    else {
+      actual[group] = members;
+      current[group] = members.length;
+    }
+  }
+
+  const plans = planGoogleGroups({
+    people: parsed.people,
+    actual,
+    asOf: today(),
+  });
+  return formatGroupPlans({
+    plans,
+    current,
+    missing,
+    members: opts.members ?? false,
+    dryRun: true,
+  });
 }
 
 const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {
