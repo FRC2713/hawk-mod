@@ -154,10 +154,13 @@ approved.
 ```
 
 Walks through a local run end to end: a public URL via Tailscale Funnel, the
-Slack app, credentials, the container, and a test DM that should raise a
+Slack app, credentials, a small test lifecycle sheet of your own, the
+container, the roster built from that sheet, and a test DM that should raise a
 finding. It is safe to point at a real workspace **provided you only enrol
 yourself and roster only accounts you control** — a conversation with nobody
-rostered as a student in it is never recorded. The wizard says so at the top
+rostered as a student in it is never recorded. So the roster comes from a
+two-person sheet you make, read by a Google service account you make for the
+test, never the real lifecycle sheet or its key. The wizard says so at the top
 and gates on it.
 
 ## Setup
