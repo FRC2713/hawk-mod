@@ -51,6 +51,42 @@ function explain(err: unknown, group: string): Error {
   return err instanceof Error ? err : new Error(text);
 }
 
+/** A group as Google has it now: what the report shows beside its ID. */
+export type GroupInfo = {
+  id: string;
+  name: string;
+  email: string;
+  members: string[];
+};
+
+/**
+ * A group, read by its permanent ID: its current name and address, and every
+ * direct member. `null` if no group has that ID any more.
+ */
+export async function readGroup(
+  client: JWT,
+  id: string
+): Promise<GroupInfo | null> {
+  let group: { id?: string; name?: string; email?: string };
+  try {
+    const res = await client.request<typeof group>({
+      url: `${API}/groups/${encodeURIComponent(id)}?fields=id,name,email`,
+    });
+    group = res.data;
+  } catch (err) {
+    if ((err as { status?: number }).status === 404) return null;
+    throw explain(err, `the group with ID ${id}`);
+  }
+  const members = await readGroupMembers(client, id);
+  if (members === null) return null;
+  return {
+    id,
+    name: group.name ?? "",
+    email: (group.email ?? "").toLowerCase(),
+    members,
+  };
+}
+
 /**
  * Every direct member of one group, as lower-cased addresses, or `null` if
  * the group does not exist. Groups are kept flat, so a member that is itself
@@ -59,7 +95,7 @@ function explain(err: unknown, group: string): Error {
  */
 export async function readGroupMembers(
   client: JWT,
-  groupEmail: string
+  groupKey: string
 ): Promise<string[] | null> {
   const members: string[] = [];
   let pageToken: string | undefined;
@@ -72,12 +108,12 @@ export async function readGroupMembers(
     let page: MembersPage;
     try {
       const res = await client.request<MembersPage>({
-        url: `${API}/groups/${encodeURIComponent(groupEmail)}/members?${params}`,
+        url: `${API}/groups/${encodeURIComponent(groupKey)}/members?${params}`,
       });
       page = res.data;
     } catch (err) {
       if ((err as { status?: number }).status === 404) return null;
-      throw explain(err, groupEmail);
+      throw explain(err, groupKey);
     }
     members.push(...pageAddresses(page));
     pageToken = page.nextPageToken || undefined;

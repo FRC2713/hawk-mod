@@ -10,18 +10,25 @@ import {
 } from "../domain/lifecycle/slackIds.js";
 import {
   googleActor,
-  googleDomain,
   googleEnv,
   serviceAccountClient,
 } from "../google/credentials.js";
 import {
   DIRECTORY_GROUP_MEMBER,
   DIRECTORY_GROUP_READONLY,
-  readGroupMembers,
+  readGroup,
 } from "../google/directory.js";
 import { planGoogleGroups } from "../domain/lifecycle/groupPlan.js";
-import { formatGroupPlans } from "../domain/lifecycle/groupReport.js";
-import { GROUPS, type GroupName } from "../domain/lifecycle/groups.js";
+import {
+  formatGroupPlans,
+  type FoundGroup,
+  type MissingGroup,
+} from "../domain/lifecycle/groupReport.js";
+import {
+  GOOGLE_GROUP_IDS,
+  GROUPS,
+  type GroupName,
+} from "../domain/lifecycle/groups.js";
 import {
   fillBlankCells,
   readLifecycleSheet,
@@ -274,17 +281,22 @@ export async function groupsReport(
     [DIRECTORY_GROUP_READONLY, DIRECTORY_GROUP_MEMBER],
     googleActor()
   );
-  const domain = googleDomain();
   const actual: Partial<Record<GroupName, string[]>> = {};
-  const current: Partial<Record<GroupName, number>> = {};
-  const missing: GroupName[] = [];
+  const found: Partial<Record<GroupName, FoundGroup>> = {};
+  const missing: Partial<Record<GroupName, MissingGroup>> = {};
   for (const group of GROUPS) {
-    const members = await readGroupMembers(directory, `${group}@${domain}`);
-    if (members === null) missing.push(group);
-    else {
-      actual[group] = members;
-      current[group] = members.length;
+    const id = GOOGLE_GROUP_IDS[group];
+    const info = id ? await readGroup(directory, id) : null;
+    if (!info) {
+      missing[group] = { id };
+      continue;
     }
+    actual[group] = info.members;
+    found[group] = {
+      name: info.name,
+      email: info.email,
+      count: info.members.length,
+    };
   }
 
   const plans = planGoogleGroups({
@@ -294,7 +306,7 @@ export async function groupsReport(
   });
   return formatGroupPlans({
     plans,
-    current,
+    found,
     missing,
     members: opts.members ?? false,
     dryRun: true,

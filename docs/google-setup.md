@@ -188,8 +188,13 @@ Done for Red Hawk on 2026-09-28. Four parts, in this order.
    `grp-parents`. **Leave it off** for `grp-mentors`, `grp-mentor-leads` and
    `grp-ra`: mentor groups are domain accounts only.
 
-hawk-mod never creates a group. All nine must exist, as `grp-…@` the domain;
-`/hawkmod lifecycle groups` says so if one does not.
+hawk-mod never creates a group, and finds each of the nine **by its permanent
+Directory ID**, listed in `GOOGLE_GROUP_IDS` in `src/domain/lifecycle/groups.ts`
+— never by name or address, which can both be changed. (Red Hawk's groups are
+named `grp-…` but addressed `mentors@`, `students@`, `frc-parents@` and so
+on.) To find a group's ID: Admin console → **Directory → Groups →** the group;
+it is the code after `/groups/` in the browser's address bar. A group deleted
+and recreated gets a new ID, and its line there changes with it.
 
 ### Checking it
 
@@ -200,6 +205,9 @@ changes nothing. What it can say:
   client ID or the two scopes.
 - **"refused to read grp-…"** — part 3: the role is missing Groups → Read, or
   is not assigned to `hawk-mod@`.
-- **"does not exist in Google"** for a group — create it by hand.
+- **"no group has ID …"** — the ID in `GOOGLE_GROUP_IDS` is wrong, or the group
+  was deleted.
+- **"WRONG GROUP"** — the ID leads to a group with a different name: an ID on
+  the wrong line. Nothing is applied to that group until it is fixed.
 - Otherwise, per group, who would join, who would leave on their own (a lead
   or RA flag turned off), and who is held for a click, by Person ID.

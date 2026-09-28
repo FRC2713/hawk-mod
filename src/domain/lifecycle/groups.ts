@@ -57,6 +57,32 @@ export const GROUPS = [
 
 export type GroupName = (typeof GROUPS)[number];
 
+/**
+ * Red Hawk's Google Groups, by their permanent Directory ID — never by name
+ * or address, the same rule as Slack channels (CLAUDE.md, "Settings"). A
+ * group's name and address can both be changed in the Admin console; its ID
+ * cannot. hawk-mod reads and edits each group only by this ID, and shows the
+ * group's current name and address beside it.
+ *
+ * The name still matters once: the ID for `grp-mentors` must lead to a group
+ * named `grp-mentors`. If it does not — an ID pasted into the wrong line — the
+ * dry run says so and nothing is applied to that group. A group deleted and
+ * recreated gets a new ID, and this line changes with it.
+ *
+ * An empty string is a group with no ID yet; it is reported and skipped.
+ */
+export const GOOGLE_GROUP_IDS: Record<GroupName, string> = {
+  "grp-mentors": "04anzqyu2b5mt66",
+  "grp-volunteers": "04h042r0189xw6i",
+  "grp-students": "00rjefff1w131pu",
+  "grp-alumni": "02grqrue3e1x45w",
+  "grp-parents": "0319y80a4kk4xus",
+  "grp-mentor-leads": "036ei31r18inez4",
+  "grp-student-leads": "03cqmetx0ytbzr4",
+  "grp-ra": "02nusc193nukp6h",
+  "grp-all-team": "014ykbeg1jvwjuy",
+};
+
 /** Every group but grp-parents holds sheet people; parents are contacts. */
 export type PersonGroup = Exclude<GroupName, "grp-parents">;
 
