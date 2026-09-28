@@ -8,13 +8,18 @@ import {
   setPersonActive,
   setPersonRole,
 } from "../db/repo.js";
-import { groupsApplyAnyway, rosterFindingStillTrue } from "../lifecycle/run.js";
+import {
+  groupsApplyAnyway,
+  groupsRemoveHeld,
+  rosterFindingStillTrue,
+} from "../lifecycle/run.js";
 import { GROUPS, type GroupName } from "../domain/lifecycle/groups.js";
 import { log } from "../logger.js";
 import {
   ACK_ACTION,
   APPLY_ANYWAY_ACTION,
   END_MONITORING_ACTION,
+  REMOVE_FROM_GROUPS_ACTION,
   lifecycleAction,
   MAKE_ADULT_ACTION,
   RESOLVE_ACTION,
@@ -189,7 +194,8 @@ type LifecycleMeta = {
   action:
     | typeof END_MONITORING_ACTION
     | typeof MAKE_ADULT_ACTION
-    | typeof APPLY_ANYWAY_ACTION;
+    | typeof APPLY_ANYWAY_ACTION
+    | typeof REMOVE_FROM_GROUPS_ACTION;
   /** Where the button was, so the outcome can be told to the clicker there. */
   channel: string | null;
 };
@@ -224,6 +230,12 @@ const VIEW_TEXT: Record<
     explain:
       "Their DMs with students stop being treated as a student's. The lifecycle sheet is read again first, and nothing changes if it no longer says Mentor.",
     placeholder: "Former student, now a screened mentor.",
+  },
+  [REMOVE_FROM_GROUPS_ACTION]: {
+    title: "Remove from groups",
+    explain:
+      "Takes them out of the Google Groups this alert lists — and a departing student's parents out of grp-parents, unless a sibling still keeps them in. The sheet and the groups are read again first; anyone who belongs again by now is left alone. It does not end monitoring, and it cannot remove anyone from Slack.",
+    placeholder: "Graduated in June.",
   },
   [APPLY_ANYWAY_ACTION]: {
     title: "Apply anyway",
@@ -280,6 +292,7 @@ function registerLifecycleActions(app: App): void {
     END_MONITORING_ACTION,
     MAKE_ADULT_ACTION,
     APPLY_ANYWAY_ACTION,
+    REMOVE_FROM_GROUPS_ACTION,
   ] as const) {
     app.action(action, async ({ ack, body, client }) => {
       await ack();
@@ -373,6 +386,19 @@ async function applyLifecycleAction(
   }
   if (lifecycleAction(finding)?.actionId !== meta.action) {
     return `Finding #${meta.findingId} does not offer that; nothing was changed.`;
+  }
+
+  if (meta.action === REMOVE_FROM_GROUPS_ACTION) {
+    const outcome = await groupsRemoveHeld({
+      key: finding.dedupe_key,
+      actor: caller,
+      reason: note,
+    });
+    if (outcome.done) {
+      await closeFinding(finding.id, by, `Removed from groups: ${note}`);
+    }
+    log.info("removed from groups", { findingId: finding.id, by });
+    return outcome.text;
   }
 
   if (meta.action === APPLY_ANYWAY_ACTION) {

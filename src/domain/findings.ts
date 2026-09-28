@@ -36,6 +36,12 @@ export const FINDING_KINDS = [
    * anyway), its ID leads to the wrong group, or it could not be found.
    */
   "google_group_held",
+  /** Someone the groups run left in a group they no longer belong in. */
+  "group_member_held",
+  /** A mentor in the mentor groups without CORI current. */
+  "cori_lapsed",
+  /** A mentor's CORI expires within 60 days. */
+  "cori_expiring",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];

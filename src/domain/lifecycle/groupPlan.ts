@@ -55,7 +55,11 @@ export type HeldReason =
 
 export type Member = {
   address: string;
-  /** Whose address this is: the person, or for grp-parents their students. */
+  /**
+   * Whose address this is: the person, or for grp-parents their students —
+   * for a held parent, the students who still list them though none is
+   * Active, so the parent can go with the student who left.
+   */
   personIds: string[];
 };
 
@@ -124,6 +128,14 @@ export function planGoogleGroups(args: {
   const { people, asOf } = args;
   const intended = intendedGroups(people, asOf);
   const parents = intendedParents(people);
+  // Every student who lists each parent, Active or not.
+  const listedBy = new Map<string, string[]>();
+  for (const p of people) {
+    if (!p.roles.includes("Student")) continue;
+    for (const a of p.parentEmails) {
+      listedBy.set(a, [...(listedBy.get(a) ?? []), p.personId]);
+    }
+  }
 
   // Whose each address is: the one they are added by, and their School and
   // RHR addresses, so a graduate's school address is still known as theirs.
@@ -165,7 +177,11 @@ export function planGoogleGroups(args: {
     for (const address of current) {
       if (want.has(address)) continue;
       if (group === "grp-parents") {
-        held.push({ address, personIds: [], reason: "parent_not_listed" });
+        held.push({
+          address,
+          personIds: listedBy.get(address) ?? [],
+          reason: "parent_not_listed",
+        });
         continue;
       }
       const p = owner.get(address);

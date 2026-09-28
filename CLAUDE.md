@@ -300,7 +300,11 @@ planner (`groupPlan.ts`) sorts every difference into join, automatic (a lead
 or RA flag turned off, and nothing else) and held; `groupApply.ts` decides
 per group, and applies nothing to a group whose plan is refused (held for
 **Apply anyway**), whose ID leads to a differently named group, or that is
-missing. Nobody leaving is ever removed by a run. Mentors join only with CORI
+missing. Nobody leaving is ever removed by a run: each person (or
+unplaceable address) held in a group is one `group_member_held` or
+`cori_lapsed` alert with **Remove from groups**, which re-reads the sheet and
+the groups and removes only what is still held (`heldMembers.ts`,
+`groupsRemoveHeld`). Mentors join only with CORI
 current (`mayHaveAccess`, kept apart from `isScreenedAdult`). Every change
 lands in `group_changes`; every `grp-ra` change is announced, because
 `grp-ra` can edit the sheet. The hourly job (`lifecycleHourly`) runs the
