@@ -1,9 +1,8 @@
 # Lifecycle sync
 
-Status: **steps 0–2 deployed; step 3 built** (planner, migration 0009, the
-`lifecycle roster` dry run, `lifecycle roster apply` with its findings and
-buttons, and the cutover: the hourly run, `lifecycle sync`, and the Slack-group
-role sync removed). Step 4 is next. The scope was
+Status: **steps 0–3 deployed.** The roster has come from the sheet since the
+first apply on 2026-09-28 (#25–#28); it runs hourly and on `lifecycle sync`.
+Step 4 is next. The scope was
 settled with Rachel Moore on 2026-09-25 and 26. The big picture below was
 rewritten on 2026-09-27, after a first step 3 design showed it had never been
 written down; it replaces the earlier "direction of truth" section.
@@ -541,8 +540,9 @@ their RHR or School Email (decided 2026-09-27).
 A Slack User ID a person typed into the sheet is trusted **even when that Slack
 account's email differs from the identity email** — the typing is the
 statement. It is refused only when it is not a live Slack account, or when two
-rows carry it. (Step 1 reports such a cell as a conflict, since it only fills
-blanks by email; step 3 accepts it.) That is the case for the mentors whose
+rows carry it. (`lifecycle slack-ids` lists such a cell as "typed by hand,
+trusted"; it is still a conflict when a _different_ live account holds the
+identity email, since that is two accounts for one person.) That is the case for the mentors whose
 Slack email is not their RHR address, whose IDs were typed in by hand on
 2026-09-27.
 

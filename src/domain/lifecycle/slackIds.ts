@@ -18,6 +18,12 @@ export type SlackIdDecision =
   | (Target & { kind: "write"; slackUserId: string })
   /** The cell already holds the account that matches. */
   | (Target & { kind: "unchanged"; slackUserId: string })
+  /**
+   * Typed by hand, for a live account whose email is not the identity email
+   * — the usual reason anyone types one. Trusted, as the roster trusts it
+   * (docs/lifecycle-sync.md, "Cutover"): the typing is the statement.
+   */
+  | (Target & { kind: "typed"; slackUserId: string })
   /** No live account has this email yet: not invited, or not joined. */
   | (Target & { kind: "not_in_slack" })
   /**
@@ -105,6 +111,12 @@ export function planSlackIds(
       if (recorded === found) {
         return { ...target, kind: "unchanged", slackUserId: recorded };
       }
+      // Nothing contradicts it: the account is live and no other account
+      // holds the identity email. A different account holding that email
+      // is still a conflict — two accounts, one person, which is worth a look.
+      if (liveIds.has(recorded) && !found) {
+        return { ...target, kind: "typed", slackUserId: recorded };
+      }
       return {
         ...target,
         kind: "conflict",
@@ -112,9 +124,7 @@ export function planSlackIds(
         found,
         reason: !liveIds.has(recorded)
           ? "the recorded Slack ID is not an active Slack account"
-          : found
-            ? "the email matches a different Slack account"
-            : "the recorded Slack account has a different email",
+          : "the email matches a different Slack account",
       };
     }
     if (found) return { ...target, kind: "write", slackUserId: found };

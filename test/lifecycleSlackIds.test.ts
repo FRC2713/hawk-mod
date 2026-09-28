@@ -143,15 +143,20 @@ describe("Slack ID write-back", () => {
     );
   });
 
-  it("reports a hand-entered ID whose account has another email", () => {
+  it("trusts a hand-typed ID whose account signed up with another email", () => {
     const [d] = planSlackIds(
       [mentor("P0010", "ana@redhawkrobotics.org", "U9")],
       [account("U9", "ana.personal@gmail.example")]
     );
-    assert.equal(
-      d?.kind === "conflict" && d.reason,
-      "the recorded Slack account has a different email"
+    assert.equal(d?.kind, "typed");
+  });
+
+  it("trusts a hand-typed ID for someone with no identity email yet", () => {
+    const [d] = planSlackIds(
+      [mentor("P0010", null, "U9")],
+      [account("U9", "ana.personal@gmail.example")]
     );
+    assert.equal(d?.kind, "typed");
   });
 
   it("writes neither row when one address is typed for two people", () => {
