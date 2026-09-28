@@ -291,6 +291,22 @@ Slack must not quote the key: `JSON.parse` errors include the text they
 failed on. The sheet stores expiry dates, and nothing should compute one:
 FIRST expires annual items on 1 August, not a year after completion.
 
+**Google Groups copy the sheet; joining is automatic, leaving waits for a
+click** (step 4). Each group is found by its permanent Directory ID
+(`GOOGLE_GROUP_IDS` in `domain/lifecycle/groups.ts`), never by name or
+address, and read and edited as `hawk-mod@` through domain-wide delegation
+with two narrow scopes and a custom role (`docs/google-setup.md`). The pure
+planner (`groupPlan.ts`) sorts every difference into join, automatic (a lead
+or RA flag turned off, and nothing else) and held; `groupApply.ts` decides
+per group, and applies nothing to a group whose plan is refused (held for
+**Apply anyway**), whose ID leads to a differently named group, or that is
+missing. Nobody leaving is ever removed by a run. Mentors join only with CORI
+current (`mayHaveAccess`, kept apart from `isScreenedAdult`). Every change
+lands in `group_changes`; every `grp-ra` change is announced, because
+`grp-ra` can edit the sheet. The hourly job (`lifecycleHourly`) runs the
+roster and then the groups, each in its own try, and the groups do nothing
+until the first `/hawkmod lifecycle groups apply`.
+
 **Two paths reach the same log.** Events (`src/slack/events.ts`) give real-time
 capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each adult's
 DM list to catch history predating enrollment and anything missed while the

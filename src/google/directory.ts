@@ -29,26 +29,49 @@ export function pageAddresses(page: MembersPage): string[] {
 }
 
 /**
- * Turns Google's refusals into something an administrator can act on. The
- * messages name settings, never an address or the key.
+ * Google's own reason, from its JSON error body — "Not Authorized to access
+ * this resource/api", say. It names a setting or a rule, never the key, and
+ * any address in it is blanked.
+ */
+export function googleReason(err: unknown): string {
+  const e = err as {
+    response?: { data?: { error?: { message?: string } | string } };
+    message?: unknown;
+  };
+  const body = e.response?.data?.error;
+  const reason = typeof body === "string" ? body : body?.message;
+  // These messages can reach Slack. Google does not normally quote the member
+  // it refused, but if it ever does, it is a minor's or a parent's address.
+  return (reason || String(e.message ?? err)).replace(
+    /[^\s@<>()"']+@[^\s@<>()"']+/g,
+    "<address>"
+  );
+}
+
+/**
+ * Turns Google's refusals into something an administrator can act on, with
+ * Google's own reason after it. The messages name settings, never the key.
  */
 function explain(err: unknown, group: string): Error {
   const status = (err as { status?: number }).status;
   const text = String((err as { message?: unknown }).message ?? err);
+  const google = ` (Google said: ${googleReason(err)})`;
   if (text.includes("unauthorized_client")) {
     return new Error(
       "Google refused to let the service account act as hawk-mod@. Check the " +
         "domain-wide delegation entry for its client ID lists both group scopes " +
-        "(docs/google-setup.md, Part 2)."
+        "(docs/google-setup.md, Part 2)." +
+        google
     );
   }
   if (status === 403) {
     return new Error(
       `Google refused to read ${group}. Check that hawk-mod@ holds the ` +
-        `"hawk-mod group membership" admin role with Groups → Read.`
+        `"hawk-mod group membership" admin role with Groups → Read.` +
+        google
     );
   }
-  return err instanceof Error ? err : new Error(text);
+  return new Error(`${text}${google}`);
 }
 
 /** A group as Google has it now: what the report shows beside its ID. */
@@ -119,4 +142,42 @@ export async function readGroupMembers(
     pageToken = page.nextPageToken || undefined;
   } while (pageToken);
   return members;
+}
+
+/**
+ * Adds one address to a group as a plain member. Already a member is success:
+ * the plan was read moments ago, and someone may have added them meanwhile.
+ */
+export async function addMember(
+  client: JWT,
+  groupId: string,
+  email: string
+): Promise<void> {
+  try {
+    await client.request({
+      url: `${API}/groups/${encodeURIComponent(groupId)}/members`,
+      method: "POST",
+      data: { email, role: "MEMBER" },
+    });
+  } catch (err) {
+    if ((err as { status?: number }).status === 409) return;
+    throw new Error(googleReason(err));
+  }
+}
+
+/** Removes one address from a group. Already gone is success. */
+export async function removeMember(
+  client: JWT,
+  groupId: string,
+  email: string
+): Promise<void> {
+  try {
+    await client.request({
+      url: `${API}/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(email)}`,
+      method: "DELETE",
+    });
+  } catch (err) {
+    if ((err as { status?: number }).status === 404) return;
+    throw new Error(googleReason(err));
+  }
 }

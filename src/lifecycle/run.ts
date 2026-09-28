@@ -14,10 +14,22 @@ import {
   serviceAccountClient,
 } from "../google/credentials.js";
 import {
+  addMember,
   DIRECTORY_GROUP_MEMBER,
   DIRECTORY_GROUP_READONLY,
   readGroup,
+  removeMember,
 } from "../google/directory.js";
+import {
+  decideGroups,
+  failedFinding,
+  GROUP_HELD_PREFIX,
+  heldFinding,
+  raAnnouncement,
+  type GroupDecision,
+} from "../domain/lifecycle/groupApply.js";
+import { applyGroupDecisions, type GroupApplyResult } from "./applyGroups.js";
+import { postToAlertChannel } from "../slack/alerts.js";
 import { planGoogleGroups } from "../domain/lifecycle/groupPlan.js";
 import {
   formatGroupPlans,
@@ -39,9 +51,14 @@ import { APP_ACTOR } from "../brand.js";
 import { closeFinding } from "../close.js";
 import {
   findingByKey,
+  finishAuditRun,
+  GROUPS_RUN,
+  insertGroupChange,
   listPeople,
   resolveMissingWithPrefix,
   rosterCutoverDone,
+  runEverFinished,
+  startAuditRun,
 } from "../db/repo.js";
 import {
   ROSTER_FINDING_PREFIXES,
@@ -265,13 +282,8 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * Step 4's dry run: each computed Google Group against its real membership,
- * read as hawk-mod@ through domain-wide delegation. Changes nothing, anywhere.
- */
-export async function groupsReport(
-  opts: { members?: boolean } = {}
-): Promise<string> {
+/** Everything a groups plan is made from, read fresh. */
+async function readGroupInputs() {
   const env = requireGoogle();
   const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
   const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
@@ -282,7 +294,7 @@ export async function groupsReport(
     googleActor()
   );
   const actual: Partial<Record<GroupName, string[]>> = {};
-  const found: Partial<Record<GroupName, FoundGroup>> = {};
+  const found: Partial<Record<GroupName, FoundGroup & { id: string }>> = {};
   const missing: Partial<Record<GroupName, MissingGroup>> = {};
   for (const group of GROUPS) {
     const id = GOOGLE_GROUP_IDS[group];
@@ -293,6 +305,7 @@ export async function groupsReport(
     }
     actual[group] = info.members;
     found[group] = {
+      id,
       name: info.name,
       email: info.email,
       count: info.members.length,
@@ -304,13 +317,211 @@ export async function groupsReport(
     actual,
     asOf: today(),
   });
-  return formatGroupPlans({
+  return { parsed, directory, plans, found, missing };
+}
+
+/** Who is applying: a person in Slack, or hawk-mod itself on the hour. */
+export type GroupsActor = { slackUserId: string; name: string };
+
+const HAWK_MOD: GroupsActor = { slackUserId: APP_ACTOR, name: APP_ACTOR };
+
+/**
+ * Step 4: the Google Groups from the sheet. A dry run unless `apply`; both
+ * plan the same way and print the same text.
+ *
+ * Applying adds everyone the sheet puts in a group and removes only those
+ * whose lead or RA flag was turned off — never anyone leaving, who waits for
+ * a person (part 4). A group whose plan is refused, whose ID leads to the
+ * wrong group, or that cannot be found is left alone and raised as a
+ * `google_group_held` finding; a refusal carries **Apply anyway**. Every
+ * change is recorded in `group_changes`, and every grp-ra change is announced
+ * in the alert channel, since grp-ra can edit the lifecycle sheet.
+ */
+export async function groupsReport(
+  opts: {
+    members?: boolean;
+    apply?: boolean;
+    /** How to ask for the apply, in the words of the door being used. */
+    applyHint?: string;
+    actor?: GroupsActor;
+  } = {}
+): Promise<string> {
+  const { parsed, directory, plans, found, missing } = await readGroupInputs();
+  const text = formatGroupPlans({
     plans,
     found,
     missing,
     members: opts.members ?? false,
-    dryRun: true,
+    dryRun: !opts.apply,
   });
+  if (!opts.apply) {
+    return opts.applyHint ? `${text}\n\nTo apply it: ${opts.applyHint}` : text;
+  }
+  const decisions = decideGroups({ plans, found, missing });
+  const outcome = await applyAndRecord({
+    decisions,
+    directory,
+    parsed,
+    actor: opts.actor ?? HAWK_MOD,
+    reason: null,
+    source: "lifecycle_groups",
+  });
+  await settleHeldFindings(decisions, outcome.failed);
+  return `${text}\n\n${outcome.summary}`;
+}
+
+/**
+ * **Apply anyway**, from a `google_group_held` finding's button: the one
+ * override of a refusal, for one group. Re-reads the sheet and the group now,
+ * so what is applied is what differs at the click, not what the finding said
+ * an hour ago. Never overrides a wrong group or a missing one.
+ */
+export async function groupsApplyAnyway(opts: {
+  group: GroupName;
+  actor: GroupsActor;
+  reason: string;
+}): Promise<string> {
+  const { parsed, directory, plans, found, missing } = await readGroupInputs();
+  const decisions = decideGroups({
+    plans: plans.filter((p) => p.group === opts.group),
+    found,
+    missing,
+    force: new Set([opts.group]),
+  });
+  const [d] = decisions;
+  if (!d || d.kind === "held") {
+    return `Nothing was applied to ${opts.group}: ${d?.kind === "held" ? d.message : "no plan"}.`;
+  }
+  if (d.kind === "nothing") return `${opts.group} already matches the sheet.`;
+  const outcome = await applyAndRecord({
+    decisions,
+    directory,
+    parsed,
+    actor: opts.actor,
+    reason: opts.reason,
+    source: "apply_anyway",
+  });
+  return outcome.summary;
+}
+
+async function applyAndRecord(args: {
+  decisions: GroupDecision[];
+  directory: ReturnType<typeof serviceAccountClient>;
+  parsed: ReturnType<typeof parseSheet>;
+  actor: GroupsActor;
+  reason: string | null;
+  source: string;
+}): Promise<{ summary: string; failed: GroupApplyResult["failed"] }> {
+  const rosterIds = new Map(
+    listPeople(false).flatMap((p) => (p.person_id ? [[p.person_id, p.id]] : []))
+  );
+  const runId = startAuditRun(GROUPS_RUN);
+  const result = await applyGroupDecisions(
+    args.decisions,
+    {
+      add: (id, email) => addMember(args.directory, id, email),
+      remove: (id, email) => removeMember(args.directory, id, email),
+    },
+    (c) =>
+      insertGroupChange({
+        usergroupId: c.groupId,
+        handle: c.name,
+        action: c.action,
+        subject: c.member.address,
+        // A parent's row names their students; the subject is the parent.
+        personId:
+          c.group === "grp-parents"
+            ? null
+            : (rosterIds.get(c.member.personIds[0] ?? "") ?? null),
+        actor: args.actor.slackUserId,
+        actorName: args.actor.name,
+        reason: args.reason,
+        source: args.source,
+      })
+  );
+  const added = result.applied.filter((c) => c.action === "add").length;
+  const removed = result.applied.length - added;
+  finishAuditRun(runId, { added, removed, failed: result.failed.length });
+  log.info("google groups applied", {
+    by: args.actor.name,
+    added,
+    removed,
+    failed: result.failed.length,
+  });
+
+  const names = new Map(args.parsed.people.map((p) => [p.personId, p.name]));
+  const ra = result.applied.filter((c) => c.group === "grp-ra");
+  if (ra.length) await postToAlertChannel(raAnnouncement(ra, names));
+
+  const lines = [`Applied: ${added} added, ${removed} removed.`];
+  if (result.failed.length) {
+    lines.push(
+      `Failed: ${result.failed.length}; the next run tries again.`,
+      ...result.failed.map(
+        (f) =>
+          `  ${f.group} ${f.action} ${f.member.personIds.join(", ") || "(no Person ID)"}: ${f.reason}`
+      )
+    );
+  }
+  return { summary: lines.join("\n"), failed: result.failed };
+}
+
+/** Raises a finding per held group, and closes those no longer held. */
+async function settleHeldFindings(
+  decisions: GroupDecision[],
+  failed: GroupApplyResult["failed"]
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const d of decisions) {
+    if (d.kind !== "held") continue;
+    const f = heldFinding(d);
+    seen.add(f.dedupeKey);
+    await raise(f);
+  }
+  const failedGroups = [...new Set(failed.map((f) => f.group))];
+  for (const group of failedGroups) {
+    const these = failed.filter((f) => f.group === group);
+    const f = failedFinding(group, these.length, these[0]!.reason);
+    seen.add(f.dedupeKey);
+    await raise(f);
+  }
+  const closed = resolveMissingWithPrefix(
+    [GROUP_HELD_PREFIX],
+    seen,
+    "No longer held: the groups run applied cleanly."
+  );
+  for (const id of closed) await refreshFinding(id);
+}
+
+/**
+ * The hourly groups run. Does nothing until the first
+ * `/hawkmod lifecycle groups apply` — the first apply adds everyone at once,
+ * and that is a person's decision, taken after reading the dry run.
+ */
+export async function groupsSync(): Promise<string> {
+  if (!runEverFinished(GROUPS_RUN)) {
+    log.info("google groups sync skipped: never applied yet");
+    return "The Google Groups have not been applied yet; nothing to keep in step.";
+  }
+  return groupsReport({ apply: true, actor: HAWK_MOD });
+}
+
+/**
+ * The hourly job: the roster, then the groups. Each is its own try, so a
+ * Google Groups problem never stops the roster being kept, which is the part
+ * that decides who is monitored.
+ */
+export async function lifecycleHourly(slack: WebClient): Promise<void> {
+  try {
+    await rosterSync({ slack, by: "hourly" });
+  } catch (err) {
+    log.error("hourly roster sync failed", { error: errorText(err) });
+  }
+  try {
+    await groupsSync();
+  } catch (err) {
+    log.error("hourly groups sync failed", { error: errorText(err) });
+  }
 }
 
 const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {

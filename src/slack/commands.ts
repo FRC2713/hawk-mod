@@ -63,7 +63,7 @@ const HELP = [
   "`/hawkmod lifecycle slack-ids` — which Slack User IDs the sheet is missing; add `apply` to fill them in",
   "`/hawkmod lifecycle roster` — what building the roster from the sheet would change; add `apply` to make the changes",
   "`/hawkmod lifecycle sync` — read the sheet now and update the roster (it also runs hourly)",
-  "`/hawkmod lifecycle groups` — the Google Groups against the sheet; changes nothing",
+  "`/hawkmod lifecycle groups` — the Google Groups against the sheet; add `apply` to add everyone the sheet puts in them (then hourly)",
   "",
   "_Who is a student or a mentor, their screening dates and their consent all",
   "come from the lifecycle sheet. To change them, edit the sheet, then",
@@ -240,7 +240,7 @@ export function registerCommands(app: App): void {
                 "Usage: `/hawkmod lifecycle plan`, " +
                 "`/hawkmod lifecycle slack-ids [apply]` or " +
                 "`/hawkmod lifecycle roster [apply]`, " +
-                "`/hawkmod lifecycle sync` or `/hawkmod lifecycle groups`",
+                "`/hawkmod lifecycle sync` or `/hawkmod lifecycle groups [apply]`",
             });
             return;
           }
@@ -252,7 +252,14 @@ export function registerCommands(app: App): void {
             what === "plan"
               ? await lifecyclePlanReport()
               : what === "groups"
-                ? await groupsReport()
+                ? await groupsReport({
+                    apply: flag === "apply",
+                    applyHint: "/hawkmod lifecycle groups apply",
+                    actor: {
+                      slackUserId: caller.slackUserId,
+                      name: caller.name,
+                    },
+                  })
                 : what === "sync"
                   ? await rosterSync({ slack: client, by: caller.name })
                   : what === "roster"

@@ -43,10 +43,11 @@ const USAGE = `hawk-mod cli
   lifecycle roster [--apply]   what building the roster from the sheet would
                                change, and what it would ask about; --apply
                                makes the changes. Needs the Slack install too
-  lifecycle groups [--members] each Google Group against the sheet: who would
+  lifecycle groups [--members] [--apply]
+                               each Google Group against the sheet: who would
                                join, leave on their own, or be held for a
-                               click. Changes nothing; --members lists
-                               addresses
+                               click; --apply adds and removes those (never
+                               anyone held). --members lists addresses
   lifecycle sync               what the hourly job does: apply the roster from
                                the sheet and write Slack User IDs back. Does
                                nothing until the first roster --apply
@@ -179,7 +180,12 @@ async function main() {
         );
       else if (args[0] === "groups")
         console.log(
-          await groupsReport({ members: args.includes("--members") })
+          await groupsReport({
+            members: args.includes("--members"),
+            apply: args.includes("--apply"),
+            applyHint: "run again with --apply",
+            actor: { slackUserId: "cli", name: "cli" },
+          })
         );
       else if (args[0] === "sync")
         console.log(await rosterSync({ slack: botClient(), by: "cli" }));

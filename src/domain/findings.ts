@@ -31,6 +31,11 @@ export const FINDING_KINDS = [
   "sheet_conflict",
   /** The lifecycle sheet could not be read; the roster was left as it was. */
   "lifecycle_unreadable",
+  /**
+   * Nothing was applied to a Google Group: its plan was refused (Apply
+   * anyway), its ID leads to the wrong group, or it could not be found.
+   */
+  "google_group_held",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];

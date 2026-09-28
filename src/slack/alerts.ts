@@ -30,12 +30,13 @@ export const ACK_ACTION = "hawkmod_finding_ack";
 export const RESOLVE_ACTION = "hawkmod_finding_resolve";
 export const END_MONITORING_ACTION = "hawkmod_end_monitoring";
 export const MAKE_ADULT_ACTION = "hawkmod_make_adult";
+export const APPLY_ANYWAY_ACTION = "hawkmod_groups_apply_anyway";
 
 /**
- * The one change a roster finding asks a person to make, if it asks one. Only
- * these two findings lower monitoring on a click, and each is the lifecycle
- * sheet's: the user-group sync's `roster_drift` records a move already made,
- * and offers nothing to approve.
+ * The one change a lifecycle finding asks a person to make, if it asks one.
+ * End monitoring and Make adult are the only clicks that lower monitoring;
+ * Apply anyway is the only override of a Google Groups refusal. The user-group
+ * sync's old `roster_drift` records a move already made, and offers nothing.
  */
 export function lifecycleAction(
   f: Pick<Finding, "kind" | "dedupe_key">
@@ -48,6 +49,14 @@ export function lifecycleAction(
     f.dedupe_key.startsWith("roster_drift:sheet:")
   ) {
     return { actionId: MAKE_ADULT_ACTION, label: "Make adult" };
+  }
+  // Only a refused plan: a wrong group or a missing one is fixed in the code
+  // or in Google, and nothing should offer to apply past it.
+  if (
+    f.kind === "google_group_held" &&
+    f.dedupe_key.startsWith("google_group_held:refused:")
+  ) {
+    return { actionId: APPLY_ANYWAY_ACTION, label: "Apply anyway" };
   }
   return null;
 }

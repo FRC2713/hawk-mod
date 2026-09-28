@@ -267,20 +267,28 @@ export function updatePersonFromSheet(args: {
 /** The kind an applied roster run is recorded under in `audit_runs`. */
 export const ROSTER_RUN = "lifecycle_roster";
 
-/**
- * Whether the roster has been built from the sheet at least once — the
- * cutover. Until then, the first apply is refused while any monitored Slack
- * account matches nobody on the sheet.
- */
-export function rosterCutoverDone(): boolean {
+/** The kind an applied Google Groups run is recorded under. */
+export const GROUPS_RUN = "lifecycle_groups";
+
+/** Whether a run of this kind has ever finished. */
+export function runEverFinished(kind: string): boolean {
   return (
     db()
       .prepare<[string], { n: number }>(
         `SELECT COUNT(*) AS n FROM audit_runs
          WHERE kind = ? AND finished_at IS NOT NULL`
       )
-      .get(ROSTER_RUN)!.n > 0
+      .get(kind)!.n > 0
   );
+}
+
+/**
+ * Whether the roster has been built from the sheet at least once — the
+ * cutover. Until then, the first apply is refused while any monitored Slack
+ * account matches nobody on the sheet.
+ */
+export function rosterCutoverDone(): boolean {
+  return runEverFinished(ROSTER_RUN);
 }
 
 export const SCREENING_FIELDS = [
@@ -479,7 +487,10 @@ export type GroupChangeInput = {
 };
 
 /**
- * Records that somebody edited a user group.
+ * Records that somebody — or the lifecycle sync — edited a group: a Slack
+ * user group (`usergroup_id` a Slack subteam ID, `subject` a Slack user ID) or,
+ * from step 4, a Google Group (`usergroup_id` its Directory ID, `subject` the
+ * member's address).
  *
  * Separate from `role_changes` on purpose. That table is written by the
  * user-group sync, which runs from a Slack event and cannot know a human was
