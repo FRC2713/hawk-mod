@@ -47,19 +47,39 @@ function list(
   for (const m of items) lines.push(`      ${who(m, group, members)}`);
 }
 
+/** A group as read by its ID. */
+export type FoundGroup = { name: string; email: string; count: number };
+
+/** Why a group was not planned: no ID yet, or no group with that ID. */
+export type MissingGroup = { id: string };
+
+/**
+ * A group is only acted on when its ID leads to a group of the expected name.
+ * A different name means an ID on the wrong line, and applying there would put
+ * one group's people in another.
+ */
+export function nameMatches(group: GroupName, found: FoundGroup): boolean {
+  return found.name.trim().toLowerCase() === group;
+}
+
 export function formatGroupPlans(args: {
   plans: GroupPlanResult[];
-  /** Current member counts, per group that exists. */
-  current: Partial<Record<GroupName, number>>;
-  /** Groups Google says do not exist. hawk-mod never creates one. */
-  missing: GroupName[];
-  /** Print addresses too. The CLI only; Slack never offers it. */
+  /** Groups read by their ID, with their current name and address. */
+  found: Partial<Record<GroupName, FoundGroup>>;
+  /** Groups not read: no ID configured, or no group has that ID. */
+  missing: Partial<Record<GroupName, MissingGroup>>;
+  /** Print member addresses too. The CLI only; Slack never offers it. */
   members: boolean;
   dryRun: boolean;
 }): string {
   const { plans, members } = args;
+  // Only groups that were read, and are the group they should be, count.
+  const counted = plans.filter((p) => {
+    const f = args.found[p.group];
+    return f && nameMatches(p.group, f);
+  });
   const count = (f: (p: GroupPlanResult) => unknown[]) =>
-    plans.reduce((n, p) => n + f(p).length, 0);
+    counted.reduce((n, p) => n + f(p).length, 0);
   const lines = [
     `Google Groups from the lifecycle sheet${args.dryRun ? " (dry run: nothing changed)" : ""}`,
     "",
@@ -70,13 +90,25 @@ export function formatGroupPlans(args: {
   for (const plan of plans) {
     const { group } = plan;
     lines.push("");
-    if (args.missing.includes(group)) {
+    const missing = args.missing[group];
+    const found = args.found[group];
+    if (missing || !found) {
       lines.push(
-        `  ${group}: does not exist in Google. Create it by hand; hawk-mod never creates groups.`
+        missing?.id
+          ? `  ${group}: no group has ID ${missing.id}. Check the ID in ` +
+              "GOOGLE_GROUP_IDS; hawk-mod never creates groups."
+          : `  ${group}: no ID yet in GOOGLE_GROUP_IDS; skipped.`
       );
       continue;
     }
-    lines.push(`  ${group} (${args.current[group] ?? 0} now)`);
+    // Group addresses are team lists, not anyone's personal address.
+    lines.push(`  ${group} (${found.email}, ${found.count} now)`);
+    if (!nameMatches(group, found)) {
+      lines.push(
+        `    WRONG GROUP: this ID belongs to a group named "${found.name}". ` +
+          "Check the ID in GOOGLE_GROUP_IDS; nothing will be applied to it."
+      );
+    }
     if (plan.refusal) lines.push(`    WOULD BE HELD: ${plan.refusal}`);
     list(lines, "Would join", plan.add, group, members);
     list(lines, "Would leave on their own", plan.automatic, group, members);
