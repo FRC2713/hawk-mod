@@ -232,6 +232,7 @@ function errorText(err: unknown): string {
 const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {
   write: "To fill in",
   unchanged: "Already correct",
+  typed: "Typed by hand, trusted (Slack email differs)",
   not_in_slack: "Not in Slack yet",
   conflict: "Needs a person to look at",
 };
