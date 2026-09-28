@@ -83,3 +83,33 @@ export function label(m: Member): string {
 export function slackIdOf(m: Member): string | null {
   return isKnown(m) ? m.slack_user_id : m.slackUserId;
 }
+
+/** What to do with one Slack account, given the roster. */
+export type AccountMatch =
+  | { kind: "known"; person: Person }
+  /** An unlinked roster row with this account's email: link them. */
+  | { kind: "link"; person: Person }
+  | { kind: "unknown" };
+
+/**
+ * Matches a Slack account to a roster row: by Slack ID first, then by email
+ * to a row with no Slack account yet — and nothing else.
+ *
+ * The roster's email is the identity email (RHR or School), which is often
+ * not the address someone signed up to Slack with; the sheet's typed Slack
+ * User ID is what links those. So a Slack ID already on a row is the answer,
+ * and an email match never moves a row from one Slack account to another: a
+ * second account sharing an address is an account nobody has placed, which
+ * is `unknown`, not a reason to re-point someone's monitoring.
+ */
+export function matchSlackAccount(
+  account: { id: string; email: string | null },
+  bySlackId: (id: string) => Person | undefined,
+  byEmail: (email: string) => Person | undefined
+): AccountMatch {
+  const known = bySlackId(account.id);
+  if (known) return { kind: "known", person: known };
+  const person = account.email ? byEmail(account.email) : undefined;
+  if (person && !person.slack_user_id) return { kind: "link", person };
+  return { kind: "unknown" };
+}

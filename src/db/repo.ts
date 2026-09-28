@@ -2,7 +2,6 @@ import { db } from "./client.js";
 import { APP_ACTOR } from "../brand.js";
 import { decrypt, encrypt } from "../crypto.js";
 import { nowIso } from "../domain/dates.js";
-import type { Consent } from "../domain/rules/consent.js";
 import type {
   Finding,
   FindingKind,
@@ -12,62 +11,6 @@ import type {
 import type { Person, Role } from "../domain/people.js";
 
 /* ------------------------------------------------------------------ people */
-
-export type PersonInput = {
-  email: string;
-  fullName: string;
-  role: Role;
-  slackUserId?: string | null;
-  active?: boolean;
-  /** Expiry dates, as FIRST and the state show them; see rules/screening.ts. */
-  requirements?: Partial<Record<ScreeningField, string | null>>;
-  notes?: string | null;
-};
-
-/** Upsert by email — the roster's stable identity, since Slack ids arrive later. */
-export function upsertPerson(input: PersonInput): Person {
-  const now = nowIso();
-  db()
-    .prepare(
-      `INSERT INTO people (slack_user_id, email, full_name, role, active,
-                           notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (email) DO UPDATE SET
-         slack_user_id     = COALESCE(excluded.slack_user_id, people.slack_user_id),
-         full_name         = excluded.full_name,
-         role              = excluded.role,
-         active            = excluded.active,
-         notes             = COALESCE(excluded.notes, people.notes),
-         updated_at        = excluded.updated_at`
-    )
-    .run(
-      input.slackUserId ?? null,
-      input.email,
-      input.fullName,
-      input.role,
-      input.active === false ? 0 : 1,
-      input.notes ?? null,
-      now,
-      now
-    );
-  const person = personByEmail(input.email);
-  if (!person) throw new Error(`Upsert failed for ${input.email}`);
-  // Requirement dates go through setScreeningDates, like every other writer,
-  // so an import leaves the same provenance a modal does. Blank means "not in
-  // this file", not "cleared": an import never erases a date on record.
-  const given = Object.fromEntries(
-    Object.entries(input.requirements ?? {}).filter(([, v]) => v)
-  );
-  if (Object.keys(given).length) {
-    setScreeningDates({
-      personId: person.id,
-      values: given,
-      recordedBy: "csv import",
-      source: "csv",
-    });
-  }
-  return personById(person.id) ?? person;
-}
 
 export function personByEmail(email: string): Person | undefined {
   return db()
@@ -192,58 +135,6 @@ export function setPersonActive(args: {
         now
       );
   })();
-}
-
-/**
- * Creates a roster row for a Slack account that is in a user group but was
- * never imported. Email may be absent, so the row is keyed on the Slack id —
- * this is what stops a group member from silently resolving to "unknown".
- */
-export function createPersonFromSlack(args: {
-  slackUserId: string;
-  email: string | null;
-  fullName: string;
-  role: Role;
-  source: string;
-}): Person {
-  const now = nowIso();
-  const email = args.email ?? `${args.slackUserId}@slack.local`;
-  db()
-    .prepare(
-      `INSERT INTO people (slack_user_id, email, full_name, role, active,
-                           notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-       ON CONFLICT (email) DO UPDATE SET
-         slack_user_id = excluded.slack_user_id,
-         updated_at    = excluded.updated_at`
-    )
-    .run(
-      args.slackUserId,
-      email,
-      args.fullName,
-      args.role,
-      `created from Slack user group by ${args.source}`,
-      now,
-      now
-    );
-  const person = personBySlackId(args.slackUserId);
-  if (!person)
-    throw new Error(`Could not create person for ${args.slackUserId}`);
-  db()
-    .prepare(
-      `INSERT INTO role_changes (person_id, slack_user_id, from_role, to_role,
-                                 source, detail, changed_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?)`
-    )
-    .run(
-      person.id,
-      args.slackUserId,
-      args.role,
-      args.source,
-      JSON.stringify({ created: true, email: args.email }),
-      now
-    );
-  return person;
 }
 
 /* -------------------------------------------------- the lifecycle sheet */
@@ -493,49 +384,9 @@ export function listRoleChanges(limit = 100) {
 
 /* ---------------------------------------------------------------- consents */
 
-export type ConsentInput = {
-  personId: number;
-  signedOn: string;
-  expiresOn: string;
-  formVersion: string;
-  guardianName: string;
-  guardianEmail?: string | null;
-  documentRef?: string | null;
-  recordedBy: string;
-};
-
-export function insertConsent(input: ConsentInput): void {
-  db()
-    .prepare(
-      `INSERT INTO consents (person_id, signed_on, expires_on, form_version,
-                             guardian_name, guardian_email, document_ref,
-                             recorded_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      input.personId,
-      input.signedOn,
-      input.expiresOn,
-      input.formVersion,
-      input.guardianName,
-      input.guardianEmail ?? null,
-      input.documentRef ?? null,
-      input.recordedBy,
-      nowIso()
-    );
-}
-
-export function listConsents(): Consent[] {
-  return db()
-    .prepare<[], Consent>("SELECT * FROM consents ORDER BY signed_on DESC")
-    .all();
-}
-
-export function revokeConsent(consentId: number, on: string): void {
-  db()
-    .prepare("UPDATE consents SET revoked_on = ? WHERE id = ?")
-    .run(on, consentId);
-}
+// The `consents` table is history from before the lifecycle sheet, kept and
+// no longer read or written. Consent is `people.slack_consent_expires_on`,
+// copied from the sheet; see rules/consent.ts.
 
 /* -------------------------------------------------------------- settings */
 

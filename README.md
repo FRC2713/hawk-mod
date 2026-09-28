@@ -176,49 +176,42 @@ and gates on it.
 5. A Slack workspace Owner or Admin installs the app: visit
    `$PUBLIC_URL/slack/install`. Whoever can install it can administer it —
    there is nothing to grant afterwards.
-6. Import the roster and the consents you have already collected:
-
-```bash
-npm run cli -- import-roster roster.csv
-```
-
-```bash
-npm run cli -- import-consents consents.csv
-```
+6. Build the roster from the lifecycle sheet (see below): check it with
+   `/hawkmod lifecycle roster`, then apply it with
+   `/hawkmod lifecycle roster apply`. From then on it runs hourly.
 
 7. Send every adult to `$PUBLIC_URL/slack/install` to enroll. `/hawkmod status`
    shows coverage; do not consider launch complete until it reads N/N.
 8. `npm run cli -- backfill` to walk DM history that predates enrollment.
 
-### Roles from Slack user groups
+### Roles from the lifecycle sheet
 
-Set the student and mentor groups with `/hawkmod config` — this team uses
-`students` and `mentors` — and each sweep reconciles roles from them, so
-membership
-is managed in Slack rather than by editing a CSV. Group membership is by Slack
-user ID, which removes the email-matching failure below entirely: a group
-member with no roster row gets one created from their Slack profile instead of
-resolving to an unknown account.
+Who is a student or a mentor, whether they are Active, their screening dates
+and their Slack consent all come from the team's lifecycle sheet, a Google
+Sheet read with a service account ([docs/lifecycle-sync.md](docs/lifecycle-sync.md),
+[docs/google-setup.md](docs/google-setup.md)). hawk-mod reads only the
+columns it needs, keeps its own copy, and brings that copy in step every hour,
+or on `/hawkmod lifecycle sync`.
 
-Two properties make this safe to rely on:
+Three properties make this safe to rely on:
 
-- **Membership is only ever added, never subtracted.** Dropping someone from
-  the students group does _not_ un-student them — that would silently end their
-  monitoring. The only way out of `student` is being put in the mentors
-  group, which is deliberate and raises a `roster_drift` finding.
-- **The handle is checked before it is stored.** A user group that does not
-  resolve is refused outright, because a stored typo reads exactly like an
-  empty group: nobody rostered, nobody monitored, no complaint.
+- **The sheet can only add monitoring.** A new person, someone moved into
+  Student, someone Active again — those apply on their own. Someone turned
+  Inactive, graduated to Alumni, or gone from the sheet stays monitored, and an
+  alert asks an administrator to click **End monitoring**, with a reason.
+  A student the sheet now calls a Mentor waits for **Make adult** the same
+  way. Both re-read the sheet before acting.
+- **A sheet hawk-mod cannot read changes nothing.** The roster stays as the
+  last good run left it, and a `lifecycle_unreadable` finding says why.
 - **Every role change is recorded** in `role_changes` with who, when, and from
   what. Slack's audit log API is Enterprise Grid only, so on Business+ this
   table is the sole durable trail of who was monitored when.
 
-Being in both groups changes nothing and raises `usergroup_conflict`.
-
-User Groups need Business+ (they don't exist on the free plan), and
-**"Create and edit user groups" must be restricted to Owners/Admins** in
-Workspace Settings → Roles & permissions. That setting is not readable through
-any API, so it belongs on the quarterly manual checklist.
+Slack user groups (`@students`, `@mentors`) are for mentions and channel
+access; they decide nobody's role. **"Create and edit user groups" must still
+be restricted to Owners/Admins** in Workspace Settings → Roles & permissions.
+That setting is not readable through any API, so it belongs on the quarterly
+manual checklist.
 
 ### Why a local record exists at all
 
@@ -227,48 +220,18 @@ role, active status. Three things cannot live there:
 
 - **Screening dates.** Custom profile fields are the obvious home, but below
   Enterprise Grid a member can edit their own — a adult entering their own
-  CORI date is not a control.
-- **Consent records.** No Slack field holds a guardian's name, a signature
-  date, or a pointer to the signed PDF. And §2 obliges the team to produce
-  those consents _to Slack_ on request, so they cannot live inside it.
+  CORI date is not a control. They come from the lifecycle sheet.
+- **Consent.** No Slack field holds it, and §2 obliges the team to produce
+  consents _to Slack_ on request, so they cannot live inside it. The signed
+  forms are the record; the lifecycle sheet holds when each runs out.
 - **The past.** Slack answers "who is a student now". An audit asks "was this
   person a student in March, when this DM happened". Deactivate an account at
   season's end and Slack forgets, while the DM log still points at them.
   `role_changes` and `screening_changes` are what survive.
 
-So the `people` table is a compliance record whose identity fields are a
-projection of Slack — not a second roster to keep in sync.
-
-### Roster CSV
-
-```
-email,full_name,role,screening_expires_on,training_expires_on,cori_expires_on,consent_release_expires_on,data_privacy_expires_on,mentor_ready_completed_on,active,notes
-```
-
-`role` is one of `student`, `adult`, `district_observer` — the last being the
-MPS administrator seat from §8. Nothing in this file grants access to
-`/hawkmod`; that is Slack's Owner/Admin, and only Slack's. Dates
-are `YYYY-MM-DD`, and requirement dates are the **expiry** FIRST (or district
-HR, for CORI) shows, never a completion date; only Mentor Ready, a one-time
-badge, is the date it was earned. A file with the old `ypp_completed_on`-style
-columns is refused. Email is the join key; Slack IDs are matched automatically
-once people sign up. **If a Slack account's email doesn't match a roster row it
-resolves to an unknown account, not a student** — which produces silence rather
-than an alert, so the `unknown_account` findings that catch it must never be
-left open. Slack user groups (above) avoid this entirely.
-
-The CSV stays the way screening dates, consent, and guardian details get in;
-user groups can only carry membership.
-
-### Consents CSV
-
-```
-email,signed_on,form_version,guardian_name,guardian_email,document_ref,recorded_by
-```
-
-`expires_on` is optional and defaults to one year after `signed_on`, matching
-the annual re-collection requirement. `document_ref` should point at wherever
-the signed copy is actually filed.
+So the `people` table is a compliance record copied from the lifecycle sheet
+and linked to Slack accounts — kept locally because the rules consult it on
+every message, and an unreadable sheet must never read as "no students".
 
 ## Commands
 
@@ -278,17 +241,17 @@ Slack's own admin settings and nowhere else:
 
 ```
 /hawkmod status | enroll | findings [kind] | whois @user
-/hawkmod screening @user | consent @user
 /hawkmod ack <id> <note> | resolve <id> <note> | sweep | backfill
+/hawkmod lifecycle plan | roster [apply] | sync | slack-ids [apply]
 ```
 
 There is deliberately no roster role that confers this. A student who somehow
 holds Owner or Admin is refused anyway, and reported as a §6 violation.
 
-`screening` and `consent` open a form in Slack. They are how screening dates
-and consent records get in day to day — the CSV importers below are a
-season-start bulk load, not a workflow. Both record who entered what and when,
-and both close the finding they were fixing on submit.
+Screening dates and consent are edited on the lifecycle sheet, not here: the
+next hourly run, or `/hawkmod lifecycle sync`, copies them in and closes any
+finding they fix. `lifecycle roster` shows what a run would change without
+changing anything.
 
 On the host, or `docker compose exec hawk-mod node dist/src/cli/index.js …`:
 

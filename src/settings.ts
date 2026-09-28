@@ -6,7 +6,7 @@ import { getSetting } from "./db/repo.js";
  * Deliberately reads `process.env` directly rather than going through
  * `config()`. `config()` is an all-or-nothing parse of the whole Slack
  * environment, and this module is reachable from the CLI, which runs
- * `import-roster` and `findings` with no Slack credentials present. Touching
+ * `findings` and `lifecycle plan` with no Slack credentials present. Touching
  * `config()` from here would break those commands at import time.
  *
  * The environment is no longer the source of truth for these — it is the seed.
@@ -36,13 +36,13 @@ export const SETTINGS = {
     env: "STUDENT_USERGROUP",
     label: "Student user group",
     kind: "usergroup",
-    hint: "the group whose members are monitored as students",
+    hint: "@students, for mentions — roles come from the lifecycle sheet",
   },
   "mentor-group": {
     env: "ADULT_USERGROUP",
     label: "Mentor user group",
     kind: "usergroup",
-    hint: "the group whose members are rostered as adults",
+    hint: "@mentors, for mentions — roles come from the lifecycle sheet",
   },
   "managed-groups": {
     env: "MANAGED_USERGROUPS",

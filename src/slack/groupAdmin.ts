@@ -5,7 +5,6 @@ import type { Person } from "../domain/people.js";
 import {
   planAdd,
   planRemove,
-  reducesMonitoring,
   type GroupPlan,
 } from "../domain/rules/groupMembership.js";
 import { log } from "../logger.js";
@@ -19,16 +18,8 @@ export type GroupEditOutcome =
       plan: GroupPlan;
       handle: string;
       noop: boolean;
-      /** This edit ended someone's monitoring as a student. */
-      reducedMonitoring: boolean;
     }
-  | { ok: false; reason: string; needsAuthorization?: boolean }
-  /**
-   * Refused for want of a reason. Raised here rather than in the command
-   * handler because only this side knows the group's handle: an escaped
-   * mention arrives as an opaque id.
-   */
-  | { ok: false; needsReason: true; handle: string; reason: string };
+  | { ok: false; reason: string; needsAuthorization?: boolean };
 
 /**
  * Serializes group writes within this process.
@@ -94,12 +85,11 @@ function subjectPersonId(s: GroupEditRequest["subject"]): number | null {
 /**
  * Applies one membership edit, or explains why it did not.
  *
- * Deliberately does not touch the roster. Slack fires `subteam_members_changed`
- * on a successful write, and the existing sync reconciles from that — so there
- * is still exactly one path from a group to a role, whether the group was
- * edited here or by hand in Slack. Writing the roster here as well would give
- * that fact two doors, and they would disagree the first time one of them
- * failed.
+ * Deliberately does not touch the roster, and no longer changes anyone's
+ * role at all: roles come from the lifecycle sheet, and a user group is for
+ * mentions and channel access. Adding a student to @mentors makes them
+ * mentionable as a mentor and nothing else — so the reason this used to demand
+ * for that edit went with the role sync.
  */
 export async function applyGroupEdit(
   req: GroupEditRequest
@@ -143,30 +133,6 @@ export async function applyGroupEdit(
       };
     }
 
-    // Moving a student into the mentors group ends their monitoring as a
-    // student. Allowed — refusing would only push the same act into Slack's own
-    // UI, where hawk-mod learns of it from an event with no author and no
-    // reason — but never silently, and never by typo.
-    const reduces =
-      "role" in req.subject &&
-      reducesMonitoring({
-        action: req.action,
-        subjectRole: req.subject.role,
-        handle: group.handle,
-        adultHandle: settingValue("mentor-group") ?? "mentors",
-      });
-
-    if (reduces && !req.reason) {
-      return {
-        ok: false as const,
-        needsReason: true as const,
-        handle: group.handle,
-        reason:
-          `Adding a student to @${group.handle} ends their monitoring as a ` +
-          `student, so this one needs a reason.`,
-      };
-    }
-
     const plan =
       req.action === "add"
         ? planAdd(group.members, target)
@@ -182,7 +148,6 @@ export async function applyGroupEdit(
         plan,
         handle: group.handle,
         noop: true,
-        reducedMonitoring: false,
       };
     }
 
@@ -212,7 +177,6 @@ export async function applyGroupEdit(
       plan,
       handle: group.handle,
       noop: false,
-      reducedMonitoring: reduces,
     };
   });
 }

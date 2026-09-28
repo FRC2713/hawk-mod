@@ -4,7 +4,6 @@ import {
   planAdd,
   planGroupMembership,
   planRemove,
-  reducesMonitoring,
 } from "../src/domain/rules/groupMembership.js";
 
 const set = (...ids: string[]) => new Set(ids);
@@ -90,93 +89,5 @@ describe("group membership plans", () => {
       maxRemovedFraction: 0.9,
     });
     assert.equal(loose.refusal, null);
-  });
-});
-
-/**
- * The gate in front of the single most consequential edit hawk-mod can make.
- * It is keyed on the resolved handle for a reason — see the regression below.
- */
-describe("edits that end a student's monitoring", () => {
-  const mentors = "mentors";
-
-  it("flags a student being added to the mentors group", () => {
-    assert.equal(
-      reducesMonitoring({
-        action: "add",
-        subjectRole: "student",
-        handle: "mentors",
-        adultHandle: mentors,
-      }),
-      true
-    );
-  });
-
-  it("ignores an adult being added to the mentors group", () => {
-    assert.equal(
-      reducesMonitoring({
-        action: "add",
-        subjectRole: "adult",
-        handle: "mentors",
-        adultHandle: mentors,
-      }),
-      false
-    );
-  });
-
-  it("ignores a student being added to any other group", () => {
-    assert.equal(
-      reducesMonitoring({
-        action: "add",
-        subjectRole: "student",
-        handle: "programming",
-        adultHandle: mentors,
-      }),
-      false
-    );
-  });
-
-  it("ignores removals, which never end monitoring", () => {
-    assert.equal(
-      reducesMonitoring({
-        action: "remove",
-        subjectRole: "student",
-        handle: "mentors",
-        adultHandle: mentors,
-      }),
-      false
-    );
-  });
-
-  it("matches regardless of @ prefix or case on either side", () => {
-    assert.equal(
-      reducesMonitoring({
-        action: "add",
-        subjectRole: "student",
-        handle: "mentors",
-        adultHandle: "@Mentors",
-      }),
-      true
-    );
-  });
-
-  /**
-   * Regression. The first version of this compared the *raw slash-command
-   * argument* to the configured handle. The app sets `should_escape: true`, so
-   * Slack sends `<!subteam^S0614TY5A|mentors>` and the raw argument is an opaque
-   * id — which never equals "mentors", so the gate never fired and a student
-   * could be moved into the mentors group by typo, with no reason recorded.
-   * Only the resolved handle is a safe input here.
-   */
-  it("is not fooled by a group id, because it never sees one", () => {
-    assert.equal(
-      reducesMonitoring({
-        action: "add",
-        subjectRole: "student",
-        handle: "S0614TY5A",
-        adultHandle: mentors,
-      }),
-      false
-    );
   });
 });

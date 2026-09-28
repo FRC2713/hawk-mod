@@ -20,17 +20,18 @@ loop, and is what CI runs (plus `npm run build`). There is no linter.
 One test file, or one test:
 
 ```bash
-npx tsx --test test/rosterSync.test.ts
+npx tsx --test test/lifecycleRoster.test.ts
 ```
 
 ```bash
 npx tsx --test --test-name-pattern "two adults" test/rules.test.ts
 ```
 
-CLI subcommands: `import-roster`, `import-consents`, `set-role`, `sweep`,
+CLI subcommands: `set-role` (`district_observer` only), `sweep`,
 `backfill`, `findings [status]`, `export-conversation <id> [out.json]`,
 `lifecycle plan [--members]`, `lifecycle slack-ids [--apply]`,
-`lifecycle roster [--apply]`. None of
+`lifecycle roster [--apply]`, `lifecycle sync`. (`import-roster` and
+`import-consents` refuse: those facts come from the lifecycle sheet.) None of
 them is a bootstrap step: administrative access is Slack's Workspace
 Owner/Admin flags, read live in `src/slack/authz.ts`, so a fresh install is
 usable by whoever installed it without anyone touching the host. Don't
@@ -71,7 +72,7 @@ exactly that reason. Never merge these two grants.
 
 **Students may not enroll.** `storeInstallation` throws on a student's user
 token, and the sweep revokes and deletes one that appears later (a person can be
-moved into the students group after enrolling). Their token would expose
+marked Student on the lifecycle sheet after enrolling). Their token would expose
 student-to-student DMs, which this deliberately never records.
 
 **Everything durable lives under DATA_DIR** — one SQLite file, one volume.
@@ -98,9 +99,11 @@ it is stored, because a stored typo reads exactly like an empty group. A
 channel is stored by **id, never by name**, so renaming it breaks nothing, and
 wherever an id is shown the channel's current name is shown with it
 (`#alerts (C0123ABC)`, via `describeValue`). Never refer to a channel by name in
-code or config. Changing
-a role group re-syncs immediately; leaving it until 3am would mean the setting
-looked applied and was not. Every change lands in `setting_changes`.
+code or config. A setting whose effect is scheduled — `report-time` —
+reschedules immediately; leaving it until tomorrow would mean the setting
+looked applied and was not. Every change lands in `setting_changes`. The
+`student-group` / `mentor-group` settings no longer decide anyone's role; step
+5 of the lifecycle sync makes those groups copies of the sheet.
 
 Note `settings.ts` reads `process.env` directly rather than through `config()` —
 it is reachable from the CLI, and `config()` there would throw at import time.
@@ -108,42 +111,54 @@ it is reachable from the CLI, and `config()` there would throw at import time.
 **`config()` is all or nothing.** One zod parse of the whole environment, on
 first use; a missing `SLACK_*` var throws for every caller. That is why
 `dataDir()` and `logMode()` exist as separate readers — the CLI runs
-`import-roster`, `findings`, and `export-conversation` with no Slack
+`findings`, `export-conversation` and `lifecycle plan` with no Slack
 credentials present. Reaching for `config()` inside a module the CLI can pull
 in breaks those commands, and it breaks them at import time.
 
 **The rules are pure and content-blind.** `src/domain/rules/` decides everything
 from _who is in a conversation_, never from what was said — `dmPolicy` for DMs,
-`twoAdults` for channels, `consent` and `screening` for people, `rosterSync` and
-`remediation` for the reconciliations. This is why the tests are cheap and why
+`twoAdults` for channels, `consent` and `screening` for people, and
+`remediation` for the reconciliation; `domain/lifecycle/` holds the same kind
+of pure planning for the lifecycle sheet. This is why the tests are cheap and why
 the policy is enforceable without reading students' messages. Keep new policy
 logic here rather than inside Slack handlers — the three files in `test/` build
 plain `Person` and `Member` objects and call the rules directly. There is no
 database fixture, no Slack mock, and no test harness beyond `node:test`, so
 policy that lands in a handler is policy nothing covers.
 
-**Roles can come from Slack user groups.** `syncRolesFromUserGroups` runs first
-in the sweep, because everything after it reads roles, and again on
-`subteam_*` events so an edit applies immediately rather than at 3am (the sync
-is idempotent, which is what makes the duplicate events harmless). The
-reconciliation in `domain/rules/rosterSync.ts` is pure and **may only ever add
-monitoring, never subtract it**: a person dropped from the students group stays
-a student, since the alternative is silently ending someone's monitoring. Only
-an explicit move into the mentors group leaves `student`, and that raises
-`roster_drift`. Every change lands in `role_changes` — Slack's audit log API is
-Grid-only, so that table is the only trail. Do not make this bidirectional.
+**Roles come from the lifecycle sheet, and the sheet can only add monitoring.**
+The hourly roster run (`lifecycle/run.ts` `rosterSync`, and "sync now" as
+`/hawkmod lifecycle sync`) plans from the sheet with the pure
+`domain/lifecycle/roster.ts` and applies it all or nothing
+(`lifecycle/applyRoster.ts`). **It may only ever add monitoring, never
+subtract it:** it creates rows, moves people _into_ `student`, reactivates,
+and copies names, identity emails and dates. Anything that would lower
+monitoring — a row turned Inactive, a graduate now Alumni, a row gone, a
+Mentor who is a student on the roster — is a finding with a button (**End
+monitoring**, **Make adult**) that an administrator clicks, with a reason,
+after hawk-mod re-reads the sheet (`slack/actions.ts`). Every change lands in
+`role_changes` — Slack's audit log API is Grid-only, so that table is the
+only trail. Do not make this bidirectional.
 
-The invariant is about _direction_, not about writes, which is why `reactivate`
-belongs there: a deactivated person who reappears in a role group is monitored
-again immediately, for the same reason `create` needs nobody's approval. Ending
-monitoring is `/hawkmod deactivate`, which demands a person and a reason — the
-only operation in hawk-mod that makes it see less, and the only one no rule, job
-or sync can reach.
+hawk-mod keeps its own copy (`people`) rather than reading the sheet live,
+because the DM rules ask "is this a student?" on every message: an unreadable
+sheet read live would make every conversation student-free, and a row lost
+from the sheet must never end anyone's monitoring. A run that cannot read the
+sheet changes nothing and raises `lifecycle_unreadable`. Nothing reads the
+Slack user groups for roles any more — the old `syncRolesFromUserGroups` and
+its `subteam_*` handling are gone — so a group edit changes nobody's
+monitoring.
 
-**Group membership is declaration; the roster is monitoring.** `/hawkmod group
-add|remove` edits the Slack user group and nothing else. Removing someone from
-`@students` leaves them a student on the roster, and the command says so in its
-reply rather than letting the caller assume otherwise. `CONTEXT.md` keeps the
+The invariant is about _direction_, not about writes, which is why
+`reactivate` belongs there: someone the sheet declares Active again is
+monitored again immediately, for the same reason `create` needs nobody's
+approval. Ending monitoring is End monitoring, or `/hawkmod deactivate`, which
+demands a person and a reason — the only operations in hawk-mod that make it
+see less, and the only ones no rule, job or sync can reach.
+
+**Group membership is for mentions; the roster is monitoring.** `/hawkmod group
+add|remove` edits the Slack user group and nothing else, and its reply says the
+roster is unchanged rather than letting the caller assume otherwise. `CONTEXT.md` keeps the
 two words apart; conflating them is how a graduated student ends up monitored
 forever, or a returning one ends up invisible.
 
@@ -254,19 +269,21 @@ signed with `SLACK_STATE_SECRET`, purpose-bound so one kind can never replay as
 the other). Every string a page interpolates goes through `esc()` — setting
 values and display names are whatever their owner typed.
 
-**The lifecycle sheet is being made the source of people** (in progress; the
-scope and build order are `docs/lifecycle-sync.md`, the sheet's schema is
-`docs/lifecycle-sheet.md`). The sheet declares, the
-Slack user groups mirror it, and the roster monitors — the add-only rule
-carries over to the new source. So far it is read-only: `google/sheets.ts`
+**The lifecycle sheet is the source of people** (the scope and build order
+are `docs/lifecycle-sync.md`, the sheet's schema is `docs/lifecycle-sheet.md`).
+The sheet declares, the roster monitors, and — from step 5 — the Slack user
+groups mirror it. hawk-mod writes back only Slack User IDs. `google/sheets.ts`
 reads the header rows, then requests **only** the columns `SHEET_TABS` in
 `domain/lifecycle/schema.ts` names, so addresses, birthdays and medical notes
 never leave Google. A renamed tab or header refuses the read rather than being
 read as blank — a blank `YPT Expiry` would unclear every mentor. The parse is
 pure and never stops on a bad cell: it reports the cell by Person ID and never
-by value. Google is optional (`google/credentials.ts`, read from the
-environment like `dataDir()`, never `config()`); credentials are environment,
-never a setting. Production is deployed by hawk_suite's workflow and nobody
+by value. **Once the roster has been built from the sheet, the sheet is
+required**: missing credentials are a `lifecycle_unreadable` finding, not a
+quiet fallback. Before that first apply, hawk-mod runs without Google as it
+always did, and the hourly run does nothing. Credentials are read from the
+environment like `dataDir()`, never `config()` (`google/credentials.ts`), and
+are never a setting. Production is deployed by hawk_suite's workflow and nobody
 has a shell on the host, so the key arrives as base64 and the lifecycle
 commands are reachable from `/hawkmod lifecycle` as well as the CLI — both
 call `lifecycle/run.ts`, so the two cannot drift. Anything that can reach
@@ -338,8 +355,8 @@ Building locally on macOS can trip the "access data from other apps" prompt;
   whatever their role. Do not loosen `isScreenedAdult`.
 - **Every Slack entry point is gated on `administrator()`**, and each one
   checks for itself: the slash command (`commands.ts`), the alert buttons and
-  their note modal (`actions.ts`), and the screening and consent submissions
-  (`modals.ts`). There is no middleware doing this centrally — anyone who can
+  their note modal, and End monitoring / Make adult and their reason modal
+  (`actions.ts`). There is no middleware doing this centrally — anyone who can
   see the alert channel can click a button, so a new handler that forgets the
   check is open to the workspace. Findings name students.
 - **Files are recorded as metadata, never fetched.** `record.ts` stores

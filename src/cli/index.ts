@@ -1,38 +1,27 @@
-import { parse } from "csv-parse/sync";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { db } from "../db/client.js";
 import {
   getConversation,
-  insertConsent,
   listFindings,
   personByEmail,
   personBySlackId,
-  SCREENING_FIELDS,
   setPersonRole,
-  upsertPerson,
 } from "../db/repo.js";
-import { defaultExpiry } from "../domain/rules/consent.js";
-import { ROLES, type Role } from "../domain/people.js";
 import { backfillAll } from "../monitor/backfill.js";
 import { runSweep } from "../jobs/sweep.js";
 import {
   lifecyclePlanReport,
   rosterReport,
+  rosterSync,
   slackIdsReport,
 } from "../lifecycle/run.js";
 import { botClient } from "../slack/tokens.js";
 
 const USAGE = `hawk-mod cli
 
-  import-roster <file.csv>     email,full_name,role,screening_expires_on,
-                               training_expires_on,cori_expires_on,
-                               consent_release_expires_on,
-                               data_privacy_expires_on,
-                               mentor_ready_completed_on,active,notes
-                               Dates are EXPIRY dates, as FIRST shows them
-  import-consents <file.csv>   email,signed_on,form_version,guardian_name,
-                               guardian_email,document_ref,recorded_by[,expires_on]
-  set-role <email|U…> <role>   role: student|adult|district_observer.
+  set-role <email|U…> <role>   district_observer, or back to adult from it —
+                               the one role the lifecycle sheet has no word
+                               for. Everything else comes from the sheet.
                                Nothing here grants access to /hawkmod — that
                                is Slack's Owner/Admin, read live.
   sweep                        run the compliance sweep
@@ -53,87 +42,15 @@ const USAGE = `hawk-mod cli
   lifecycle roster [--apply]   what building the roster from the sheet would
                                change, and what it would ask about; --apply
                                makes the changes. Needs the Slack install too
+  lifecycle sync               what the hourly job does: apply the roster from
+                               the sheet and write Slack User IDs back. Does
+                               nothing until the first roster --apply
 `;
 
-function rows(path: string): Record<string, string>[] {
-  return parse(readFileSync(path, "utf8"), {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-  }) as Record<string, string>[];
-}
-
-function optional(value: string | undefined): string | null {
-  return value && value.length > 0 ? value : null;
-}
-
-const RETIRED_COLUMNS = [
-  "ypp_completed_on",
-  "ypt_completed_on",
-  "mentor_ready_on",
-  "cori_completed_on",
-];
-
-function importRoster(path: string) {
-  let count = 0;
-  for (const r of rows(path)) {
-    const role = r.role as Role;
-    if (!ROLES.includes(role)) {
-      throw new Error(`Row for ${r.email}: unknown role "${r.role}"`);
-    }
-    if (!r.email || !r.full_name) {
-      throw new Error("Every row needs an email and a full_name");
-    }
-    const old = RETIRED_COLUMNS.filter((c) => c in r);
-    if (old.length) {
-      // These held COMPLETION dates. Read under the new names they would be
-      // taken as expiry dates and shorten or lengthen someone's clearance; left
-      // unread they would import every adult as unscreened with no warning.
-      throw new Error(
-        `This CSV uses retired columns (${old.join(", ")}). Requirements are ` +
-          "now expiry dates, as FIRST shows them: " +
-          SCREENING_FIELDS.join(", ")
-      );
-    }
-    upsertPerson({
-      email: r.email,
-      fullName: r.full_name,
-      role,
-      active: r.active === undefined ? true : r.active !== "0",
-      requirements: Object.fromEntries(
-        SCREENING_FIELDS.map((f) => [f, optional(r[f])])
-      ),
-      notes: optional(r.notes),
-    });
-    count += 1;
-  }
-  console.log(`Imported ${count} roster row(s).`);
-}
-
-function importConsents(path: string) {
-  let count = 0;
-  for (const r of rows(path)) {
-    const person = r.email ? personByEmail(r.email) : undefined;
-    if (!person)
-      throw new Error(
-        `No roster entry for ${r.email}; import the roster first`
-      );
-    if (!r.signed_on)
-      throw new Error(`Consent for ${r.email} has no signed_on date`);
-    insertConsent({
-      personId: person.id,
-      signedOn: r.signed_on,
-      expiresOn: r.expires_on || defaultExpiry(r.signed_on),
-      formVersion: r.form_version || "unversioned",
-      guardianName: r.guardian_name || "",
-      guardianEmail: optional(r.guardian_email),
-      documentRef: optional(r.document_ref),
-      recordedBy: r.recorded_by || "cli",
-    });
-    count += 1;
-  }
-  console.log(`Recorded ${count} consent(s).`);
-}
+/** Retired at the cutover; the sheet is where these facts live now. */
+const FROM_THE_SHEET =
+  "Roles, screening dates and consent come from the lifecycle sheet now. " +
+  "Edit the sheet, then run `lifecycle sync` (or wait for the hourly run).";
 
 /**
  * The thing §4.4 promises a parent or the district: one conversation, in full,
@@ -164,29 +81,32 @@ function exportConversation(id: string, out?: string) {
 }
 
 /**
- * The user group sync only ever assigns `student` or `adult`, so
- * `district_observer` (§8) has to be set from outside Slack. Recorded in
- * role_changes like any other role change.
+ * `district_observer` (§8) is the one role the lifecycle sheet has no word
+ * for, so it is set here, and only between it and `adult` — which the rules
+ * treat alike. Never to or from `student`: that is the sheet's, and moving
+ * someone out of it lowers monitoring, which only a Make adult click may do.
+ * Recorded in role_changes like any other role change.
  */
 function setRole(who: string, role: string) {
-  if (!ROLES.includes(role as Role)) {
-    throw new Error(`Unknown role "${role}". One of: ${ROLES.join(", ")}`);
+  if (role !== "district_observer" && role !== "adult") {
+    throw new Error(
+      `set-role sets district_observer or adult. ${FROM_THE_SHEET}`
+    );
   }
   const person = who.startsWith("U")
     ? (personBySlackId(who) ?? personByEmail(who))
     : personByEmail(who);
-  if (!person) {
-    throw new Error(
-      `No roster entry for ${who}. Run a sweep first so the user groups create it.`
-    );
-  }
+  if (!person) throw new Error(`No roster entry for ${who}.`);
   if (person.role === role) {
     console.log(`${person.full_name} is already ${role}.`);
     return;
   }
+  if (person.role === "student") {
+    throw new Error(`${person.full_name} is a student. ${FROM_THE_SHEET}`);
+  }
   setPersonRole({
     personId: person.id,
-    toRole: role as Role,
+    toRole: role,
     source: "cli",
     detail: { via: "set-role" },
   });
@@ -214,13 +134,8 @@ async function main() {
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
     case "import-roster":
-      if (!args[0]) throw new Error("import-roster needs a CSV path");
-      importRoster(args[0]);
-      return;
     case "import-consents":
-      if (!args[0]) throw new Error("import-consents needs a CSV path");
-      importConsents(args[0]);
-      return;
+      throw new Error(FROM_THE_SHEET);
     case "set-role":
       if (!args[0] || !args[1])
         throw new Error("set-role needs <email|U…> and a role");
@@ -257,7 +172,9 @@ async function main() {
             by: "cli",
           })
         );
-      else throw new Error("usage: lifecycle plan|slack-ids|roster");
+      else if (args[0] === "sync")
+        console.log(await rosterSync({ slack: botClient(), by: "cli" }));
+      else throw new Error("usage: lifecycle plan|slack-ids|roster|sync");
       return;
     default:
       console.log(USAGE);

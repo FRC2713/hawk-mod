@@ -4,7 +4,6 @@ import {
   deleteInstallation,
   finishAuditRun,
   getInstallation,
-  listConsents,
   listPeople,
   startAuditRun,
 } from "../db/repo.js";
@@ -25,7 +24,6 @@ import { log } from "../logger.js";
 import { reevaluateRecorded } from "../monitor/conversations.js";
 import { raise } from "../raise.js";
 import { channelMemberships, syncSlackAccounts } from "../slack/roster.js";
-import { syncRolesFromUserGroups } from "./syncRoles.js";
 import { refreshFinding } from "../slack/alerts.js";
 import { botClient, revokeUserToken } from "../slack/tokens.js";
 
@@ -44,12 +42,6 @@ const SWEEP_OWNED: FindingKind[] = [
 // person closes it, not the sweep.
 
 export type SweepStats = {
-  rolesFromUserGroups: {
-    enabled: boolean;
-    created: number;
-    changed: number;
-    conflicts: number;
-  };
   people: number;
   slackAccountsLinked: number;
   unknownAccounts: number;
@@ -71,12 +63,6 @@ export async function runSweep(): Promise<SweepStats> {
   const asOf = today();
   const seen = new Set<string>();
   const stats: SweepStats = {
-    rolesFromUserGroups: {
-      enabled: false,
-      created: 0,
-      changed: 0,
-      conflicts: 0,
-    },
     people: 0,
     slackAccountsLinked: 0,
     unknownAccounts: 0,
@@ -97,18 +83,8 @@ export async function runSweep(): Promise<SweepStats> {
     await raise(f);
   };
 
-  /* ---- roles from Slack user groups ------------------------------------- */
-
-  // Runs first: everything below reads roles, so the roster must reflect the
-  // groups before consent, screening, and the two-adult rule are evaluated.
-  const roleSync = await syncRolesFromUserGroups(client);
-
-  stats.rolesFromUserGroups = {
-    enabled: roleSync.enabled,
-    created: roleSync.created,
-    changed: roleSync.changed,
-    conflicts: roleSync.conflicts,
-  };
+  // Roles come from the lifecycle sheet, which the hourly roster run keeps
+  // (lifecycle/run.ts); the sweep only reads them.
 
   /* ---- roster vs Slack -------------------------------------------------- */
 
@@ -133,12 +109,11 @@ export async function runSweep(): Promise<SweepStats> {
   /* ---- consent, screening, enrollment ----------------------------------- */
 
   const people = listPeople(true);
-  const consents = listConsents();
   stats.people = people.length;
 
   for (const p of people) {
     if (p.role === "student" && p.slack_user_id) {
-      const status = consentStatus(p, consents, asOf);
+      const status = consentStatus(p, asOf);
       if (!mayHoldAccount(status)) {
         stats.unconsentedAccounts += 1;
         await emit({

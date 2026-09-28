@@ -1,5 +1,7 @@
 import { Cron } from "croner";
 import { config } from "../config.js";
+import { rosterSync } from "../lifecycle/run.js";
+import { botClient } from "../slack/tokens.js";
 import { log } from "../logger.js";
 import { backfillAll } from "../monitor/backfill.js";
 import {
@@ -82,11 +84,22 @@ export function rescheduleReports(): Date | null {
   return jobs[0]?.nextRun() ?? null;
 }
 
+/**
+ * The roster from the lifecycle sheet, hourly. Fixed rather than configurable:
+ * a new environment variable means a change to hawk_suite's deploy, and an
+ * hour is the promise the design makes. "Sync now" is there for anyone who
+ * cannot wait for it. At :20, clear of the backfill's default :15.
+ */
+const LIFECYCLE_CRON = "20 * * * *";
+
 export function startSchedules(): Cron[] {
   const cfg = config();
   return [
     schedule("sweep", cfg.SWEEP_CRON, runSweep),
     schedule("backfill", cfg.BACKFILL_CRON, backfillAll),
+    schedule("lifecycle", LIFECYCLE_CRON, () =>
+      rosterSync({ slack: botClient(), by: "hourly" })
+    ),
     ...scheduleReports(),
   ];
 }

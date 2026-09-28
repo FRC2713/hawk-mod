@@ -1,12 +1,15 @@
 import type { App } from "@slack/bolt";
 import { APP_NAME } from "../brand.js";
 import {
-  listConsents,
+  linkSlackAccount,
   markInstallationRevoked,
+  personByEmail,
+  personById,
   personBySlackId,
 } from "../db/repo.js";
 import { today } from "../domain/dates.js";
 import { dedupeKey } from "../domain/findings.js";
+import { matchSlackAccount } from "../domain/people.js";
 import { consentStatus, mayHoldAccount } from "../domain/rules/consent.js";
 import { log } from "../logger.js";
 import { evaluateChannel } from "../monitor/channels.js";
@@ -16,7 +19,6 @@ import {
   recordMessage,
   type ObservedFile,
 } from "../monitor/record.js";
-import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 import { raise } from "../raise.js";
 import { botClient, userClient } from "./tokens.js";
 
@@ -150,13 +152,36 @@ export function registerEvents(app: App): void {
 
   /**
    * The consent gate, at the only moment it can still be enforced cheaply: a
-   * student account that exists without a signed form on file is a finding the
+   * student account that exists without a current consent is a finding the
    * instant it appears, not at the next quarterly audit.
+   *
+   * Every Active person on the lifecycle sheet already has a roster row, so a
+   * newcomer is usually recognized here, by their identity email, and linked
+   * before they have sent anything. The next roster run writes the Slack User
+   * ID back to the sheet.
    */
   app.event("team_join", async ({ event }) => {
-    const user = event.user as { id?: string; is_bot?: boolean; name?: string };
+    const user = event.user as {
+      id?: string;
+      is_bot?: boolean;
+      name?: string;
+      profile?: { email?: string };
+    };
     if (!user.id || user.is_bot) return;
-    const person = personBySlackId(user.id);
+    const match = matchSlackAccount(
+      { id: user.id, email: user.profile?.email ?? null },
+      personBySlackId,
+      personByEmail
+    );
+    if (match.kind === "link") {
+      linkSlackAccount(match.person.id, user.id);
+      log.info("linked slack account on join", {
+        person: match.person.person_id ?? match.person.id,
+        slackId: user.id,
+      });
+    }
+    const person =
+      match.kind === "unknown" ? undefined : personById(match.person.id);
     if (!person) {
       await raise({
         kind: "unknown_account",
@@ -167,7 +192,7 @@ export function registerEvents(app: App): void {
       });
       return;
     }
-    const status = consentStatus(person, listConsents(), today());
+    const status = consentStatus(person, today());
     if (!mayHoldAccount(status)) {
       await raise({
         kind: "unconsented_account",
@@ -180,26 +205,6 @@ export function registerEvents(app: App): void {
       });
     }
   });
-
-  /**
-   * Editing a user group is how someone joins the roster, so it has to take
-   * effect when they edit it — not at 3am. Slack sends several of these for a
-   * single edit; the sync is idempotent, so re-running is harmless.
-   */
-  for (const name of [
-    "subteam_members_changed",
-    "subteam_updated",
-    "subteam_created",
-  ] as const) {
-    app.event(name, async () => {
-      try {
-        const stats = await syncRolesFromUserGroups(botClient());
-        log.info("roles resynced after a user group changed", { ...stats });
-      } catch (err) {
-        log.error("user group resync failed", { error: String(err) });
-      }
-    });
-  }
 
   app.event("tokens_revoked", async ({ event, body }) => {
     const teamId = (body as EventBody).team_id;

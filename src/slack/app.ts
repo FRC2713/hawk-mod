@@ -6,7 +6,6 @@ import { log } from "../logger.js";
 import { registerActions } from "./actions.js";
 import { registerCommands } from "./commands.js";
 import { registerEvents } from "./events.js";
-import { registerViews } from "./modals.js";
 import { GROUP_ADMIN_METADATA, installationStore } from "./installStore.js";
 import { webRoutes } from "../web/routes.js";
 
@@ -218,7 +217,6 @@ export function createApp(): App {
 
   registerEvents(app);
   registerCommands(app);
-  registerViews(app);
   registerActions(app);
 
   app.error(async (error) => {

@@ -8,7 +8,6 @@ import {
   setSetting,
   getFinding,
   getInstallation,
-  listConsents,
   listFindings,
   listPeople,
   personByEmail,
@@ -36,13 +35,12 @@ import { describeValue, validateSetting } from "./settingsAdmin.js";
 import { backfillAll } from "../monitor/backfill.js";
 import { administrator, type Actor, NOT_PERMITTED } from "./authz.js";
 import { applyGroupEdit } from "./groupAdmin.js";
-import { openConsent, openScreening } from "./modals.js";
 import { runSweep } from "../jobs/sweep.js";
 import { rescheduleReports } from "../jobs/schedule.js";
-import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 import {
   lifecyclePlanReport,
   rosterReport,
+  rosterSync,
   slackIdsReport,
 } from "../lifecycle/run.js";
 
@@ -56,19 +54,18 @@ const HELP = [
   "`/hawkmod group remove @user @group` — take someone out of a user group",
   "`/hawkmod deactivate @user <reason>` — stop monitoring someone",
   "`/hawkmod config` — show settings; `config set <key> <value>` to change one",
-  "`/hawkmod screening @user` — record YPT / screening / CORI expiry dates",
-  "`/hawkmod consent @user` — record a signed parental consent",
   "`/hawkmod ack <id> <note>` — acknowledge without closing",
   "`/hawkmod resolve <id> <note>` — close a finding, with a reason",
   "`/hawkmod sweep` — run the compliance sweep now",
-  "`/hawkmod sync` — re-read the user groups now",
   "`/hawkmod backfill` — walk enrolled adults' DM history now",
   "`/hawkmod lifecycle plan` — read the lifecycle sheet; changes nothing",
   "`/hawkmod lifecycle slack-ids` — which Slack User IDs the sheet is missing; add `apply` to fill them in",
   "`/hawkmod lifecycle roster` — what building the roster from the sheet would change; add `apply` to make the changes",
+  "`/hawkmod lifecycle sync` — read the sheet now and update the roster (it also runs hourly)",
   "",
-  "_Roles come from Slack user groups. To add someone to the roster, add them",
-  "to the @students or @mentors group — it applies straight away._",
+  "_Who is a student or a mentor, their screening dates and their consent all",
+  "come from the lifecycle sheet. To change them, edit the sheet, then",
+  "`/hawkmod lifecycle sync` — or wait for the hourly run._",
 ].join("\n");
 
 export function registerCommands(app: App): void {
@@ -113,27 +110,17 @@ export function registerCommands(app: App): void {
           return;
 
         case "screening":
-        case "consent": {
-          // Join the rest: an unescaped display name arrives with spaces.
-          const person = await resolvePerson(client, rest.join(" "));
-          if (!person) {
-            await respond({
-              response_type: "ephemeral",
-              text:
-                `Couldn't find \`${rest.join(" ") || "(nobody)"}\` on the roster.\n` +
-                `Usage: \`/hawkmod ${sub} @user\`. Roster membership comes from ` +
-                `the user groups, so add them to @${settingValue("student-group") ?? "students"} ` +
-                `or @${settingValue("mentor-group") ?? "mentors"} first.`,
-            });
-            return;
-          }
-          if (sub === "screening") {
-            await openScreening(client, command.trigger_id, person);
-          } else {
-            await openConsent(client, command.trigger_id, person);
-          }
+        case "consent":
+          // Retired at the cutover: a date typed here would be overwritten by
+          // the next hourly run, which copies the sheet exactly.
+          await respond({
+            response_type: "ephemeral",
+            text:
+              `${sub === "screening" ? "Screening dates" : "Consent"} now ` +
+              "come from the lifecycle sheet: edit the sheet, then " +
+              "`/hawkmod lifecycle sync`.",
+          });
           return;
-        }
 
         case "whois":
           await respond({
@@ -198,12 +185,17 @@ export function registerCommands(app: App): void {
         }
 
         case "sync": {
-          const stats = await syncRolesFromUserGroups(client);
+          // The old spelling of "re-read who is who", kept so the habit works.
           await respond({
             response_type: "ephemeral",
-            text: stats.enabled
-              ? "```" + JSON.stringify(stats, null, 2) + "```"
-              : "No user groups configured; the roster comes from CSV import.",
+            text: "Reading the lifecycle sheet…",
+          });
+          await respond({
+            response_type: "ephemeral",
+            text:
+              "```" +
+              (await rosterSync({ slack: client, by: caller.name })) +
+              "```",
           });
           return;
         }
@@ -233,13 +225,19 @@ export function registerCommands(app: App): void {
 
         case "lifecycle": {
           const [what, flag] = rest;
-          if (what !== "plan" && what !== "slack-ids" && what !== "roster") {
+          if (
+            what !== "plan" &&
+            what !== "slack-ids" &&
+            what !== "roster" &&
+            what !== "sync"
+          ) {
             await respond({
               response_type: "ephemeral",
               text:
                 "Usage: `/hawkmod lifecycle plan`, " +
                 "`/hawkmod lifecycle slack-ids [apply]` or " +
-                "`/hawkmod lifecycle roster [apply]`",
+                "`/hawkmod lifecycle roster [apply]` or " +
+                "`/hawkmod lifecycle sync`",
             });
             return;
           }
@@ -250,19 +248,21 @@ export function registerCommands(app: App): void {
           const report =
             what === "plan"
               ? await lifecyclePlanReport()
-              : what === "roster"
-                ? await rosterReport({
-                    slack: client,
-                    apply: flag === "apply",
-                    applyHint: "/hawkmod lifecycle roster apply",
-                    by: caller.name,
-                  })
-                : await slackIdsReport({
-                    slack: client,
-                    apply: flag === "apply",
-                    applyHint: "/hawkmod lifecycle slack-ids apply",
-                    by: caller.name,
-                  });
+              : what === "sync"
+                ? await rosterSync({ slack: client, by: caller.name })
+                : what === "roster"
+                  ? await rosterReport({
+                      slack: client,
+                      apply: flag === "apply",
+                      applyHint: "/hawkmod lifecycle roster apply",
+                      by: caller.name,
+                    })
+                  : await slackIdsReport({
+                      slack: client,
+                      apply: flag === "apply",
+                      applyHint: "/hawkmod lifecycle slack-ids apply",
+                      by: caller.name,
+                    });
           await respond({
             response_type: "ephemeral",
             text: "```" + report + "```",
@@ -411,11 +411,18 @@ async function whoisText(
   const asOf = today();
   const lines = [
     `*${person.full_name}* — ${person.role}, ${person.active ? "active" : "inactive"}`,
-    `Email: ${person.email}`,
+    `Person ID: ${person.person_id ?? "not matched to the lifecycle sheet"}`,
+    `Email: ${person.email ?? "none on the lifecycle sheet"}`,
   ];
 
   if (person.role === "student") {
-    lines.push(`Consent: ${consentStatus(person, listConsents(), asOf).state}`);
+    const consent = consentStatus(person, asOf);
+    lines.push(
+      `Consent: ${consent.state}` +
+        ("expiresOn" in consent
+          ? ` (Slack Consent Expiry ${consent.expiresOn})`
+          : "")
+    );
   } else {
     const s = screeningStatus(person, asOf);
     lines.push(`Screening: ${describeScreening(s)}`);
@@ -480,11 +487,9 @@ async function groupText(
     return `Usage: \`/hawkmod group ${action} @user @group\`.`;
   }
 
-  // A roster row is not a precondition here, and requiring one was a deadlock:
-  // the sync only creates rows for people already in a role group, so the
-  // command meant to put somebody in their first group refused everybody who
-  // needed it. Slack's account is enough — `subteam_members_changed` fires on
-  // the write and the sync creates the roster row moments later.
+  // A roster row is not a precondition here: a group is for mentions and
+  // channel access, and says nothing about who is monitored — the lifecycle
+  // sheet does. Slack's account is enough.
   const person = await resolvePerson(client, mention);
   const slackId =
     person?.slack_user_id ?? (await resolveSlackId(client, mention));
@@ -508,18 +513,7 @@ async function groupText(
     source: "command",
   });
 
-  if (!outcome.ok) {
-    // The group's handle is only known once it has been resolved, so the
-    // needs-a-reason refusal comes back from there and is dressed up here,
-    // where the caller's own words are still to hand.
-    if ("needsReason" in outcome) {
-      return (
-        `*${who}* is a student. ${outcome.reason}\n` +
-        `\`/hawkmod group add ${mention} ${group} <why>\``
-      );
-    }
-    return outcome.reason;
-  }
+  if (!outcome.ok) return outcome.reason;
   if (outcome.noop) {
     return `*${who}* was already ${
       action === "add" ? "in" : "out of"
@@ -531,31 +525,14 @@ async function groupText(
       `${action === "add" ? "to" : "from"} @${outcome.handle}.`,
   ];
 
-  // Says out loud that the roster is about to catch up, so a caller who runs
-  // `whois` a second later and sees nothing knows to wait rather than to worry.
-  if (!person && action === "add") {
-    lines.push(
-      `_hawk-mod had no roster entry for them. The user group sync creates one ` +
-        `within a few seconds; \`/hawkmod whois\` will show it._`
-    );
-  }
-
-  // The honest half. Group membership declares a role; it does not end
-  // monitoring, and saying otherwise here would be the quiet failure this
-  // project exists to avoid.
-  if (action === "remove" && person) {
-    lines.push(
-      `_${person.full_name} is still a ${person.role} on the roster and still ` +
-        `monitored. Leaving a group never ends monitoring — use ` +
-        `\`/hawkmod deactivate\` for that._`
-    );
-  }
-  if (outcome.reducedMonitoring) {
-    lines.push(
-      `_${who} is no longer monitored as a student. Recorded ` +
-        `against your name: ${reason}_`
-    );
-  }
+  // Said out loud, so nobody assumes a group edit changed who is monitored:
+  // the lifecycle sheet decides that, and a group is for mentions and access.
+  lines.push(
+    person
+      ? `_This does not change monitoring: ${person.full_name} is still a ` +
+          `${person.role} on the roster. Roles come from the lifecycle sheet._`
+      : `_This does not put them on the roster: the lifecycle sheet does that._`
+  );
   return lines.join("\n");
 }
 
@@ -670,18 +647,8 @@ async function configText(
       ".",
   ];
 
-  // Roles are read from these groups by everything downstream, so leaving the
-  // roster stale until 3am would mean the setting looked applied and was not.
-  if (key === "student-group" || key === "mentor-group") {
-    const stats = await syncRolesFromUserGroups(client);
-    lines.push(
-      `_Re-synced: ${stats.created} rostered, ${stats.changed} changed, ` +
-        `${stats.reactivated} resumed._`
-    );
-  }
-
-  // Same argument as the role groups: the new time takes effect now, not at
-  // whatever the old time happened to be.
+  // The new time takes effect now, not at whatever the old time happened to
+  // be: leaving it would mean the setting looked applied and was not.
   if (key === "report-time") {
     const next = rescheduleReports();
     if (next) {
