@@ -617,9 +617,11 @@ Also retired with the role sync, decided while building it (2026-09-28):
 
 The hourly run is at :20 past, fixed rather than an environment variable (a
 new variable means a change to hawk_suite's deploy). It does nothing until the
-first `roster apply`. The local walkthrough in `scripts/setup-local.sh` still
-rosters people through user groups and the consent form, and needs reworking
-around a test sheet.
+first `roster apply`. The local walkthrough in `scripts/setup-local.sh`
+rosters people the same way: it has the developer build a two-person test
+sheet (the tabs and headers generated from `SHEET_TABS`, the addresses their
+own test accounts), share it with a service account of their own that can
+read nothing else, then run the roster dry run and apply.
 
 ### New findings
 

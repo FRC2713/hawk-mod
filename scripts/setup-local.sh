@@ -184,7 +184,7 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=12
+TOTAL_STAGES=13
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -241,7 +241,7 @@ start_funnel() {
 }
 
 # cert_ok — Funnel serves nothing without a TLS certificate, and issuance can
-# fail server-side. Provisioning it here turns a stage-8 mystery into a stage-3
+# fail server-side. Provisioning it here turns a stage-10 mystery into a stage-3
 # error message. Writes into $WORK so no cert files land in the repo.
 cert_ok() {
   local host="$1"
@@ -286,28 +286,101 @@ clip() {
   fi
 }
 
+# hm CMD... — the CLI inside the running container, which holds the .env.
+hm() { "${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js "$@"; }
+
+# key_email — the service account the key in .env belongs to, and nothing
+# else from it: the rest of that JSON is the private key.
+key_email() {
+  printf '%s' "$1" | python3 -c '
+import base64, json, sys
+try:
+    print(json.loads(base64.b64decode(sys.stdin.read())).get("client_email", ""))
+except Exception:
+    pass
+'
+}
+
+# write_test_sheet — one TSV per tab of a small, fake lifecycle sheet, in
+# $WORK/test-sheet. The tabs and headers come from SHEET_TABS in the built
+# image, so the test sheet has exactly the columns hawk-mod reads and cannot
+# drift from them; a header the rows below do not know stays blank.
+#
+# The people are fake and the addresses are accounts the person running this
+# controls. P0001–P0003 are avoided: the parser ignores them as the real
+# sheet's sample rows.
+write_test_sheet() {
+  mkdir -p "$WORK/test-sheet"
+  docker run --rm \
+    -e MENTOR_EMAIL="$MENTOR_EMAIL" -e STUDENT_EMAIL="$STUDENT_EMAIL" \
+    -e NEXT_AUG1="$NEXT_AUG1" -e IN_TWO_YEARS="$IN_TWO_YEARS" \
+    -e STUDENT_CONSENT="$STUDENT_CONSENT" \
+    hawk-mod:local node --input-type=module -e '
+const { SHEET_TABS } = await import("./dist/src/domain/lifecycle/schema.js");
+const e = process.env;
+const rows = {
+  People: [
+    { "Person ID": "P0101", "Legal First Name": "Test", "Legal Last Name": "Mentor",
+      "Active/Inactive": "Active" },
+    { "Person ID": "P0102", "Legal First Name": "Test", "Legal Last Name": "Student",
+      "Active/Inactive": "Active" },
+  ],
+  People_Roles: [
+    { "Person ID": "P0101", Role: "Mentor" },
+    { "Person ID": "P0102", Role: "Student" },
+  ],
+  Mentor_Details: [
+    { "Person ID": "P0101", "RHR Email": e.MENTOR_EMAIL,
+      "YPT Expiry": e.NEXT_AUG1, "Background Screening Expiry": e.IN_TWO_YEARS,
+      "CORI Expiry": e.IN_TWO_YEARS, "Consent & Release Expiry": e.NEXT_AUG1,
+      "Data Privacy Expiry": e.NEXT_AUG1, "Mentor Lead (Y/N)": "N", "RA (Y/N)": "N" },
+  ],
+  Student_Details: [
+    { "Person ID": "P0102", "School Email": e.STUDENT_EMAIL,
+      "Student Lead (Y/N)": "N", "Slack Consent Expiry": e.STUDENT_CONSENT },
+  ],
+};
+const out = {};
+for (const [tab, headers] of Object.entries(SHEET_TABS)) {
+  const line = (r) => headers.map((h) => r[h] ?? "").join("\t");
+  out[tab] = [headers.join("\t"), ...(rows[tab] ?? []).map(line)].join("\n") + "\n";
+}
+console.log(JSON.stringify(out));
+' > "$WORK/test-sheet.json"
+  SHEET_TAB_LIST=()
+  while IFS= read -r tab; do SHEET_TAB_LIST+=("$tab"); done < <(
+    python3 - "$WORK/test-sheet.json" "$WORK/test-sheet" <<'PY'
+import json, sys
+tabs = json.load(open(sys.argv[1]))
+for tab, text in tabs.items():
+    open(f"{sys.argv[2]}/{tab}.tsv", "w").write(text)
+    print(tab)
+PY
+  )
+}
+
 banner "hawk-mod — local test setup"
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Scope — what this will and won't record"
-say "Roles come from Slack user groups. That is what bounds this test:"
+say "Roles come from the lifecycle Google Sheet. That is what bounds this test:"
 say ""
 say "  ${BOLD}hawk-mod records a DM only when it contains both an adult and"
 say "  a student.${RESET} Student-only and adult-only conversations are never"
 say "  recorded, and students cannot enrol."
 say ""
-warn "Do NOT point this at your real @students group yet."
-say "The sync rosters everyone in it. Combined with you enrolling, that means"
-say "your DMs with real students start being recorded — before the adult"
-say "agreement and signed parental consent are in place (§4.3)."
+warn "Do NOT point this at the real lifecycle sheet."
+say "The roster is everyone that sheet declares. Combined with you enrolling,"
+say "that means your DMs with real students start being recorded on this"
+say "laptop — and the sheet itself is every minor's name and school email."
 say ""
-say "For the test, make two throwaway groups containing only accounts you"
-say "control, e.g. @hawkmod-test-students and @hawkmod-test-adults. You will"
-say "point at the real groups at go-live by editing two lines in .env."
+say "For the test you'll make a small sheet of your own with two fake people"
+say "on it, whose addresses are accounts you control, and a Google service"
+say "account that can read that sheet and nothing else."
 say ""
-say "You'll need a second account to play the student. A +alias works:"
+say "You'll need a second Slack account to play the student. A +alias works:"
 note "    you+student@gmail.com"
-if ! confirm "Understood — test groups, not the real @students?"; then
+if ! confirm "Understood — a test sheet, not the real one?"; then
   say "Stopping. Nothing has been changed."
   exit 0
 fi
@@ -469,7 +542,7 @@ stage "Slack — the app"
 say "The manifest goes on WITHOUT event subscriptions first."
 note "Slack verifies the events URL the moment you save it, and the container"
 note "can't answer that challenge until it has this app's signing secret."
-note "Chicken-and-egg — so events get switched on in stage 8 instead."
+note "Chicken-and-egg — so events get switched on in stage 10 instead."
 say ""
 sed -e "s#https://hawk-mod.example.org#${PUBLIC_URL}#g" \
     -e '/^settings:/,$d' docs/slack-app-manifest.yaml > "$WORK/manifest-step1.yaml"
@@ -485,7 +558,7 @@ if confirm "Do you already have a Slack app you want to use for hawk-mod?"; then
   if confirm "Replace that app's configuration?"; then
     step "Open the app → 'App Manifest' in the sidebar."
     step "Select YAML, replace the contents with your clipboard, Save Changes."
-    step "If it warns that scopes changed, accept — you'll reinstall in stage 9."
+    step "If it warns that scopes changed, accept — you'll reinstall in stage 11."
   else
     say "Stopping. Nothing has been changed in Slack."
     exit 0
@@ -550,19 +623,117 @@ ask ALERT_CHANNEL_ID "Channel ID:"
 write_env ALERT_CHANNEL_ID "$ALERT_CHANNEL_ID"
 
 # ──────────────────────────────────────────────────────────────────────────
-stage "Slack — user groups that declare roles"
-say "hawk-mod reads two user groups to decide who is a student and who is an"
-say "adult. Give it the TEST groups."
-step "In Slack: create the groups if they don't exist, and put ONLY accounts"
-note "    you control in them — you in the mentors one, your second account"
-note "    in the students one."
+stage "Google — a key that can only read test data"
+say "hawk-mod reads the sheet as a Google service account. Make one of your"
+say "own for this test, in a Google Cloud project of your own."
 say ""
-ask STUDENT_USERGROUP "Students group handle (without @):"
-ask ADULT_USERGROUP "Mentors group handle (without @):"
-write_env STUDENT_USERGROUP "$STUDENT_USERGROUP"
-write_env ADULT_USERGROUP "$ADULT_USERGROUP"
-note "Membership is only ever added to the roster, never subtracted — dropping"
-note "someone from the students group leaves them a student on purpose."
+warn "Not the production service account (hawk-mod-lifecycle)."
+say "Its key reads the real lifecycle sheet. A key made for this test is"
+say "shared on your test sheet and nothing else, so this laptop never holds"
+say "anything that can read a real student's record."
+say ""
+KEY_B64="$(_existing GOOGLE_SERVICE_ACCOUNT_KEY_BASE64 || true)"
+if [[ -n "$KEY_B64" ]] && [[ -n "$(key_email "$KEY_B64")" ]] \
+  && confirm "Keep the key already in .env ($(key_email "$KEY_B64"))?"; then
+  SA_EMAIL="$(key_email "$KEY_B64")"
+else
+  say "Follow Part 1, steps 1–4, of docs/google-setup.md: a project, the Sheets"
+  say "API switched on, a service account with no roles, and a JSON key for it."
+  note "A project under your personal Google account is fine. A school or work"
+  note "organization may block key creation; that doc says what to do."
+  open_url "https://console.cloud.google.com/iam-admin/serviceaccounts"
+  pause "Press Enter once the JSON key has downloaded."
+  ask KEY_FILE "Path to the downloaded key file:"
+  KEY_FILE="${KEY_FILE/#\~/$HOME}"
+  if [[ ! -r "$KEY_FILE" ]]; then
+    warn "Can't read $KEY_FILE. Re-run with the right path."
+    exit 1
+  fi
+  KEY_B64="$(base64 < "$KEY_FILE" | tr -d '\n')"
+  SA_EMAIL="$(key_email "$KEY_B64")"
+  if [[ -z "$SA_EMAIL" ]]; then
+    warn "That file isn't a service account key (no client_email in it)."
+    exit 1
+  fi
+  write_env GOOGLE_SERVICE_ACCOUNT_KEY_BASE64 "$KEY_B64"
+  note "It is in .env now, which git ignores. Delete the downloaded file:"
+  note "    rm \"$KEY_FILE\""
+fi
+say ""
+say "The service account is ${BOLD}${SA_EMAIL}${RESET}"
+note "You'll share the test sheet with it in the next stage."
+
+# ──────────────────────────────────────────────────────────────────────────
+stage "Google — the test lifecycle sheet"
+say "A sheet with the tabs and columns hawk-mod reads, and two fake people:"
+say "a mentor (you) and a student (your second account). Nothing else."
+say ""
+say "hawk-mod matches a sheet row to a Slack account by email, so give it the"
+say "addresses the two Slack accounts sign in with."
+ask MENTOR_EMAIL "Your Slack account's email (the mentor):"
+ask STUDENT_EMAIL "The student account's email:"
+MENTOR_EMAIL="$(printf '%s' "$MENTOR_EMAIL" | tr '[:upper:]' '[:lower:]')"
+STUDENT_EMAIL="$(printf '%s' "$STUDENT_EMAIL" | tr '[:upper:]' '[:lower:]')"
+if [[ -z "$MENTOR_EMAIL" || -z "$STUDENT_EMAIL" || "$MENTOR_EMAIL" == "$STUDENT_EMAIL" ]]; then
+  warn "Those need to be two different addresses. Re-run with both."
+  exit 1
+fi
+say ""
+say "Parental consent for the student is the sheet's Slack Consent Expiry."
+say "Leave it blank and you'll get an unconsented_account finding — which is"
+say "correct, and worth seeing once. You can fill it in on the sheet later."
+# Placeholder dates for fake people. Real ones are copied from FIRST and the
+# state and never computed; these only have to be dates the screening rules
+# accept as current: annual items end on the next 1 August, and the
+# three-year ones sit two years out, inside their bound.
+read -r NEXT_AUG1 IN_TWO_YEARS < <(python3 -c '
+import datetime as d
+t = d.date.today()
+aug1 = d.date(t.year if (t.month, t.day) < (8, 1) else t.year + 1, 8, 1)
+print(aug1.isoformat(), (t + d.timedelta(days=730)).isoformat())
+')
+if confirm "Record consent for the test student?"; then
+  STUDENT_CONSENT="$NEXT_AUG1"
+else
+  STUDENT_CONSENT=""
+fi
+write_test_sheet
+printf '  %s✓%s %s tabs ready in %s\n' "$GREEN" "$RESET" "${#SHEET_TAB_LIST[@]}" "$WORK/test-sheet"
+say ""
+step "Make a new, blank Google Sheet, signed in as yourself."
+step "Name it something obvious, e.g. \"hawk-mod test lifecycle sheet\"."
+open_url "https://sheets.new"
+pause "Press Enter once it's open."
+first=1
+for tab in "${SHEET_TAB_LIST[@]}"; do
+  say ""
+  say "Tab ${BOLD}${tab}${RESET}:"
+  clip "$WORK/test-sheet/${tab}.tsv"
+  if (( first )); then
+    step "Double-click the tab at the bottom (Sheet1) and rename it: ${tab}"
+    first=0
+  else
+    step "Add a tab (+ at the bottom left) and name it exactly: ${tab}"
+  fi
+  step "Click cell A1 and paste."
+  pause "Press Enter once it's pasted."
+done
+say ""
+note "Names must match exactly, capitals and underscores included — hawk-mod"
+note "refuses a sheet with a tab or column it can't find, rather than guess."
+say ""
+step "Share → add ${SA_EMAIL} as Editor, untick \"Notify people\"."
+note "Editor, not Viewer: once the roster is built, hawk-mod writes each"
+note "person's Slack User ID back to the sheet."
+pause "Press Enter once it's shared."
+say ""
+say "The sheet's ID is the long part of its URL, between /d/ and /edit."
+ask LIFECYCLE_SHEET_ID "Sheet URL or ID:"
+LIFECYCLE_SHEET_ID="$(printf '%s' "$LIFECYCLE_SHEET_ID" \
+  | sed -E 's|^.*/spreadsheets/d/([^/?#]+).*$|\1|')"
+write_env LIFECYCLE_SHEET_ID "$LIFECYCLE_SHEET_ID"
+note "It lives in .env and nowhere else. The repo is public: never paste a"
+note "sheet ID into anything committed."
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Start the container"
@@ -585,6 +756,30 @@ if curl -fsS --max-time 15 "${PUBLIC_URL}/health" >"$WORK/health.json" 2>&1; the
 else
   warn "Couldn't reach ${PUBLIC_URL}/health from the public internet."
   step "Check '$TS_CLI funnel status'. Slack cannot work until this responds."
+  exit 1
+fi
+say ""
+say "Checking it can read the test sheet (this changes nothing)…"
+if hm lifecycle plan >"$WORK/plan.txt" 2>&1; then
+  sed 's/^/    /' "$WORK/plan.txt" | head -12
+  PEOPLE_ON_SHEET="$(sed -nE 's/^People: ([0-9]+).*/\1/p' "$WORK/plan.txt")"
+  # The test sheet has two people. A sheet with a team's worth is almost
+  # certainly the real one, and nothing after this point should read it.
+  if (( ${PEOPLE_ON_SHEET:-0} > 10 )); then
+    warn "That sheet has ${PEOPLE_ON_SHEET} people on it. The test sheet has two."
+    if ! confirm "Is this really a test sheet of your own?"; then
+      say "Stopping. Point LIFECYCLE_SHEET_ID in .env at the test sheet and re-run."
+      "${COMPOSE[@]}" down >/dev/null 2>&1 || true
+      exit 1
+    fi
+  fi
+else
+  warn "hawk-mod couldn't read the sheet:"
+  sed 's/^/    /' "$WORK/plan.txt" | tail -8
+  say ""
+  note "  403 / permission      → share it with ${SA_EMAIL:-the service account} (stage 8)"
+  note "  Sheets API disabled   → enable it in that Cloud project"
+  note "  no tab / no column    → rename it to match exactly, then re-run"
   exit 1
 fi
 
@@ -616,36 +811,51 @@ pause "Press Enter once the bot is in the channel."
 curl -fsS "${PUBLIC_URL}/health" 2>/dev/null | sed 's/^/  /' || true
 
 # ──────────────────────────────────────────────────────────────────────────
-stage "Sync the roster from those groups"
-say "A sweep reads the user groups and creates roster rows from Slack"
-say "profiles — no CSV involved."
-"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js sweep \
-  | python3 -c 'import json,sys; d=json.load(sys.stdin); print("  roles:", json.dumps(d.get("rolesFromUserGroups")))' \
-  || warn "sweep failed — check the logs"
+stage "Build the roster from the sheet"
+say "The roster — who hawk-mod treats as a student and who as an adult — comes"
+say "only from the lifecycle sheet. First the dry run, which changes nothing:"
+say ""
+note "The student account has to be in the workspace for its row to link to"
+note "it. If it isn't yet, invite it and accept now (a private browser window"
+note "is the easy way to hold both sessions); the hourly run links it later"
+note "otherwise."
+pause "Press Enter when you're ready for the dry run."
+say ""
+if ! hm lifecycle roster 2>&1 | sed 's/^/    /'; then
+  warn "The dry run failed — check the logs."
+  exit 1
+fi
+say ""
+note "Reading it: P0101 should be created as an adult and P0102 as a student,"
+note "each with a Slack account. A person with no Slack account means their"
+note "email on the sheet isn't the one that Slack account signs in with; type"
+note "their Slack User ID into the sheet instead (profile → ⋯ → Copy member ID)."
+note "\"Refused\" on a first apply usually means an older roster in this"
+note "volume; start clean with: ${COMPOSE[*]} down -v"
+say ""
+if confirm "Apply it?"; then
+  hm lifecycle roster --apply 2>&1 | tail -3 | sed 's/^/    /' \
+    || warn "apply failed — check the logs"
+else
+  say "Skipped. Apply later from Slack: /hawkmod lifecycle roster apply"
+fi
 say ""
 say "The roster now:"
-"${COMPOSE[@]}" exec -T hawk-mod node dist/src/cli/index.js findings >/dev/null 2>&1 || true
-"${COMPOSE[@]}" exec -T hawk-mod node -e '
-const {listPeople}=require("./dist/src/db/repo.js");
+"${COMPOSE[@]}" exec -T hawk-mod node --input-type=module -e '
+const { listPeople } = await import("./dist/src/db/repo.js");
 for (const p of listPeople()) console.log(`  ${p.role.padEnd(18)} ${p.full_name}`);
 ' 2>/dev/null || note "  (could not list — check the logs)"
 say ""
-note "Nothing to grant yourself here: /hawkmod answers to Slack's Workspace"
+note "From here the sheet is the only way in: an hourly run (:20 past) applies"
+note "what it says. After editing the sheet, /hawkmod sync applies it now."
+note "Nothing to grant yourself either: /hawkmod answers to Slack's Workspace"
 note "Owners and Admins, read live. You installed the app, so you can run it."
-say ""
-step "Now record consent for the test student, from Slack:"
-note "    /hawkmod consent @their-account"
-note "Without it you'll get an unconsented_account finding — which is correct,"
-note "and worth seeing once."
-pause "Press Enter when you've done that (or skip it to see the finding)."
 
 # ──────────────────────────────────────────────────────────────────────────
 stage "Prove it works"
 say "The actual test: a 1:1 DM between an adult and a student is prohibited"
 say "outright, so hawk-mod should flag it the moment it happens."
-step "Make sure the student account is in the workspace (invite + accept)"
-note "    (a private browser window is the easy way to hold both sessions)"
-step "From YOUR account, send that student account a direct message."
+step "From YOUR account, send the student account a direct message."
 pause "Press Enter once you've sent it."
 say ""
 say "Findings on record:"
@@ -653,8 +863,9 @@ say "Findings on record:"
 say ""
 step "Check #youth-protection — the alert should be there too."
 say ""
-note "Nothing yet? Both accounts have to be in the right user group, so check"
-note "  /hawkmod whois @them   — does it say student?"
+note "Nothing yet? Both accounts have to be on the roster from the sheet, so"
+note "check  /hawkmod whois @them   — does it say student?"
+note "If not, fix their row on the test sheet and run  /hawkmod sync"
 note "then force a re-read of DM history:"
 note "    ${COMPOSE[*]} exec hawk-mod node dist/src/cli/index.js backfill"
 say ""
@@ -668,6 +879,7 @@ say "Useful from here:"
 note "  logs:        ${COMPOSE[*]} logs -f"
 note "  findings:    ${COMPOSE[*]} exec hawk-mod node dist/src/cli/index.js findings"
 note "  in Slack:    /hawkmod status"
+note "  sheet edits: /hawkmod sync   (or wait for the hourly run)"
 note "  stop:        ${COMPOSE[*]} down"
 if [[ -f "$WORK/cloudflared.pid" ]]; then
   note "  close the public tunnel: kill \$(cat $WORK/cloudflared.pid)"
@@ -677,4 +889,6 @@ fi
 say ""
 warn "Wipe the test data before reusing this machine for anything real:"
 note "  ${COMPOSE[*]} down -v"
+note "When you're done testing, delete the test service account's key in the"
+note "Cloud console too, not only the copy in .env."
 printf '\n'
