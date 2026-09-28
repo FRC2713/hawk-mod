@@ -54,6 +54,7 @@ function student(
       slackConsentExpiry: null,
     },
     adminRoles: [],
+    parentEmails: [],
     ...overrides,
   };
 }

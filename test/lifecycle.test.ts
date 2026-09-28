@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { planGoogleGroups } from "../src/domain/lifecycle/groupPlan.js";
 import {
   addresses,
   intendedGroups,
+  intendedParents,
   SUBSETS,
 } from "../src/domain/lifecycle/groups.js";
 import { planLifecycle } from "../src/domain/lifecycle/plan.js";
@@ -36,6 +38,8 @@ type Spec = {
   mentor?: Partial<Record<Header<"Mentor_Details">, string>>;
   student?: Partial<Record<Header<"Student_Details">, string>>;
   personalEmail?: string;
+  /** Emergency_Contacts rows: [Email, Relationship, Rank]. */
+  contacts?: [string, string, string][];
 };
 
 const CLEARED = {
@@ -52,6 +56,7 @@ function sheet(...specs: Spec[]): SheetData {
     Mentor_Details: [],
     Mentor_Admin_Roles: [],
     Student_Details: [],
+    Emergency_Contacts: [],
   };
   specs.forEach((s, i) => {
     const n = i + 2;
@@ -78,6 +83,16 @@ function sheet(...specs: Spec[]): SheetData {
           "Person ID": s.id,
           "RHR Email": `${s.id.toLowerCase()}@redhawkrobotics.org`,
           ...s.mentor,
+        })
+      );
+    }
+    for (const [Email, Relationship, Rank] of s.contacts ?? []) {
+      data.Emergency_Contacts.push(
+        row("Emergency_Contacts", data.Emergency_Contacts.length + 2, {
+          "Person ID": s.id,
+          Email,
+          Relationship,
+          Rank,
         })
       );
     }
@@ -295,7 +310,7 @@ describe("computed groups", () => {
       }
     )
   ).people;
-  const groups = intendedGroups(people);
+  const groups = intendedGroups(people, AS_OF);
   const ids = (name: keyof typeof groups) =>
     groups[name].map((p) => p.personId).sort();
 
@@ -309,9 +324,10 @@ describe("computed groups", () => {
     assert.deepEqual(ids("grp-ra"), ["P0010"]);
   });
 
-  it("puts uncleared mentors in grp-all-team too; screening gates Slack", () => {
-    // P0011 has no screening on file; P0012's training lapsed on 1 August.
-    // Both are on the mailing list; the plan lists them as not cleared.
+  it("puts mentors with CORI current in grp-all-team, screened or not", () => {
+    // P0011 has no background screening on file; P0012's training lapsed on
+    // 1 August. Both have CORI, so both may have access; the plan lists them
+    // as not screened, which is the two-adult rule's business, not a group's.
     assert.deepEqual(ids("grp-all-team"), [
       "P0010",
       "P0011",
@@ -364,7 +380,7 @@ describe("computed groups", () => {
         }
       )
     );
-    const intended = intendedGroups(people);
+    const intended = intendedGroups(people, AS_OF);
     assert.deepEqual(addresses(intended["grp-students"]), [
       "p0051@school.example",
     ]);
@@ -393,7 +409,7 @@ describe("computed groups", () => {
         personalEmail: "alum@home.example",
       })
     );
-    assert.deepEqual(addresses(intendedGroups(people)["grp-alumni"]), [
+    assert.deepEqual(addresses(intendedGroups(people, AS_OF)["grp-alumni"]), [
       "p0052@school.example",
     ]);
   });
@@ -413,7 +429,7 @@ describe("computed groups", () => {
         { ...student("P0022"), status: "Inactive" }
       )
     );
-    const groups = intendedGroups(people);
+    const groups = intendedGroups(people, AS_OF);
     for (const [subset, superset] of SUBSETS) {
       const outer = new Set(groups[superset]);
       for (const p of groups[subset]) {
@@ -437,7 +453,7 @@ describe("computed groups", () => {
         personalEmail: "mentor@home.example",
       })
     );
-    const intended = intendedGroups(people);
+    const intended = intendedGroups(people, AS_OF);
     for (const members of Object.values(intended)) {
       assert.deepEqual(addresses(members), []);
     }
@@ -454,9 +470,10 @@ describe("computed groups", () => {
         personalEmail: "v@home.example",
       })
     );
-    assert.deepEqual(addresses(intendedGroups(people)["grp-volunteers"]), [
-      "v@home.example",
-    ]);
+    assert.deepEqual(
+      addresses(intendedGroups(people, AS_OF)["grp-volunteers"]),
+      ["v@home.example"]
+    );
   });
 
   it("plans with reasons for each uncleared mentor", () => {
@@ -467,5 +484,323 @@ describe("computed groups", () => {
     assert.deepEqual(plan.notCleared, [
       { personId: "P0011", missing: ["Background Screening"] },
     ]);
+  });
+});
+
+describe("the access gate: CORI current", () => {
+  it("keeps a mentor without CORI out of every group, and says why", () => {
+    const parsed = parseSheet(
+      sheet(
+        mentor("P0010", { "CORI Expiry": "" }),
+        mentor("P0011", { "CORI Expiry": "2026-09-24" }),
+        mentor("P0012")
+      )
+    );
+    const groups = intendedGroups(parsed.people, AS_OF);
+    for (const members of Object.values(groups)) {
+      const ids = members.map((p) => p.personId);
+      assert.ok(!ids.includes("P0010") && !ids.includes("P0011"));
+    }
+    assert.deepEqual(addresses(groups["grp-mentors"]), [
+      "p0012@redhawkrobotics.org",
+    ]);
+    assert.deepEqual(planLifecycle(parsed, AS_OF).noAccess, [
+      { personId: "P0010", why: "no CORI Expiry" },
+      { personId: "P0011", why: "CORI expired 2026-09-24" },
+    ]);
+  });
+
+  it("does not take a CORI date further out than CORI lasts", () => {
+    const { people } = parseSheet(
+      sheet(mentor("P0010", { "CORI Expiry": "2031-01-01" }))
+    );
+    assert.deepEqual(intendedGroups(people, AS_OF)["grp-mentors"], []);
+  });
+
+  it("admits a mentor with CORI current but YPT lapsed; they are not screened", () => {
+    const parsed = parseSheet(
+      sheet(mentor("P0010", { "YPT Expiry": "2026-08-01" }))
+    );
+    const groups = intendedGroups(parsed.people, AS_OF);
+    assert.deepEqual(
+      groups["grp-mentors"].map((p) => p.personId),
+      ["P0010"]
+    );
+    assert.deepEqual(
+      planLifecycle(parsed, AS_OF).notCleared.map((m) => m.personId),
+      ["P0010"]
+    );
+  });
+
+  it("asks a screened adult to join grp-ra", () => {
+    const { people } = parseSheet(
+      sheet(
+        mentor("P0010", { "RA (Y/N)": "Y" }),
+        mentor("P0011", { "RA (Y/N)": "Y", "YPT Expiry": "2026-08-01" })
+      )
+    );
+    assert.deepEqual(
+      intendedGroups(people, AS_OF)["grp-ra"].map((p) => p.personId),
+      ["P0010"]
+    );
+  });
+});
+
+describe("grp-parents", () => {
+  const P = "Parent/Guardian";
+
+  it("is each Active student's Parent/Guardian addresses, lower-cased", () => {
+    const { people } = parseSheet(
+      sheet({
+        ...student("P0020"),
+        contacts: [
+          ["Mom@Home.example", P, "1"],
+          ["dad@home.example", P, "2"],
+        ],
+      })
+    );
+    assert.deepEqual([...intendedParents(people).keys()].sort(), [
+      "dad@home.example",
+      "mom@home.example",
+    ]);
+  });
+
+  it("leaves out rank 99, other relationships, and a mentor's own parent", () => {
+    const { people } = parseSheet(
+      sheet(
+        {
+          ...student("P0020"),
+          contacts: [
+            ["nocontact@home.example", P, "99"],
+            ["gran@home.example", "Grandparent", "1"],
+          ],
+        },
+        { ...mentor("P0010"), contacts: [["mentors.mom@home.example", P, "1"]] }
+      )
+    );
+    assert.deepEqual([...intendedParents(people).keys()], []);
+  });
+
+  it("leaves out a garbled rank and reports it, never the value", () => {
+    const parsed = parseSheet(
+      sheet({ ...student("P0020"), contacts: [["a@home.example", P, "one"]] })
+    );
+    assert.deepEqual([...intendedParents(parsed.people).keys()], []);
+    const problem = parsed.problems.find((x) => x.tab === "Emergency_Contacts");
+    assert.equal(problem?.message, "Rank is not a number");
+    assert.ok(!JSON.stringify(parsed.problems).includes("a@home.example"));
+  });
+
+  it("keeps a parent for an Active sibling when the older one leaves", () => {
+    const { people } = parseSheet(
+      sheet(
+        {
+          ...student("P0020"),
+          status: "Inactive",
+          contacts: [["mom@home.example", P, "1"]],
+        },
+        { ...student("P0021"), contacts: [["mom@home.example", P, "1"]] }
+      )
+    );
+    assert.deepEqual(
+      [...intendedParents(people)],
+      [["mom@home.example", ["P0021"]]]
+    );
+  });
+
+  it("reports an Active student with no parent email", () => {
+    const parsed = parseSheet(sheet(student("P0020")));
+    assert.deepEqual(planLifecycle(parsed, AS_OF).noParentEmail, ["P0020"]);
+  });
+});
+
+describe("planning a Google Group: joining is automatic, leaving waits", () => {
+  const plan = (
+    specs: Spec[],
+    actual: Parameters<typeof planGoogleGroups>[0]["actual"]
+  ) => {
+    const byGroup = new Map(
+      planGoogleGroups({
+        people: parseSheet(sheet(...specs)).people,
+        actual,
+        asOf: AS_OF,
+      }).map((g) => [g.group, g])
+    );
+    return (g: Parameters<typeof byGroup.get>[0]) => byGroup.get(g)!;
+  };
+  const addrs = (xs: { address: string }[]) => xs.map((x) => x.address);
+
+  it("adds everyone the sheet puts in a group", () => {
+    const g = plan([student("P0020"), mentor("P0010")], {});
+    assert.deepEqual(addrs(g("grp-students").add), ["p0020@school.example"]);
+    assert.deepEqual(addrs(g("grp-all-team").add), [
+      "p0010@redhawkrobotics.org",
+      "p0020@school.example",
+    ]);
+    assert.equal(g("grp-students").refusal, null);
+  });
+
+  it("holds an Inactive student where they are", () => {
+    const g = plan([{ ...student("P0020"), status: "Inactive" }], {
+      "grp-students": ["p0020@school.example"],
+    });
+    assert.deepEqual(g("grp-students").automatic, []);
+    assert.deepEqual(g("grp-students").held, [
+      {
+        address: "p0020@school.example",
+        personIds: ["P0020"],
+        reason: "inactive",
+      },
+    ]);
+  });
+
+  it("holds a graduate in grp-students and adds them to grp-alumni", () => {
+    const g = plan(
+      [
+        {
+          ...student("P0020"),
+          roles: ["Alumni"],
+          personalEmail: "grad@home.example",
+        },
+      ],
+      { "grp-students": ["p0020@school.example"] }
+    );
+    assert.equal(g("grp-students").held[0]?.reason, "role_gone");
+    assert.deepEqual(addrs(g("grp-alumni").add), ["grad@home.example"]);
+  });
+
+  it("holds a mentor whose CORI lapsed, and adds them nowhere new", () => {
+    const g = plan([mentor("P0010", { "CORI Expiry": "2026-09-01" })], {
+      "grp-mentors": ["p0010@redhawkrobotics.org"],
+    });
+    assert.equal(g("grp-mentors").held[0]?.reason, "no_access");
+    assert.deepEqual(g("grp-all-team").add, []);
+  });
+
+  it("keeps an RA whose training lapsed, and asks nothing", () => {
+    const g = plan(
+      [mentor("P0010", { "RA (Y/N)": "Y", "YPT Expiry": "2026-08-01" })],
+      { "grp-ra": ["p0010@redhawkrobotics.org"] }
+    );
+    assert.deepEqual(g("grp-ra").held, []);
+    assert.deepEqual(g("grp-ra").automatic, []);
+  });
+
+  it("removes on its own only when a lead or RA flag is turned off", () => {
+    const g = plan([mentor("P0010"), student("P0020")], {
+      "grp-mentor-leads": [
+        "p0010@redhawkrobotics.org",
+        "x@redhawkrobotics.org",
+      ],
+      "grp-student-leads": ["p0020@school.example"],
+    });
+    assert.deepEqual(addrs(g("grp-mentor-leads").automatic), [
+      "p0010@redhawkrobotics.org",
+    ]);
+    assert.deepEqual(addrs(g("grp-student-leads").automatic), [
+      "p0020@school.example",
+    ]);
+  });
+
+  it("holds an address nobody on the sheet is added by", () => {
+    const g = plan([student("P0020")], {
+      "grp-students": ["p0020@school.example", "Handadded@Example.org"],
+    });
+    assert.deepEqual(g("grp-students").held, [
+      {
+        address: "handadded@example.org",
+        personIds: [],
+        reason: "not_on_sheet",
+      },
+    ]);
+  });
+
+  it("holds a student's personal address rather than removing it", () => {
+    const g = plan(
+      [{ ...student("P0020"), personalEmail: "kid@home.example" }],
+      { "grp-students": ["p0020@school.example", "kid@home.example"] }
+    );
+    assert.equal(g("grp-students").held[0]?.reason, "not_on_sheet");
+  });
+
+  it("holds a second address of someone who still belongs", () => {
+    // A mentor who is also an alum is added by RHR address; their old
+    // school address in grp-alumni is theirs, but not how they are added.
+    const g = plan(
+      [
+        {
+          ...mentor("P0010"),
+          roles: ["Mentor", "Alumni"],
+          student: {},
+        },
+      ],
+      { "grp-alumni": ["p0010@redhawkrobotics.org", "p0010@school.example"] }
+    );
+    assert.deepEqual(g("grp-alumni").held, [
+      {
+        address: "p0010@school.example",
+        personIds: ["P0010"],
+        reason: "other_address",
+      },
+    ]);
+  });
+
+  it("holds a parent only when the last child's listing goes", () => {
+    const P = "Parent/Guardian";
+    const g = plan(
+      [
+        {
+          ...student("P0020"),
+          status: "Inactive",
+          contacts: [
+            ["mom@home.example", P, "1"],
+            ["dad@home.example", P, "1"],
+          ],
+        },
+        { ...student("P0021"), contacts: [["mom@home.example", P, "1"]] },
+      ],
+      { "grp-parents": ["mom@home.example", "dad@home.example"] }
+    );
+    assert.deepEqual(g("grp-parents").held, [
+      {
+        address: "dad@home.example",
+        personIds: [],
+        reason: "parent_not_listed",
+      },
+    ]);
+  });
+
+  it("refuses when flags turned off would empty a group or take a quarter", () => {
+    const leads = ["P0010", "P0011", "P0012", "P0013"];
+    const g = plan(
+      leads.map((id) => mentor(id)),
+      {
+        "grp-mentor-leads": leads.map(
+          (id) => `${id.toLowerCase()}@redhawkrobotics.org`
+        ),
+      }
+    );
+    assert.equal(g("grp-mentor-leads").automatic.length, 4);
+    assert.match(g("grp-mentor-leads").refusal ?? "", /empty the group/);
+  });
+
+  it("never counts held members toward the refusal", () => {
+    const people = ["P0020", "P0021", "P0022", "P0023"].map((id) => ({
+      ...student(id),
+      status: "Inactive",
+    }));
+    const g = plan(people, {
+      "grp-students": people.map((p) => `${p.id.toLowerCase()}@school.example`),
+    });
+    assert.equal(g("grp-students").held.length, 4);
+    assert.equal(g("grp-students").refusal, null);
+  });
+
+  it("matches addresses whatever their case", () => {
+    const g = plan([student("P0020")], {
+      "grp-students": ["P0020@School.Example"],
+    });
+    assert.deepEqual(g("grp-students").add, []);
+    assert.deepEqual(g("grp-students").held, []);
   });
 });

@@ -308,9 +308,14 @@ its annual items on **1 August**, not a year after completion, so any
 "completed + N years" arithmetic is wrong, by up to a year for training taken
 in July. The windows survive only as a bound: an expiry further out than the
 item can last is a typo, reported and treated as **not current**, because the
-alternative is a mistyped year silently extending someone's clearance. The
-lifecycle sync's "cleared" is `screeningStatus().current` on the sheet's dates
-— one definition, so the sheet and the two-adult rule cannot disagree. The old
+alternative is a mistyped year silently extending someone's clearance. There are
+**two gates, named apart**: `isScreenedAdult` (all three current) decides who
+counts toward the two-adult rule, and `mayHaveAccess` (CORI current only) who
+joins a mentor Google Group or is invited to Slack. Neither may stand in for
+the other — a mentor with CORI and lapsed YPT has access and does not count —
+and the lifecycle sync uses the same two functions on the sheet's dates
+(`hasAccess` and `isCleared` in `domain/lifecycle/groups.ts`), so the sheet
+and the rules cannot disagree. The old
 column names (`ypp_completed_on` holding the screening, the sheet's old "YPP
 Expiry" holding the training) were exactly the mix-up that shortens or
 stretches a window; migration 0008 dropped them. `today()` is the team's

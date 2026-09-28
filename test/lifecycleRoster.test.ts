@@ -51,6 +51,7 @@ function sheetMentor(
     },
     student: null,
     adminRoles: [],
+    parentEmails: [],
   };
 }
 
@@ -81,6 +82,7 @@ function sheetStudent(
       slackConsentExpiry: opts.slackConsentExpiry ?? null,
     },
     adminRoles: [],
+    parentEmails: [],
   };
 }
 

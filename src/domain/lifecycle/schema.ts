@@ -47,6 +47,11 @@ export const SHEET_TABS = {
     "Student Lead (Y/N)",
     "Slack Consent Expiry",
   ],
+  // For grp-parents: a student's Parent/Guardian contacts, unless ranked 99
+  // ("on file, not to be contacted"). These four and never a contact's name
+  // or phone (docs/lifecycle-sync.md, "Groups"). The tab covers every person,
+  // so the parse keeps only Parent/Guardian rows.
+  Emergency_Contacts: ["Person ID", "Email", "Relationship", "Rank"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type SheetTab = keyof typeof SHEET_TABS;

@@ -1,5 +1,9 @@
 import type { IsoDate } from "../dates.js";
-import { screeningStatus, type RequirementDates } from "../rules/screening.js";
+import {
+  mayHaveAccess,
+  screeningStatus,
+  type RequirementDates,
+} from "../rules/screening.js";
 import {
   groupAddress,
   type MentorDetails,
@@ -34,6 +38,7 @@ export function uncleared(m: MentorDetails, asOf: IsoDate): string[] {
   ];
 }
 
+/** A screened adult (YPT, Background and CORI current), for a sheet row. */
 export function isCleared(p: SheetPerson, asOf: IsoDate): boolean {
   return p.mentor !== null && uncleared(p.mentor, asOf).length === 0;
 }
@@ -43,6 +48,7 @@ export const GROUPS = [
   "grp-volunteers",
   "grp-students",
   "grp-alumni",
+  "grp-parents",
   "grp-mentor-leads",
   "grp-student-leads",
   "grp-ra",
@@ -51,45 +57,108 @@ export const GROUPS = [
 
 export type GroupName = (typeof GROUPS)[number];
 
-/** Who belongs in each computed group, as sheet people. */
-export type IntendedGroups = Record<GroupName, SheetPerson[]>;
+/** Every group but grp-parents holds sheet people; parents are contacts. */
+export type PersonGroup = Exclude<GroupName, "grp-parents">;
+
+export const PERSON_GROUPS = GROUPS.filter(
+  (g): g is PersonGroup => g !== "grp-parents"
+);
+
+/** Who belongs in each computed person group, as sheet people. */
+export type IntendedGroups = Record<PersonGroup, SheetPerson[]>;
 
 function has(p: SheetPerson, role: SheetRole): boolean {
   return p.roles.includes(role);
 }
 
 /**
- * Who the sheet says belongs in each group. Pure; the Google side diffs this
- * against actual membership.
- *
- * Only `active` people are members. `unknown` status is left out too — the
- * parse already reported it, and group membership is access, so the
- * conservative reading is the right one here. (The planner's refusals are what
- * stop a sheet-wide mistake from emptying a group.)
- *
- * `grp-all-team` is every active mentor and student, screened or not. Screening
- * gates Slack, not email: an uncleared mentor stays off the Slack invite list
- * and is flagged if already in Slack, but is on the team's mailing list. Group
- * email is observable and interruptible — the whole group sees it — and a
- * mentor is only set Active once they have started screening and are trusted.
- * The reasoning is in docs/lifecycle-sync.md; do not re-gate this on screening
- * without revisiting it there.
+ * **May have access** (CORI current), for a sheet row. A mentor with no
+ * Mentor_Details row has no CORI date, so none.
  */
-export function intendedGroups(people: readonly SheetPerson[]): IntendedGroups {
-  const active = people.filter((p) => p.status === "active");
-  const mentors = active.filter((p) => has(p, "Mentor"));
-  const students = active.filter((p) => has(p, "Student"));
-  return {
-    "grp-mentors": mentors,
-    "grp-volunteers": active.filter((p) => has(p, "Volunteer")),
-    "grp-students": students,
-    "grp-alumni": active.filter((p) => has(p, "Alumni")),
-    "grp-mentor-leads": mentors.filter((p) => p.mentor?.lead),
-    "grp-student-leads": students.filter((p) => p.student?.lead),
-    "grp-ra": mentors.filter((p) => p.mentor?.ra),
-    // Literally the union of the two role groups, so it cannot drift from them.
-    "grp-all-team": [...new Set([...mentors, ...students])],
-  };
+export function hasAccess(p: SheetPerson, asOf: IsoDate): boolean {
+  return (
+    p.mentor !== null &&
+    mayHaveAccess({ cori_expires_on: p.mentor.coriExpiry }, asOf)
+  );
+}
+
+/**
+ * Whether a person belongs in a group — to join it (`joining`), or to stay in
+ * it once there. The two differ only for grp-ra: joining needs a screened
+ * adult, but a lapse removes nobody (decided 2026-09-28) — FIRST's 1 August
+ * rollover lapses every RA's training on the same day, and it raises the
+ * ordinary screening reminder, not a removal.
+ *
+ * Only `active` people belong: an `unknown` status is out for access, the
+ * cautious reading of that cell for groups (the roster reads it the other way,
+ * for monitoring). Mentors belong only once they may have access — CORI
+ * current — in every group that reaches students.
+ */
+export function belongs(
+  group: PersonGroup,
+  p: SheetPerson,
+  asOf: IsoDate,
+  joining: boolean
+): boolean {
+  if (p.status !== "active") return false;
+  const mentor = has(p, "Mentor") && hasAccess(p, asOf);
+  const student = has(p, "Student");
+  switch (group) {
+    case "grp-mentors":
+      return mentor;
+    case "grp-students":
+      return student;
+    case "grp-volunteers":
+      return has(p, "Volunteer");
+    case "grp-alumni":
+      return has(p, "Alumni");
+    case "grp-mentor-leads":
+      return mentor && Boolean(p.mentor?.lead);
+    case "grp-student-leads":
+      return student && Boolean(p.student?.lead);
+    case "grp-ra":
+      return (
+        mentor && Boolean(p.mentor?.ra) && (!joining || isCleared(p, asOf))
+      );
+    case "grp-all-team":
+      // Every Active student and every Active mentor with CORI current — not
+      // volunteers, parents or alumni (decided 2026-09-27).
+      return mentor || student;
+  }
+}
+
+/**
+ * Who the sheet says should join each person group. Pure; the Google side
+ * diffs this against actual membership (`groupPlan.ts`).
+ */
+export function intendedGroups(
+  people: readonly SheetPerson[],
+  asOf: IsoDate
+): IntendedGroups {
+  return Object.fromEntries(
+    PERSON_GROUPS.map((g) => [
+      g,
+      people.filter((p) => belongs(g, p, asOf, true)),
+    ])
+  ) as IntendedGroups;
+}
+
+/**
+ * grp-parents: every Parent/Guardian address of every Active student, with
+ * the students who list it. Recomputed from scratch each run, so a parent a
+ * younger sibling still lists simply stays — no special case for siblings.
+ */
+export function intendedParents(
+  people: readonly SheetPerson[]
+): Map<string, string[]> {
+  const parents = new Map<string, string[]>();
+  for (const p of people) {
+    if (p.status !== "active" || !has(p, "Student")) continue;
+    for (const address of p.parentEmails) {
+      parents.set(address, [...(parents.get(address) ?? []), p.personId]);
+    }
+  }
+  return parents;
 }
 
 /**
@@ -100,7 +169,7 @@ export function intendedGroups(people: readonly SheetPerson[]): IntendedGroups {
  * this list, and a test that checks every subset member is in its superset.
  * Adding a group that belongs inside another means adding it here.
  */
-export const SUBSETS: readonly (readonly [GroupName, GroupName])[] = [
+export const SUBSETS: readonly (readonly [PersonGroup, PersonGroup])[] = [
   ["grp-mentor-leads", "grp-mentors"],
   ["grp-student-leads", "grp-students"],
   ["grp-mentors", "grp-all-team"],

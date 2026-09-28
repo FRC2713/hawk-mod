@@ -148,17 +148,26 @@ Recorded here so the whole picture is in one place.
 1. **Enable the Admin SDK API** in the same project.
 2. **Domain-wide delegation.** Admin console → **Security → Access and data
    control → API controls → Manage domain-wide delegation → Add new**, with the
-   service account's numeric client ID and these scopes:
+   service account's numeric client ID and, for step 4, **only**:
    - `https://www.googleapis.com/auth/admin.directory.group` — group membership
-   - `https://www.googleapis.com/auth/admin.directory.user` — read accounts,
-     and suspend or restore them after an admin approves it
+
+   Later steps add their own, each when it is first used (decided
+   2026-09-28), so the delegation never grants more than hawk-mod does:
+   - `https://www.googleapis.com/auth/admin.directory.user.readonly` (step 6)
+     — check each RHR Email is a real account; `admin.directory.user` (step 7)
+     to suspend or restore one after an admin approves it
    - `https://www.googleapis.com/auth/admin.directory.rolemanagement.readonly`
-     — to report who holds Groups Admin and Help Desk Admin. Read-only: only a
-     Super Admin can grant those roles, so hawk-mod reports and a person acts
+     (step 8) — to report who holds Groups Admin and Help Desk Admin.
+     Read-only: only a Super Admin can grant those roles, so hawk-mod reports
+     and a person acts
+
 3. **An account to act as.** Every change hawk-mod makes appears in the Admin
    audit log as the account it impersonates. A dedicated
    `hawk-mod@redhawkrobotics.org` admin makes that log say what actually
-   happened; we'll decide its exact privileges in step 4.
+   happened. Its privileges (decided 2026-09-28): a **custom admin role**
+   that can read groups and change their members, and nothing else — not the
+   prebuilt Groups Admin, which can also create and delete groups and change
+   their settings. Only a Super Admin can create and assign it.
 4. **External members.** Groups that hold students' school addresses and
    volunteers' personal ones must allow members from outside the domain:
    Admin console → **Apps → Google Workspace → Groups for Business → Sharing
