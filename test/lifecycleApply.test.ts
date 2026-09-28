@@ -30,6 +30,7 @@ function student(personId: string, slackUserId: string | null): SheetPerson {
       slackConsentExpiry: "2027-08-01",
     },
     adminRoles: [],
+    parentEmails: [],
   };
 }
 

@@ -35,6 +35,7 @@ function mentor(
     },
     student: null,
     adminRoles: [],
+    parentEmails: [],
   };
 }
 
@@ -58,6 +59,7 @@ function student(
       slackConsentExpiry: null,
     },
     adminRoles: [],
+    parentEmails: [],
   };
 }
 

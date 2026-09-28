@@ -179,6 +179,29 @@ export function isScreenedAdult(m: Member, asOf: IsoDate): boolean {
 }
 
 /**
+ * **May have access**: CORI + fingerprints current. The school district's line
+ * — no youth access until it is done — and the gate for every mentor Google
+ * Group and for a Slack invite (docs/lifecycle-sync.md, "Two gates, named
+ * apart").
+ *
+ * Deliberately a separate function from `isScreenedAdult`, which also needs
+ * YPT and Background Screening and decides who counts toward the two-adult
+ * rule. A mentor with CORI current and YPT lapsed may have access and does
+ * not count as screened; neither answer may be read as the other. Like
+ * `screeningStatus`, an expiry further out than CORI can last is a typo and is
+ * not current.
+ */
+export function mayHaveAccess(
+  p: Pick<RequirementDates, "cori_expires_on">,
+  asOf: IsoDate
+): boolean {
+  const e = p.cori_expires_on;
+  return (
+    e !== null && notExpired(e, asOf) && e <= addYears(asOf, CORI_VALID_YEARS)
+  );
+}
+
+/**
  * What to refuse when a person types requirement dates in, keyed by field.
  * Pure, so the form's rules are tested without Slack. A past expiry is
  * accepted — recording that something lapsed is legitimate — but one further

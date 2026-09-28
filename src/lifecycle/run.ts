@@ -78,14 +78,30 @@ function formatPlan(plan: LifecyclePlan, members: boolean): string {
     lines.push(`  ${g.name.padEnd(18)} ${g.members.length}`);
     if (members) for (const m of g.members) lines.push(`      ${m}`);
   }
+  if (plan.noAccess.length) {
+    lines.push(
+      "",
+      "Active mentors without CORI current (join no group; not invited to Slack):"
+    );
+    for (const m of plan.noAccess) lines.push(`  ${m.personId}: ${m.why}`);
+  }
   if (plan.notCleared.length) {
-    lines.push("", "Active mentors not cleared (not eligible for Slack):");
+    lines.push(
+      "",
+      "Active mentors not screened (do not count toward the two-adult rule):"
+    );
     for (const m of plan.notCleared) {
       lines.push(`  ${m.personId}: ${m.missing.join(", ")}`);
     }
   }
   if (plan.noAddress.length) {
     lines.push("", `No email to add to groups: ${plan.noAddress.join(", ")}`);
+  }
+  if (plan.noParentEmail.length) {
+    lines.push(
+      "",
+      `Active students with no parent email for grp-parents: ${plan.noParentEmail.join(", ")}`
+    );
   }
   lines.push("", `Sheet problems: ${plan.problems.length}`);
   for (const p of plan.problems) {

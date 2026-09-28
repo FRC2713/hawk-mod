@@ -173,9 +173,9 @@ day, removes nobody: it raises reminders.
 The screened-adult definition is FIRST's Youth Protection Program, not the
 district's, and it is not loosened (CLAUDE.md: do not loosen
 `isScreenedAdult`). The two gates are separate functions with separate names in
-code, so neither can be mistaken for the other. Today `screeningStatus().current`
-is the only one, and the sync uses it for both; step 4 adds the access gate
-and updates CLAUDE.md's "one definition" paragraph with it.
+code, so neither can be mistaken for the other: `mayHaveAccess` and
+`isScreenedAdult` in `rules/screening.ts`, and on sheet rows `hasAccess` and
+`isCleared` in `domain/lifecycle/groups.ts`.
 
 **Joining waits for CORI; a lapse waits for a person** (decided 2026-09-27).
 The gate works in one direction on its own: a mentor whose CORI becomes current
@@ -473,6 +473,17 @@ is where an administrator runs them.
    kept in groups, and an Inactive person and a lapsed-CORI mentor
    kept where they are until the click; a non-admin click is refused; dry run
    against real groups before first apply.
+
+   Built in four pull requests (planned 2026-09-28): (1) the pure planner —
+   `mayHaveAccess`, `grp-parents` from `Emergency_Contacts`, and
+   `domain/lifecycle/groupPlan.ts` sorting every difference into join,
+   automatic (a lead or RA flag off) and held; (2) reading the real groups as
+   `hawk-mod@` and a `/hawkmod lifecycle groups` dry run; (3) applying joins,
+   hourly, with `grp-ra` announced and **Apply anyway** on a refused plan;
+   (4) **Remove from groups**, `cori_lapsed` and `cori_expiring`. **An address
+   in a group that the sheet does not account for is held**, like someone
+   leaving, rather than removed (decided 2026-09-28).
+
 5. **Slack user groups (E).** Same computed membership, copied to Slack by an
    administrator's **Apply** click on one `slack_groups_differ` finding, with
    the clicker's own grant; `/hawkmod group` refuses copied groups. _Verify:_
@@ -678,12 +689,14 @@ student.
 
 ## RA access and training
 
-`grp-ra` follows the `RA (Y/N)` flag today, and from step 4 also requires CORI
-current, like every mentor group. The intent (2026-09-26) is that RA
-membership also requires being a **screened adult** — YPT and background
-screening current too — possibly with a **grace period** after FIRST's
-1 August rollover, which lapses everyone's training on the same day. Details
-are decided at step 4.
+Decided 2026-09-28. **Joining `grp-ra` requires a screened adult** — the
+`RA (Y/N)` flag, CORI current like every mentor group, and YPT and Background
+Screening current too. **A lapse removes nobody**: an RA whose training lapses
+stays in `grp-ra` and gets the ordinary `screening_lapsed` reminder, nothing
+more. That is the grace period, without a date rule: FIRST's 1 August rollover
+lapses every RA's training on the same day, and would otherwise raise a
+removal question for each of them at once. Only the RA flag turned off, or
+leaving (Inactive, not a Mentor, CORI lapsed), takes someone out.
 
 ## Open
 
@@ -696,7 +709,11 @@ are decided at step 4.
   `ADMIN_ROLES` so step 8 reports it.
 
 - The account hawk-mod acts as in Google is `hawk-mod@redhawkrobotics.org`
-  (created 2026-09-26, no admin roles). Its privileges are set in step 4.
+  (created 2026-09-26, no admin roles). **Decided 2026-09-28:** a custom admin
+  role that can read groups and change their members, and nothing else — not
+  the prebuilt Groups Admin, which can also create and delete groups and
+  change their settings. Domain-wide delegation grants only the groups scope
+  now; the users scopes are added at steps 6 and 7, when they are first used.
 - Whether training completed in May–July expires on the _coming_ 1 August only
   tunes the sanity check, which accepts either answer (an annual expiry on 1
   August, at most two rollovers ahead).

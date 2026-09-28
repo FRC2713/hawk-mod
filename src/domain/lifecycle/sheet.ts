@@ -68,7 +68,19 @@ export type SheetPerson = {
   mentor: MentorDetails | null;
   student: StudentDetails | null;
   adminRoles: AdminRole[];
+  /**
+   * Addresses of this person's `Parent/Guardian` contacts, lower-cased, not
+   * counting any ranked 99 ("on file, not to be contacted"). Kept for
+   * everyone; only an Active student's are put in grp-parents.
+   */
+  parentEmails: string[];
 };
+
+/** The Emergency_Contacts relationship that makes a contact a parent. */
+export const PARENT_RELATIONSHIP = "Parent/Guardian";
+
+/** The sheet's Rank for "on file, but not to be contacted". */
+export const DO_NOT_CONTACT_RANK = "99";
 
 /**
  * Something wrong with the sheet that a person should fix. Names a Person ID
@@ -277,6 +289,7 @@ export function parseSheet(data: SheetData): ParsedSheet {
       mentor: null,
       student: null,
       adminRoles: [],
+      parentEmails: [],
     });
   }
   if (sawSample) {
@@ -399,6 +412,35 @@ export function parseSheet(data: SheetData): ParsedSheet {
         );
       } else if (!person.adminRoles.includes(role)) {
         person.adminRoles.push(role);
+      }
+    }
+  }
+
+  // Only Parent/Guardian rows are read at all: the tab covers every person's
+  // contacts — spouses, friends — and nothing else here needs them.
+  for (const [id, rows] of keyed(
+    "Emergency_Contacts",
+    data.Emergency_Contacts.filter(
+      (r) => !isBlank(r) && r.Relationship === PARENT_RELATIONSHIP
+    ),
+    known,
+    problems,
+    { unique: false }
+  )) {
+    const tab = "Emergency_Contacts";
+    const person = people.get(id)!;
+    for (const r of rows) {
+      const rank = r.Rank;
+      if (rank === DO_NOT_CONTACT_RANK) continue;
+      // A garbled rank might have meant 99, and a mailing list is contact, so
+      // it is left out and reported. A blank one says nothing either way.
+      if (rank !== "" && !/^\d+$/.test(rank)) {
+        problems.add(tab, r._row, id, "Rank is not a number");
+        continue;
+      }
+      const address = email(r.Email, "Email", tab, r, id, problems);
+      if (address && !person.parentEmails.includes(address)) {
+        person.parentEmails.push(address);
       }
     }
   }
