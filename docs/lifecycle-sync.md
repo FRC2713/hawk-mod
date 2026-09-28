@@ -473,7 +473,8 @@ is where an administrator runs them.
    kept where they are until the click; a non-admin click is refused; dry run
    against real groups before first apply.
 
-   Built in four pull requests (planned 2026-09-28): (1) the pure planner —
+   Google setup done 2026-09-28 (docs/google-setup.md, Part 2). Built in four
+   pull requests (planned 2026-09-28): (1) the pure planner —
    `mayHaveAccess`, `grp-parents` from `Emergency_Contacts`, and
    `domain/lifecycle/groupPlan.ts` sorting every difference into join,
    automatic (a lead or RA flag off) and held; (2) reading the real groups as

@@ -141,18 +141,26 @@ The output names Person IDs and counts only. The CLI's `--members` adds each
 group's addresses; most of those belong to minors, so keep that output to
 yourself. Slack never offers it.
 
-## Part 2 — manage groups (step 4 onwards; not yet)
+## Part 2 — manage groups (step 4 onwards)
 
-Recorded here so the whole picture is in one place.
+Done for Red Hawk on 2026-09-28. Four parts, in this order.
 
-1. **Enable the Admin SDK API** in the same project.
+1. **Enable the Admin SDK API** in the same Google Cloud project as the
+   service account (search "Admin SDK API" → **Enable**).
 2. **Domain-wide delegation.** Admin console → **Security → Access and data
-   control → API controls → Manage domain-wide delegation → Add new**, with the
-   service account's numeric client ID and, for step 4, **only**:
-   - `https://www.googleapis.com/auth/admin.directory.group` — group membership
+   control → API controls → Manage Domain Wide Delegation → Add new**, with
+   the service account's numeric **Unique ID** (Cloud console → IAM & Admin →
+   Service Accounts → the account → Details) and, for step 4, **only** these
+   two scopes, comma-separated:
+   - `https://www.googleapis.com/auth/admin.directory.group.readonly` — read
+     groups
+   - `https://www.googleapis.com/auth/admin.directory.group.member` — read and
+     change group members
 
-   Later steps add their own, each when it is first used (decided
-   2026-09-28), so the delegation never grants more than hawk-mod does:
+   Not the broad `admin.directory.group`, which could also create and delete
+   groups. Later steps add their own scopes, each when it is first used
+   (decided 2026-09-28), so the delegation never grants more than hawk-mod
+   does:
    - `https://www.googleapis.com/auth/admin.directory.user.readonly` (step 6)
      — check each RHR Email is a real account; `admin.directory.user` (step 7)
      to suspend or restore one after an admin approves it
@@ -161,14 +169,37 @@ Recorded here so the whole picture is in one place.
      Read-only: only a Super Admin can grant those roles, so hawk-mod reports
      and a person acts
 
-3. **An account to act as.** Every change hawk-mod makes appears in the Admin
-   audit log as the account it impersonates. A dedicated
-   `hawk-mod@redhawkrobotics.org` admin makes that log say what actually
-   happened. Its privileges (decided 2026-09-28): a **custom admin role**
-   that can read groups and change their members, and nothing else — not the
-   prebuilt Groups Admin, which can also create and delete groups and change
-   their settings. Only a Super Admin can create and assign it.
-4. **External members.** Groups that hold students' school addresses and
-   volunteers' personal ones must allow members from outside the domain:
-   Admin console → **Apps → Google Workspace → Groups for Business → Sharing
-   settings**, then per group.
+3. **An account to act as, with a narrow role.** hawk-mod acts as
+   `hawk-mod@redhawkrobotics.org`, so every change it makes appears in the
+   Admin audit log under that name. (`GOOGLE_ADMIN_SUBJECT` and
+   `GOOGLE_DOMAIN` override the defaults; neither needs setting.) A Super
+   Admin creates a **custom admin role** — Admin console → **Account → Admin
+   roles → Create new role**, named `hawk-mod group membership` — with
+   **Groups → Read** and **Groups → Update** and nothing else, then assigns
+   it to `hawk-mod@`. Not the prebuilt Groups Admin, which can also create and
+   delete groups. Groups → Update alone could also rename a group, but the
+   delegated scopes in part 2 only reach membership, so together they come to
+   "read groups, change members".
+4. **External members.** Admin console → **Apps → Google Workspace → Groups
+   for Business → Sharing settings → Group owners can allow external
+   members**, then, per group (**Directory → Groups →** the group **→ Access
+   settings**), allow members outside the organization on `grp-students`,
+   `grp-student-leads`, `grp-all-team`, `grp-volunteers`, `grp-alumni` and
+   `grp-parents`. **Leave it off** for `grp-mentors`, `grp-mentor-leads` and
+   `grp-ra`: mentor groups are domain accounts only.
+
+hawk-mod never creates a group. All nine must exist, as `grp-…@` the domain;
+`/hawkmod lifecycle groups` says so if one does not.
+
+### Checking it
+
+`/hawkmod lifecycle groups` in Slack reads every group as `hawk-mod@` and
+changes nothing. What it can say:
+
+- **"refused to let the service account act as hawk-mod@"** — part 2: the
+  client ID or the two scopes.
+- **"refused to read grp-…"** — part 3: the role is missing Groups → Read, or
+  is not assigned to `hawk-mod@`.
+- **"does not exist in Google"** for a group — create it by hand.
+- Otherwise, per group, who would join, who would leave on their own (a lead
+  or RA flag turned off), and who is held for a click, by Person ID.

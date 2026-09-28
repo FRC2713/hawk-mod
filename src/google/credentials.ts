@@ -55,12 +55,37 @@ function keyJson(env: GoogleEnv): string {
   }
 }
 
+/** The team's Google Workspace domain; group addresses are `grp-…@` it. */
+export function googleDomain(): string {
+  return process.env.GOOGLE_DOMAIN?.trim() || "redhawkrobotics.org";
+}
+
 /**
- * A client authenticated as the service account itself. The lifecycle sheet is
- * shared with the service account directly, so reading it needs no
- * impersonation; the Directory calls in later steps will add a `subject`.
+ * The account hawk-mod acts as in Google's Directory, via domain-wide
+ * delegation: `hawk-mod@`, holding a custom role that can read groups and
+ * change their members and nothing else (docs/google-setup.md, Part 2). Every
+ * change hawk-mod makes appears in the Admin audit log under this name.
+ *
+ * Both default, so the deploy needs nothing new; the environment can override
+ * them, and nothing reachable from Slack can.
  */
-export function serviceAccountClient(env: GoogleEnv, scopes: string[]): JWT {
+export function googleActor(): string {
+  return (
+    process.env.GOOGLE_ADMIN_SUBJECT?.trim() || `hawk-mod@${googleDomain()}`
+  );
+}
+
+/**
+ * A client authenticated as the service account. With no `subject` it acts
+ * as itself — the lifecycle sheet is shared with it directly. With one, it
+ * acts as that user through domain-wide delegation, limited to the scopes
+ * delegated in the Admin console and to that user's own admin role.
+ */
+export function serviceAccountClient(
+  env: GoogleEnv,
+  scopes: string[],
+  subject?: string
+): JWT {
   const source =
     "base64" in env.key
       ? "GOOGLE_SERVICE_ACCOUNT_KEY_BASE64"
@@ -85,5 +110,6 @@ export function serviceAccountClient(env: GoogleEnv, scopes: string[]): JWT {
     email: parsed.client_email,
     key: parsed.private_key,
     scopes,
+    ...(subject ? { subject } : {}),
   });
 }

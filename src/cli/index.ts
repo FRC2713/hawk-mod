@@ -10,6 +10,7 @@ import {
 import { backfillAll } from "../monitor/backfill.js";
 import { runSweep } from "../jobs/sweep.js";
 import {
+  groupsReport,
   lifecyclePlanReport,
   rosterReport,
   rosterSync,
@@ -42,6 +43,10 @@ const USAGE = `hawk-mod cli
   lifecycle roster [--apply]   what building the roster from the sheet would
                                change, and what it would ask about; --apply
                                makes the changes. Needs the Slack install too
+  lifecycle groups [--members] each Google Group against the sheet: who would
+                               join, leave on their own, or be held for a
+                               click. Changes nothing; --members lists
+                               addresses
   lifecycle sync               what the hourly job does: apply the roster from
                                the sheet and write Slack User IDs back. Does
                                nothing until the first roster --apply
@@ -172,9 +177,14 @@ async function main() {
             by: "cli",
           })
         );
+      else if (args[0] === "groups")
+        console.log(
+          await groupsReport({ members: args.includes("--members") })
+        );
       else if (args[0] === "sync")
         console.log(await rosterSync({ slack: botClient(), by: "cli" }));
-      else throw new Error("usage: lifecycle plan|slack-ids|roster|sync");
+      else
+        throw new Error("usage: lifecycle plan|slack-ids|roster|sync|groups");
       return;
     default:
       console.log(USAGE);
