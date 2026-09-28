@@ -8,10 +8,12 @@ import {
   setPersonActive,
   setPersonRole,
 } from "../db/repo.js";
-import { rosterFindingStillTrue } from "../lifecycle/run.js";
+import { groupsApplyAnyway, rosterFindingStillTrue } from "../lifecycle/run.js";
+import { GROUPS, type GroupName } from "../domain/lifecycle/groups.js";
 import { log } from "../logger.js";
 import {
   ACK_ACTION,
+  APPLY_ANYWAY_ACTION,
   END_MONITORING_ACTION,
   lifecycleAction,
   MAKE_ADULT_ACTION,
@@ -184,7 +186,10 @@ export function registerActions(app: App): void {
 
 type LifecycleMeta = {
   findingId: number;
-  action: typeof END_MONITORING_ACTION | typeof MAKE_ADULT_ACTION;
+  action:
+    | typeof END_MONITORING_ACTION
+    | typeof MAKE_ADULT_ACTION
+    | typeof APPLY_ANYWAY_ACTION;
   /** Where the button was, so the outcome can be told to the clicker there. */
   channel: string | null;
 };
@@ -204,20 +209,38 @@ const NOT_PERMITTED = {
   ],
 };
 
+const VIEW_TEXT: Record<
+  LifecycleMeta["action"],
+  { title: string; explain: string; placeholder: string }
+> = {
+  [END_MONITORING_ACTION]: {
+    title: "End monitoring",
+    explain:
+      "hawk-mod stops recording and checking this person's conversations. Recorded messages are kept. The lifecycle sheet is read again first, and nothing changes if it no longer says this.",
+    placeholder: "Graduated in June; alumni are not monitored.",
+  },
+  [MAKE_ADULT_ACTION]: {
+    title: "Make adult",
+    explain:
+      "Their DMs with students stop being treated as a student's. The lifecycle sheet is read again first, and nothing changes if it no longer says Mentor.",
+    placeholder: "Former student, now a screened mentor.",
+  },
+  [APPLY_ANYWAY_ACTION]: {
+    title: "Apply anyway",
+    explain:
+      "Applies this group's changes even though they remove more than a quarter of it, or empty it. The sheet and the group are read again first, and what differs then is applied — not what this alert said. Nobody who is leaving is removed.",
+    placeholder: "The three RAs stepped down on 28 Sept; the sheet is right.",
+  },
+};
+
 function lifecycleView(meta: LifecycleMeta, summary: string) {
-  const ending = meta.action === END_MONITORING_ACTION;
+  const text = VIEW_TEXT[meta.action];
   return {
     type: "modal" as const,
     callback_id: LIFECYCLE_MODAL,
     private_metadata: JSON.stringify(meta),
-    title: {
-      type: "plain_text" as const,
-      text: ending ? "End monitoring" : "Make adult",
-    },
-    submit: {
-      type: "plain_text" as const,
-      text: ending ? "End monitoring" : "Make adult",
-    },
+    title: { type: "plain_text" as const, text: text.title },
+    submit: { type: "plain_text" as const, text: text.title },
     close: { type: "plain_text" as const, text: "Cancel" },
     blocks: [
       {
@@ -229,14 +252,7 @@ function lifecycleView(meta: LifecycleMeta, summary: string) {
       },
       {
         type: "context" as const,
-        elements: [
-          {
-            type: "mrkdwn" as const,
-            text: ending
-              ? "_hawk-mod stops recording and checking this person's conversations. Recorded messages are kept. The lifecycle sheet is read again first, and nothing changes if it no longer says this._"
-              : "_Their DMs with students stop being treated as a student's. The lifecycle sheet is read again first, and nothing changes if it no longer says Mentor._",
-          },
-        ],
+        elements: [{ type: "mrkdwn" as const, text: `_${text.explain}_` }],
       },
       {
         type: "input" as const,
@@ -246,12 +262,7 @@ function lifecycleView(meta: LifecycleMeta, summary: string) {
           type: "plain_text_input" as const,
           action_id: "value",
           multiline: true,
-          placeholder: {
-            type: "plain_text" as const,
-            text: ending
-              ? "Graduated in June; alumni are not monitored."
-              : "Former student, now a screened mentor.",
-          },
+          placeholder: { type: "plain_text" as const, text: text.placeholder },
         },
       },
     ],
@@ -265,7 +276,11 @@ function lifecycleView(meta: LifecycleMeta, summary: string) {
  * records the clicker in `role_changes`.
  */
 function registerLifecycleActions(app: App): void {
-  for (const action of [END_MONITORING_ACTION, MAKE_ADULT_ACTION] as const) {
+  for (const action of [
+    END_MONITORING_ACTION,
+    MAKE_ADULT_ACTION,
+    APPLY_ANYWAY_ACTION,
+  ] as const) {
     app.action(action, async ({ ack, body, client }) => {
       await ack();
       const payload = body as {
@@ -333,7 +348,7 @@ function registerLifecycleActions(app: App): void {
     await ack();
     let outcome: string;
     try {
-      outcome = await applyLifecycleAction(client, meta, caller.name, note);
+      outcome = await applyLifecycleAction(client, meta, caller, note);
     } catch (err) {
       log.error("lifecycle action failed", {
         findingId: meta.findingId,
@@ -348,15 +363,35 @@ function registerLifecycleActions(app: App): void {
 async function applyLifecycleAction(
   client: WebClient,
   meta: LifecycleMeta,
-  by: string,
+  caller: { slackUserId: string; name: string },
   note: string
 ): Promise<string> {
+  const by = caller.name;
   const finding = getFinding(meta.findingId);
   if (!finding || finding.status === "resolved") {
     return `Finding #${meta.findingId} is already closed; nothing was changed.`;
   }
   if (lifecycleAction(finding)?.actionId !== meta.action) {
     return `Finding #${meta.findingId} does not offer that; nothing was changed.`;
+  }
+
+  if (meta.action === APPLY_ANYWAY_ACTION) {
+    const group = finding.subject_ref as GroupName;
+    if (!GROUPS.includes(group)) {
+      return `Finding #${finding.id} names no known group; nothing was changed.`;
+    }
+    const outcome = await groupsApplyAnyway({
+      group,
+      actor: caller,
+      reason: note,
+    });
+    // Closed only when something was applied or nothing was left to apply;
+    // a group held for another reason keeps its alert.
+    if (!outcome.startsWith("Nothing was applied")) {
+      await closeFinding(finding.id, by, `Applied anyway: ${note}`);
+    }
+    log.info("groups applied anyway", { findingId: finding.id, group, by });
+    return `${group}: ${outcome}`;
   }
   const person =
     finding.subject_person_id === null

@@ -473,7 +473,9 @@ is where an administrator runs them.
    kept where they are until the click; a non-admin click is refused; dry run
    against real groups before first apply.
 
-   Google setup done 2026-09-28 (docs/google-setup.md, Part 2). Built in four
+   Google setup done 2026-09-28 (docs/google-setup.md, Part 2). Groups are
+   found by permanent ID, never name or address (decided 2026-09-28; Red
+   Hawk's are named `grp-…` but addressed `mentors@`, `students@` and so on). Built in four
    pull requests (planned 2026-09-28): (1) the pure planner —
    `mayHaveAccess`, `grp-parents` from `Emergency_Contacts`, and
    `domain/lifecycle/groupPlan.ts` sorting every difference into join,
