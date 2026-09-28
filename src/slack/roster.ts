@@ -3,9 +3,10 @@ import {
   linkSlackAccount,
   listPeople,
   personByEmail,
+  personBySlackId,
   peopleBySlackId,
 } from "../db/repo.js";
-import type { Member } from "../domain/people.js";
+import { matchSlackAccount, type Member } from "../domain/people.js";
 import type { ChannelMembership } from "../domain/rules/twoAdults.js";
 import { log } from "../logger.js";
 
@@ -54,8 +55,9 @@ export type RosterSync = {
 };
 
 /**
- * Email is the join key: the roster is maintained off-Slack (signed forms,
- * screening records) and Slack ids only exist once someone actually signs up.
+ * Links Slack accounts to roster rows the lifecycle sheet created before the
+ * person joined Slack, and lists the accounts nobody has placed. The match is
+ * `matchSlackAccount`: Slack ID first, then email to an unlinked row.
  */
 export async function syncSlackAccounts(
   client: WebClient
@@ -65,15 +67,18 @@ export async function syncSlackAccounts(
 
   for (const u of users) {
     if (u.isBot || u.isDeleted) continue;
-    const person = u.email ? personByEmail(u.email) : undefined;
-    if (!person) {
+    const match = matchSlackAccount(u, personBySlackId, personByEmail);
+    if (match.kind === "unknown") {
       sync.unknown.push(u);
       continue;
     }
-    if (person.slack_user_id !== u.id) {
-      linkSlackAccount(person.id, u.id);
+    if (match.kind === "link") {
+      linkSlackAccount(match.person.id, u.id);
       sync.linked += 1;
-      log.info("linked slack account", { person: person.email, slackId: u.id });
+      log.info("linked slack account", {
+        person: match.person.person_id ?? match.person.id,
+        slackId: u.id,
+      });
     }
   }
 

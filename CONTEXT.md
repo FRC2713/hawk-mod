@@ -39,15 +39,17 @@ _Avoid_: Lead coach, admin role, superuser
 These two are the distinction most easily lost, and the one that matters most.
 
 **Declared**:
-Present in the Slack user group that names a role — `@students` or `@mentors`.
-Cheap, reversible, and edited by hand in Slack or through hawk-mod. A
-declaration is a statement of intent, not a fact about monitoring.
+Listed on the lifecycle sheet, Active, as a Student or a Mentor. Edited by the
+people who keep the sheet. A declaration is a statement of intent, not a fact
+about monitoring. (Before the lifecycle sheet, the `@students` and `@mentors`
+user groups declared; they are now for mentions and channel access only.)
 _Avoid_: Enrolled, rostered, assigned
 
 **Monitored**:
 Carried on the roster with a role and marked active. Sticky by design: gained
 automatically when someone is declared, and lost only by an explicit,
-attributed act. Removing a declaration never removes monitoring.
+attributed act — End monitoring, Make adult, or `/hawkmod deactivate`.
+Removing a declaration never removes monitoring.
 _Avoid_: Tracked, watched, covered
 
 **Active**:

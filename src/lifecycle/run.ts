@@ -310,3 +310,48 @@ export async function slackIdsReport(opts: {
   }
   return lines.join("\n");
 }
+
+export const NOT_YET_BUILT =
+  "The roster has not been built from the lifecycle sheet yet, so there is " +
+  "nothing to keep in step. Check it with `/hawkmod lifecycle roster`, then " +
+  "build it with `/hawkmod lifecycle roster apply`.";
+
+/**
+ * One run of the roster from the sheet, as the hourly job and "sync now" both
+ * do it: apply the plan, then write newly linked Slack User IDs back to the
+ * sheet. Does nothing before the cutover — the first apply is a person's
+ * decision, taken after reading the dry run.
+ *
+ * A sheet that cannot be read raises `lifecycle_unreadable` and leaves the
+ * roster as it was (rosterReport). A write-back that fails does not undo a
+ * roster already applied: the IDs are filled in on the next run.
+ */
+export async function rosterSync(opts: {
+  slack: WebClient;
+  /** Who asked, for the log: "hourly", "cli", or an administrator's name. */
+  by: string;
+}): Promise<string> {
+  if (!rosterCutoverDone()) {
+    log.info("lifecycle roster sync skipped: not built from the sheet yet");
+    return NOT_YET_BUILT;
+  }
+  const roster = await rosterReport({
+    slack: opts.slack,
+    apply: true,
+    applyHint: "",
+    by: opts.by,
+  });
+  let ids: string;
+  try {
+    ids = await slackIdsReport({
+      slack: opts.slack,
+      apply: true,
+      applyHint: "",
+      by: opts.by,
+    });
+  } catch (err) {
+    log.warn("slack id write-back failed", { error: errorText(err) });
+    ids = `Slack User IDs were not written back (${errorText(err)}); the next run tries again.`;
+  }
+  return `${roster}\n\n${ids}`;
+}

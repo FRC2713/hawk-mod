@@ -33,16 +33,23 @@ function student(personId: string, slackUserId: string | null): SheetPerson {
   };
 }
 
+/** A roster row as the old user-group sync left them: keyed on Slack. */
+function seed(email: string, fullName: string, role: string, slack: string) {
+  const info = db()
+    .prepare(
+      `INSERT INTO people (slack_user_id, email, full_name, role, active,
+                           created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, 'x', 'x')`
+    )
+    .run(slack, email, fullName, role);
+  return repo.personById(Number(info.lastInsertRowid))!;
+}
+
 const count = (sql: string) => (db().prepare(sql).get() as { n: number }).n;
 
 describe("applying a roster plan", () => {
   it("refuses a refused plan and changes nothing", () => {
-    repo.upsertPerson({
-      email: "u9@slack.local",
-      fullName: "Unmatched",
-      role: "adult",
-      slackUserId: "U9",
-    });
+    seed("u9@slack.local", "Unmatched", "adult", "U9");
     const plan = planRoster({
       roster: repo.listPeople(false),
       sheet: [student("P0100", null)],
@@ -57,12 +64,7 @@ describe("applying a roster plan", () => {
   });
 
   it("writes every change, records it, and leaves nothing to do", () => {
-    const existing = repo.upsertPerson({
-      email: "u1@slack.local",
-      fullName: "Slack Name",
-      role: "student",
-      slackUserId: "U1",
-    });
+    const existing = seed("u1@slack.local", "Slack Name", "student", "U1");
     const sheet = [student("P0100", "U1"), student("P0101", null)];
     const accounts = [{ id: "U1", email: null, live: true }];
     const plan = planRoster({

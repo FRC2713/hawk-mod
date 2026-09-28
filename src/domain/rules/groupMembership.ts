@@ -119,27 +119,3 @@ export function planRemove(
   desired.delete(slackId);
   return planGroupMembership(current, desired, limits);
 }
-
-/**
- * Whether an edit ends someone's monitoring as a student, and so must carry a
- * written reason.
- *
- * Pure, and keyed on the group's *handle* rather than whatever the caller
- * typed. Slack sends an escaped mention as `<!subteam^S0614TY5A|adults>`, so a
- * command handler comparing the raw argument to a configured handle compares an
- * opaque id to a word and quietly never matches — which would mean the one gate
- * standing in front of the most consequential edit never fires.
- */
-export function reducesMonitoring(args: {
-  action: "add" | "remove";
-  subjectRole: string;
-  handle: string;
-  adultHandle: string;
-}): boolean {
-  return (
-    args.action === "add" &&
-    args.subjectRole === "student" &&
-    args.handle.replace(/^@/, "").toLowerCase() ===
-      args.adultHandle.replace(/^@/, "").toLowerCase()
-  );
-}

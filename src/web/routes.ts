@@ -6,7 +6,6 @@ import { APP_NAME } from "../brand.js";
 import { config } from "../config.js";
 import { anyBotInstallation, setSetting } from "../db/repo.js";
 import { rescheduleReports } from "../jobs/schedule.js";
-import { syncRolesFromUserGroups } from "../jobs/syncRoles.js";
 import { log } from "../logger.js";
 import { isSettingKey, SETTING_KEYS, SETTINGS, setting } from "../settings.js";
 import { administrator, NOT_PERMITTED, type Actor } from "../slack/authz.js";
@@ -216,17 +215,8 @@ async function handleConfigPost(
     `${SETTINGS[key].label} is now ` +
     `${await describeValue(client, key, cleaned.value)}.`;
 
-  // Roles are read from these groups by everything downstream, so leaving the
-  // roster stale until 3am would mean the setting looked applied and was not.
-  if (key === "student-group" || key === "mentor-group") {
-    const stats = await syncRolesFromUserGroups(client);
-    note +=
-      ` Re-synced: ${stats.created} rostered, ${stats.changed} changed, ` +
-      `${stats.reactivated} resumed.`;
-  }
-
-  // Same argument as the role groups: the new time takes effect now, not at
-  // whatever the old time happened to be.
+  // The new time takes effect now, not at whatever the old time happened to
+  // be: leaving it would mean the setting looked applied and was not.
   if (key === "report-time") {
     const next = rescheduleReports();
     if (next) {

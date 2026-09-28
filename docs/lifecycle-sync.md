@@ -1,8 +1,9 @@
 # Lifecycle sync
 
-Status: **steps 0–2 deployed; step 3 in progress** (planner, migration
-0009, the `lifecycle roster` dry run, and `lifecycle roster apply` with its
-findings and buttons built; the hourly run and the cutover are next). The scope was
+Status: **steps 0–2 deployed; step 3 built** (planner, migration 0009, the
+`lifecycle roster` dry run, `lifecycle roster apply` with its findings and
+buttons, and the cutover: the hourly run, `lifecycle sync`, and the Slack-group
+role sync removed). Step 4 is next. The scope was
 settled with Rachel Moore on 2026-09-25 and 26. The big picture below was
 rewritten on 2026-09-27, after a first step 3 design showed it had never been
 written down; it replaces the earlier "direction of truth" section.
@@ -61,8 +62,8 @@ Decided 2026-09-27.
 Data flows one way. **hawk-mod never takes a copy as a source.** The Slack
 user groups are for mentions and channel access; nothing reads them to decide
 who is a student. A broken group sync leaves `@students` out of date, and
-changes nobody's monitoring. (Until step 3, roles still come from
-`@students` / `@mentors`, as they have since before this work.)
+changes nobody's monitoring. (Before step 3, roles came from `@students` /
+`@mentors`, as they had since before this work.)
 
 ### How updates are made
 
@@ -592,11 +593,33 @@ never flagged as missing from the sheet, and is set with `set-role`.
 
 ### Retired at cutover
 
-`/hawkmod screening`, `/hawkmod consent`, their modals, `import-roster` and
-`import-consents` refuse with "edit the lifecycle sheet". `set-role` stays for
-`district_observer` only. `/hawkmod whois` shows the Person ID. CLAUDE.md's
-sections on roles from user groups and optional Google are rewritten in the
-same change.
+`/hawkmod screening`, `/hawkmod consent`, `import-roster` and
+`import-consents` refuse with "edit the lifecycle sheet"; the two modals are
+gone. `set-role` stays for `district_observer`, and moves only between it and
+`adult`, never to or from `student`. `/hawkmod whois` shows the Person ID and
+the Slack Consent Expiry. `/hawkmod sync` is now "sync now" from the sheet.
+CLAUDE.md's sections on roles from user groups and optional Google are
+rewritten in the same change.
+
+Also retired with the role sync, decided while building it (2026-09-28):
+
+- **The reason `/hawkmod group add` demanded for putting a student in
+  `@mentors`.** It existed because that edit used to end their monitoring as
+  a student. It no longer changes anyone's role, so the reply now says the
+  roster is unchanged instead.
+- **Matching Slack accounts to rows by email alone.** After the cutover a
+  row's email is the identity email, which many people did not sign up to
+  Slack with, so the nightly check would have called them unknown — or moved a
+  row onto another account sharing its address. `matchSlackAccount` matches
+  by Slack ID first, then by email only to a row with no Slack account yet,
+  and never re-points one. `team_join` uses the same match, so a newcomer
+  whose row the sheet already created is linked the moment they join.
+
+The hourly run is at :20 past, fixed rather than an environment variable (a
+new variable means a change to hawk_suite's deploy). It does nothing until the
+first `roster apply`. The local walkthrough in `scripts/setup-local.sh` still
+rosters people through user groups and the consent form, and needs reworking
+around a test sheet.
 
 ### New findings
 

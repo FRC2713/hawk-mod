@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addYears, daysBetween, today } from "../src/domain/dates.js";
 import type { Person, Role } from "../src/domain/people.js";
-import {
-  consentStatus,
-  mayHoldAccount,
-  type Consent,
-} from "../src/domain/rules/consent.js";
+import { consentStatus, mayHoldAccount } from "../src/domain/rules/consent.js";
 import {
   isScreenedAdult,
   latestAnnualExpiry,
@@ -51,23 +47,6 @@ function screened(role: Role = "adult"): Person {
   });
 }
 
-function consent(personId: number, overrides: Partial<Consent> = {}): Consent {
-  return {
-    id: nextId++,
-    person_id: personId,
-    signed_on: "2026-02-01",
-    expires_on: "2027-02-01",
-    form_version: "2026.1",
-    guardian_name: "Guardian",
-    guardian_email: null,
-    document_ref: null,
-    recorded_by: "test",
-    revoked_on: null,
-    created_at: "2026-02-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
 describe("dates", () => {
   it("keeps a Feb 29 anniversary inside February", () => {
     assert.equal(addYears("2024-02-29", 1), "2025-02-28");
@@ -81,56 +60,42 @@ describe("dates", () => {
 });
 
 describe("consent", () => {
+  const student = (expires: string | null) =>
+    person("student", { slack_consent_expires_on: expires });
+
   it("is not required of adults", () => {
-    const adult = person("adult");
-    assert.equal(consentStatus(adult, [], "2026-08-12").state, "not_required");
+    assert.equal(
+      consentStatus(person("adult"), "2026-08-12").state,
+      "not_required"
+    );
   });
 
-  it("is missing when no form was ever filed", () => {
-    const student = person("student");
-    const status = consentStatus(student, [], "2026-08-12");
+  it("is missing when the sheet has no Slack Consent Expiry", () => {
+    const status = consentStatus(student(null), "2026-08-12");
     assert.equal(status.state, "missing");
     assert.equal(mayHoldAccount(status), false);
   });
 
-  it("expires a year after signature", () => {
-    const student = person("student");
-    const c = consent(student.id, {
-      signed_on: "2025-03-01",
-      expires_on: "2026-03-01",
-    });
-    assert.equal(consentStatus(student, [c], "2026-02-28").state, "valid");
-    assert.equal(consentStatus(student, [c], "2026-03-02").state, "expired");
+  it("is valid through the expiry date itself, and not a day after", () => {
+    const s = student("2027-08-01");
+    assert.equal(consentStatus(s, "2027-08-01").state, "valid");
+    assert.equal(mayHoldAccount(consentStatus(s, "2027-08-01")), true);
+    assert.equal(consentStatus(s, "2027-08-02").state, "expired");
+    assert.equal(mayHoldAccount(consentStatus(s, "2027-08-02")), false);
   });
 
-  it("takes the most recent signature, not the first one found", () => {
-    const student = person("student");
-    const old = consent(student.id, {
-      signed_on: "2025-03-01",
-      expires_on: "2026-03-01",
-    });
-    const fresh = consent(student.id, {
-      signed_on: "2026-03-01",
-      expires_on: "2027-03-01",
-    });
-    const status = consentStatus(student, [old, fresh], "2026-08-12");
-    assert.equal(status.state, "valid");
-    assert.equal(mayHoldAccount(status), true);
-  });
-
-  it("honours a revocation", () => {
-    const student = person("student");
-    const c = consent(student.id, { revoked_on: "2026-05-01" });
-    assert.equal(consentStatus(student, [c], "2026-08-12").state, "revoked");
-  });
-
-  it("ignores consents belonging to somebody else", () => {
-    const student = person("student");
-    const other = person("student");
+  it("reads a withdrawal as the date cleared or moved into the past", () => {
+    assert.equal(consentStatus(student(null), "2026-09-28").state, "missing");
     assert.equal(
-      consentStatus(student, [consent(other.id)], "2026-08-12").state,
-      "missing"
+      consentStatus(student("2026-09-01"), "2026-09-28").state,
+      "expired"
     );
+  });
+
+  it("uses the date as the sheet has it, computing nothing", () => {
+    // Signed in September, runs to the next 1 August like every annual item.
+    const status = consentStatus(student("2027-08-01"), "2026-09-28");
+    assert.deepEqual(status, { state: "valid", expiresOn: "2027-08-01" });
   });
 });
 
