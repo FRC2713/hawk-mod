@@ -30,7 +30,7 @@ npx tsx --test --test-name-pattern "two adults" test/rules.test.ts
 CLI subcommands: `import-roster`, `import-consents`, `set-role`, `sweep`,
 `backfill`, `findings [status]`, `export-conversation <id> [out.json]`,
 `lifecycle plan [--members]`, `lifecycle slack-ids [--apply]`,
-`lifecycle roster`. None of
+`lifecycle roster [--apply]`. None of
 them is a bootstrap step: administrative access is Slack's Workspace
 Owner/Admin flags, read live in `src/slack/authz.ts`, so a fresh install is
 usable by whoever installed it without anyone touching the host. Don't
@@ -214,7 +214,11 @@ conversation going unreported, which is the same bug wearing a different hat.
 `jobs/sweep.ts`. Four kinds are deliberately absent: `adult_student_dm`,
 `student_enrolled`, `roster_drift`, and `usergroup_conflict`. Each records
 something that happened rather than a condition that is currently true —
-removing a token does not un-expose the DMs it saw — so a person closes them.
+removing a token does not un-expose the DMs it saw — so a person closes them. (The lifecycle roster run closes its own findings, `sheet_undeclared`,
+`sheet_conflict` and `roster_drift:sheet:…`, when the sheet no longer says
+them: each is a pending question about the sheet, not a record of an event.
+End monitoring and Make adult, on those findings, are the only buttons that
+lower monitoring, and each re-reads the sheet before acting.)
 
 **A 1:1 can be auto-acknowledged, never auto-resolved.** §4.1's own remedy is
 moving to a channel or adding a second adult, so `monitor/remediation.ts` watches

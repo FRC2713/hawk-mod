@@ -15,7 +15,24 @@ import {
   SHEETS_READONLY,
   SHEETS_READWRITE,
 } from "../google/sheets.js";
-import { listPeople } from "../db/repo.js";
+import { APP_ACTOR } from "../brand.js";
+import { closeFinding } from "../close.js";
+import {
+  findingByKey,
+  listPeople,
+  resolveMissingWithPrefix,
+  rosterCutoverDone,
+} from "../db/repo.js";
+import {
+  ROSTER_FINDING_PREFIXES,
+  rosterFinding,
+  rosterFindingKey,
+  UNREADABLE_KEY,
+  unreadableFinding,
+} from "../domain/lifecycle/rosterFindings.js";
+import { raise } from "../raise.js";
+import { refreshFinding } from "../slack/alerts.js";
+import { applyRosterChanges } from "./applyRoster.js";
 import { log } from "../logger.js";
 import { fetchWorkspaceUsers } from "../slack/roster.js";
 
@@ -93,15 +110,8 @@ export async function lifecyclePlanReport(
   );
 }
 
-/**
- * Step 3's dry run: what building the roster from the sheet would change,
- * and what it would ask a person about. Reads the sheet, Slack's member list
- * and the roster; writes nothing, anywhere.
- *
- * Planned as the first apply — the cutover — since nothing has applied yet,
- * so it shows whether that apply would be refused and why.
- */
-export async function rosterReport(slack: WebClient): Promise<string> {
+/** Everything a roster plan is made from, read fresh. */
+async function readRosterInputs(slack: WebClient) {
   const env = requireGoogle();
   const client = serviceAccountClient(env, [SHEETS_READONLY]);
   const parsed = parseSheet(await readLifecycleSheet(client, env.sheetId));
@@ -115,14 +125,108 @@ export async function rosterReport(slack: WebClient): Promise<string> {
     roster,
     sheet: parsed.people,
     accounts,
-    firstApply: true,
+    firstApply: !rosterCutoverDone(),
   });
-  return formatRosterPlan({
+  return { parsed, roster, plan };
+}
+
+/**
+ * Step 3: the roster from the sheet. A dry run unless `apply`; both plan the
+ * same way and print the same text, so what an administrator read is what
+ * gets applied.
+ *
+ * Applying writes every change or none, then raises what the plan asks a
+ * person about and closes whatever it no longer sees. A refused plan changes
+ * nothing. So does a sheet that cannot be read — and once the roster comes
+ * from the sheet, that is itself a finding, because a roster that silently
+ * stops updating is one that silently stops adding new students.
+ */
+export async function rosterReport(opts: {
+  slack: WebClient;
+  apply: boolean;
+  /** How to ask for the apply, in the words of the door being used. */
+  applyHint: string;
+  /** Who asked, for the log. */
+  by: string;
+}): Promise<string> {
+  let inputs;
+  try {
+    inputs = await readRosterInputs(opts.slack);
+  } catch (err) {
+    if (opts.apply && rosterCutoverDone()) {
+      await raise(unreadableFinding(errorText(err)));
+    }
+    throw err;
+  }
+  const { parsed, roster, plan } = inputs;
+  const text = formatRosterPlan({
     plan,
     roster,
     sheetProblems: parsed.problems.length,
-    dryRun: true,
+    dryRun: !opts.apply,
   });
+
+  if (!opts.apply) {
+    const anything = plan.changes.length || plan.findings.length;
+    return plan.refused || !anything
+      ? text
+      : `${text}\n\nTo apply it: ${opts.applyHint}`;
+  }
+  if (plan.refused) return `${text}\n\nNothing was changed.`;
+
+  const stats = applyRosterChanges(plan);
+  log.info("lifecycle roster applied", { by: opts.by, ...stats });
+
+  // The sheet was readable, so a finding saying otherwise is over.
+  const unreadable = findingByKey(UNREADABLE_KEY);
+  if (unreadable && unreadable.status !== "resolved") {
+    await closeFinding(
+      unreadable.id,
+      APP_ACTOR,
+      "The lifecycle sheet was read."
+    );
+  }
+
+  const names = {
+    roster: new Map(roster.map((r) => [r.id, r])),
+    sheet: new Map(parsed.people.map((p) => [p.personId, p.name])),
+  };
+  const seen = new Set<string>();
+  for (const f of plan.findings) {
+    const finding = rosterFinding(f, names);
+    seen.add(finding.dedupeKey);
+    await raise(finding);
+  }
+  const closed = resolveMissingWithPrefix(
+    ROSTER_FINDING_PREFIXES,
+    seen,
+    "No longer true on the lifecycle sheet."
+  );
+  for (const id of closed) await refreshFinding(id);
+
+  return (
+    `${text}\n\nApplied: ${stats.created} created, ${stats.updated} updated. ` +
+    `${plan.findings.length} question(s) are in the alert channel; ` +
+    `${closed.length} closed as no longer true.`
+  );
+}
+
+/**
+ * Whether a roster finding is still what the sheet says, read now — for a
+ * button that would lower monitoring. An hour-old finding is not enough to
+ * end someone's monitoring on: the sheet may have declared them Active again
+ * since, and the button must not act on a request nobody is making any more.
+ */
+export async function rosterFindingStillTrue(
+  slack: WebClient,
+  key: string
+): Promise<boolean> {
+  const { plan } = await readRosterInputs(slack);
+  return plan.findings.some((f) => rosterFindingKey(f) === key);
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {

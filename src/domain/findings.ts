@@ -15,12 +15,22 @@ export const FINDING_KINDS = [
   "enrollment_revoked",
   /** Fewer than two workspace owners, or a student holding admin (§6). */
   "workspace_config",
-  /** A Slack user group moved someone out of `student`. */
+  /**
+   * Someone left `student` without a person deciding it: from a Slack user
+   * group move, or — keyed `roster_drift:sheet:` — the lifecycle sheet says
+   * Mentor and the move is held for a Make adult click.
+   */
   "roster_drift",
   /** Someone is in both the students and the adults user group. */
   "usergroup_conflict",
   /** A student authorized hawk-mod, which would expose their peer DMs. */
   "student_enrolled",
+  /** Still monitored, though the lifecycle sheet no longer declares them. */
+  "sheet_undeclared",
+  /** The lifecycle sheet contradicts itself or the roster; nothing changed. */
+  "sheet_conflict",
+  /** The lifecycle sheet could not be read; the roster was left as it was. */
+  "lifecycle_unreadable",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];

@@ -28,6 +28,29 @@ function alertChannel(context: string): string | null {
 
 export const ACK_ACTION = "hawkmod_finding_ack";
 export const RESOLVE_ACTION = "hawkmod_finding_resolve";
+export const END_MONITORING_ACTION = "hawkmod_end_monitoring";
+export const MAKE_ADULT_ACTION = "hawkmod_make_adult";
+
+/**
+ * The one change a roster finding asks a person to make, if it asks one. Only
+ * these two findings lower monitoring on a click, and each is the lifecycle
+ * sheet's: the user-group sync's `roster_drift` records a move already made,
+ * and offers nothing to approve.
+ */
+export function lifecycleAction(
+  f: Pick<Finding, "kind" | "dedupe_key">
+): { actionId: string; label: string } | null {
+  if (f.kind === "sheet_undeclared") {
+    return { actionId: END_MONITORING_ACTION, label: "End monitoring" };
+  }
+  if (
+    f.kind === "roster_drift" &&
+    f.dedupe_key.startsWith("roster_drift:sheet:")
+  ) {
+    return { actionId: MAKE_ADULT_ACTION, label: "Make adult" };
+  }
+  return null;
+}
 
 /**
  * One renderer for both the first post and every later update, so a finding
@@ -46,17 +69,28 @@ export function findingBlocks(f: Finding): {
     { type: "section", text: { type: "mrkdwn", text: headline } },
   ];
 
+  const lifecycle = lifecycleAction(f);
   if (f.status === "open") {
     blocks.push({
       type: "actions",
       elements: [
-        {
-          type: "button",
-          action_id: RESOLVE_ACTION,
-          style: "primary",
-          text: { type: "plain_text", text: "Resolve" },
-          value: String(f.id),
-        },
+        // A roster finding is closed by doing what it asks, or by the sheet
+        // changing. "Resolve" without either would only reopen on the next run.
+        lifecycle
+          ? {
+              type: "button",
+              action_id: lifecycle.actionId,
+              style: "danger",
+              text: { type: "plain_text", text: lifecycle.label },
+              value: String(f.id),
+            }
+          : {
+              type: "button",
+              action_id: RESOLVE_ACTION,
+              style: "primary",
+              text: { type: "plain_text", text: "Resolve" },
+              value: String(f.id),
+            },
         {
           type: "button",
           action_id: ACK_ACTION,
@@ -73,7 +107,9 @@ export function findingBlocks(f: Finding): {
           text:
             `finding #${f.id}` +
             (f.subject_ref ? ` · \`${f.subject_ref}\`` : "") +
-            " · both ask for a reason, which the quarterly audit reads",
+            (lifecycle
+              ? ` · ${lifecycle.label} asks for a reason and re-reads the lifecycle sheet first`
+              : " · both ask for a reason, which the quarterly audit reads"),
         },
       ],
     });

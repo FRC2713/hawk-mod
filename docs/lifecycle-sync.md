@@ -1,7 +1,8 @@
 # Lifecycle sync
 
-Status: **steps 0–2 deployed; step 3 in progress** (planner, migration 0009
-and the `lifecycle roster` dry run built; nothing applies yet). The scope was
+Status: **steps 0–2 deployed; step 3 in progress** (planner, migration
+0009, the `lifecycle roster` dry run, and `lifecycle roster apply` with its
+findings and buttons built; the hourly run and the cutover are next). The scope was
 settled with Rachel Moore on 2026-09-25 and 26. The big picture below was
 rewritten on 2026-09-27, after a first step 3 design showed it had never been
 written down; it replaces the earlier "direction of truth" section.
@@ -599,9 +600,13 @@ same change.
 
 ### New findings
 
-Findings name the person and Person ID, never an address. All but the held
-role change describe something currently true, so the run closes them when
-the sheet is fixed.
+Findings name the person and Person ID, never an address. All of them
+describe something currently true, so the run closes them when the sheet is
+fixed — the held role change included (decided while building it, 2026-09-27):
+if the sheet stops saying Mentor, there is nothing left to approve, and a
+button still offering Make adult would act on a request nobody is making. The
+user-group sync's own `roster_drift` findings are untouched: the run closes
+only keys starting `roster_drift:sheet:`.
 
 - **sheet_undeclared** — _P0042 Jordan Lee is Inactive on the lifecycle sheet
   (or: is now Alumni / has no row any more). hawk-mod is still monitoring them
@@ -617,8 +622,11 @@ the sheet is fixed.
 - **lifecycle_unreadable** — _hawk-mod could not read the lifecycle sheet (no
   column "YPT Expiry" on Mentor_Details). The roster was left as it was._
 
-Both buttons are gated on `administrator()`, and recorded in `role_changes`
-with who clicked. A graduating class raises one `sheet_undeclared` per student
+Both buttons are gated on `administrator()` at the click and again at the
+submit, ask for a reason, and are recorded in `role_changes` with who clicked
+and why. **Before acting, each re-reads the sheet** and acts only if the sheet
+still says what the finding says; otherwise it changes nothing and closes the
+finding. An hour-old finding is not enough to end someone's monitoring on. A graduating class raises one `sheet_undeclared` per student
 each June; that is the intended friction, and a bulk "end monitoring for
 these" can follow if it proves heavy.
 
