@@ -83,7 +83,8 @@ export function formatGroupPlans(args: {
   const lines = [
     `Google Groups from the lifecycle sheet${args.dryRun ? " (dry run: nothing changed)" : ""}`,
     "",
-    `Would join: ${count((p) => p.add)} · leave on their own (lead/RA flag off): ` +
+    `${args.dryRun ? "Would join" : "Joining"}: ${count((p) => p.add)} · ` +
+      `${args.dryRun ? "leave" : "leaving"} on their own (lead/RA flag off): ` +
       `${count((p) => p.automatic)} · held for a click: ${count((p) => p.held)}`,
   ];
 
@@ -110,8 +111,20 @@ export function formatGroupPlans(args: {
       );
     }
     if (plan.refusal) lines.push(`    WOULD BE HELD: ${plan.refusal}`);
-    list(lines, "Would join", plan.add, group, members);
-    list(lines, "Would leave on their own", plan.automatic, group, members);
+    list(
+      lines,
+      args.dryRun ? "Would join" : "Joining",
+      plan.add,
+      group,
+      members
+    );
+    list(
+      lines,
+      args.dryRun ? "Would leave on their own" : "Leaving on their own",
+      plan.automatic,
+      group,
+      members
+    );
 
     const onSheet = plan.held.filter((h) => h.reason !== "not_on_sheet");
     const unknown = plan.held.filter((h) => h.reason === "not_on_sheet");

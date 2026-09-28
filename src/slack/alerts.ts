@@ -31,11 +31,13 @@ export const RESOLVE_ACTION = "hawkmod_finding_resolve";
 export const END_MONITORING_ACTION = "hawkmod_end_monitoring";
 export const MAKE_ADULT_ACTION = "hawkmod_make_adult";
 export const APPLY_ANYWAY_ACTION = "hawkmod_groups_apply_anyway";
+export const REMOVE_FROM_GROUPS_ACTION = "hawkmod_remove_from_groups";
 
 /**
  * The one change a lifecycle finding asks a person to make, if it asks one.
  * End monitoring and Make adult are the only clicks that lower monitoring;
- * Apply anyway is the only override of a Google Groups refusal. The user-group
+ * Remove from groups the only one that takes someone out of a Google Group
+ * they are leaving; Apply anyway the only override of a groups refusal. The user-group
  * sync's old `roster_drift` records a move already made, and offers nothing.
  */
 export function lifecycleAction(
@@ -49,6 +51,15 @@ export function lifecycleAction(
     f.dedupe_key.startsWith("roster_drift:sheet:")
   ) {
     return { actionId: MAKE_ADULT_ACTION, label: "Make adult" };
+  }
+  if (f.kind === "group_member_held") {
+    return { actionId: REMOVE_FROM_GROUPS_ACTION, label: "Remove from groups" };
+  }
+  if (f.kind === "cori_lapsed") {
+    return {
+      actionId: REMOVE_FROM_GROUPS_ACTION,
+      label: "Remove from mentor groups",
+    };
   }
   // Only a refused plan: a wrong group or a missing one is fixed in the code
   // or in Google, and nothing should offer to apply past it.

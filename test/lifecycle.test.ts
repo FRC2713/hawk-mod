@@ -764,7 +764,7 @@ describe("planning a Google Group: joining is automatic, leaving waits", () => {
     assert.deepEqual(g("grp-parents").held, [
       {
         address: "dad@home.example",
-        personIds: [],
+        personIds: ["P0020"],
         reason: "parent_not_listed",
       },
     ]);

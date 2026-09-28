@@ -486,6 +486,26 @@ is where an administrator runs them.
    in a group that the sheet does not account for is held**, like someone
    leaving, rather than removed (decided 2026-09-28).
 
+   Built as planned, with two differences from the text above, both decided
+   2026-09-28 while building part 4:
+
+   - **Two alerts for someone leaving, not one.** The roster raises
+     `sheet_undeclared` (End monitoring); the groups run raises
+     `group_member_held` (Remove from groups) — one per person, listing every
+     group they are held in and, for a student, their parents' grp-parents
+     entry unless a sibling keeps it. Monitoring and access are separate
+     decisions and separate hourly jobs, and a mentor whose CORI lapsed gets
+     `cori_lapsed` (Remove from mentor groups, plus the Slack reminder)
+     instead.
+   - **An address the sheet does not account for** gets its own
+     `group_member_held` alert, showing the address partly hidden
+     (`k…@gmail.com`): enough to find in the Admin console, not the whole
+     address in Slack.
+
+   Every button re-reads the sheet and the groups at the click and removes
+   only what is still held. `cori_expiring` runs hourly once the roster comes
+   from the sheet, and messages the mentor in Slack once per expiry date.
+
 5. **Slack user groups (E).** Same computed membership, copied to Slack by an
    administrator's **Apply** click on one `slack_groups_differ` finding, with
    the clicker's own grant; `/hawkmod group` refuses copied groups. _Verify:_
@@ -650,7 +670,8 @@ only keys starting `roster_drift:sheet:`.
 - **sheet_undeclared** — _P0042 Jordan Lee is Inactive on the lifecycle sheet
   (or: is now Alumni / has no row any more). hawk-mod is still monitoring them
   as a student, and will until someone ends it. [End monitoring]_ From
-  step 4 the same finding also offers [Remove from groups].
+  step 4 the groups run raises its own alert for the same person,
+  `group_member_held`, with [Remove from groups] (see step 4).
 - **roster_drift** — _The lifecycle sheet says P0042 Jordan Lee is a Mentor,
   but hawk-mod monitors them as a student. Nothing was changed: as an adult,
   their DMs with students would stop being treated as a student's.

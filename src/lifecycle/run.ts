@@ -21,6 +21,18 @@ import {
   removeMember,
 } from "../google/directory.js";
 import {
+  CORI_EXPIRING_PREFIX,
+  coriExpiringFinding,
+  coriExpiringSoon,
+  coriReminderText,
+} from "../domain/lifecycle/cori.js";
+import {
+  HELD_MEMBER_PREFIXES,
+  heldMemberFinding,
+  heldSubjects,
+} from "../domain/lifecycle/heldMembers.js";
+import type { GroupPlanResult } from "../domain/lifecycle/groupPlan.js";
+import {
   decideGroups,
   failedFinding,
   GROUP_HELD_PREFIX,
@@ -367,7 +379,152 @@ export async function groupsReport(
     source: "lifecycle_groups",
   });
   await settleHeldFindings(decisions, outcome.failed);
+  await settleHeldMembers(plans, parsed);
   return `${text}\n\n${outcome.summary}`;
+}
+
+/**
+ * One alert per person (or unplaceable address) the run left in a group they
+ * no longer belong in, each with Remove from groups; closed once they are out
+ * or belong again. Raised only by an applying run — the dry run asks nothing.
+ */
+async function settleHeldMembers(
+  plans: GroupPlanResult[],
+  parsed: ReturnType<typeof parseSheet>
+): Promise<void> {
+  const names = new Map(parsed.people.map((p) => [p.personId, p.name]));
+  const slackByPerson = new Map(
+    listPeople(false).flatMap((p) =>
+      p.person_id && p.slack_user_id ? [[p.person_id, p.slack_user_id]] : []
+    )
+  );
+  const seen = new Set<string>();
+  for (const subject of heldSubjects(plans)) {
+    const f = heldMemberFinding(subject, {
+      names,
+      inSlack: (id) => slackByPerson.has(id),
+    });
+    seen.add(f.dedupeKey);
+    await raise(f);
+  }
+  const closed = resolveMissingWithPrefix(
+    HELD_MEMBER_PREFIXES,
+    seen,
+    "No longer held: out of the group, or belongs in it again."
+  );
+  for (const id of closed) await refreshFinding(id);
+}
+
+/**
+ * **Remove from groups** (or **Remove from mentor groups**), from a
+ * `group_member_held` or `cori_lapsed` finding's button. Re-reads the sheet
+ * and the groups now and removes only what is *still* held for that person
+ * or address — someone who belongs again by the time of the click is left
+ * alone. Never touches a wrong or missing group. Every removal is recorded
+ * against the clicker, with their reason; a grp-ra removal is announced.
+ */
+export async function groupsRemoveHeld(opts: {
+  key: string;
+  actor: GroupsActor;
+  reason: string;
+}): Promise<{ text: string; done: boolean }> {
+  const { parsed, directory, plans, found, missing } = await readGroupInputs();
+  const subject = heldSubjects(plans).find((s) => s.key === opts.key);
+  if (!subject) {
+    return {
+      text: "Nothing is held for them any more; nothing was removed.",
+      done: true,
+    };
+  }
+  const usable = decideGroups({
+    plans,
+    found,
+    missing,
+    force: new Set(GROUPS),
+  });
+  const decisions: GroupDecision[] = [];
+  const skipped: string[] = [];
+  for (const group of GROUPS) {
+    const entries = subject.entries.filter((e) => e.group === group);
+    if (!entries.length) continue;
+    const d = usable.find((x) => x.group === group);
+    const f = found[group];
+    if (!f || !d || (d.kind === "held" && d.why !== "refused")) {
+      skipped.push(group);
+      continue;
+    }
+    decisions.push({
+      group,
+      kind: "apply",
+      groupId: f.id,
+      name: f.name,
+      add: [],
+      remove: entries.map((e) => ({
+        address: e.address,
+        personIds: subject.personId ? [subject.personId] : [],
+      })),
+    });
+  }
+  const outcome = await applyAndRecord({
+    decisions,
+    directory,
+    parsed,
+    actor: opts.actor,
+    reason: opts.reason,
+    source: "remove_from_groups",
+  });
+  const lines = [outcome.summary];
+  if (skipped.length) {
+    lines.push(
+      `Not touched, because the group is wrong or missing: ${skipped.join(", ")}.`
+    );
+  }
+  return {
+    text: lines.join("\n"),
+    done: !outcome.failed.length && !skipped.length,
+  };
+}
+
+/**
+ * The 60-day CORI warning, hourly: a `cori_expiring` finding per mentor, and
+ * — once per expiry date, when the finding is first raised — a Slack message
+ * to the mentor if they are in Slack. Closed when the renewed date is entered.
+ */
+export async function coriWarnings(slack: WebClient): Promise<void> {
+  const env = requireGoogle();
+  const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
+  const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
+  const slackByPerson = new Map(
+    listPeople(false).flatMap((p) =>
+      p.person_id && p.slack_user_id ? [[p.person_id, p.slack_user_id]] : []
+    )
+  );
+  const seen = new Set<string>();
+  for (const c of coriExpiringSoon(parsed.people, today())) {
+    const f = coriExpiringFinding(c);
+    seen.add(f.dedupeKey);
+    const { alerted } = await raise(f);
+    const slackId = slackByPerson.get(c.personId);
+    if (!alerted || !slackId) continue;
+    try {
+      const im = await slack.conversations.open({ users: slackId });
+      const channel = im.channel?.id;
+      if (channel) {
+        await slack.chat.postMessage({ channel, text: coriReminderText(c) });
+      }
+    } catch (err) {
+      log.warn("could not send a CORI reminder", {
+        personId: c.personId,
+        error: errorText(err),
+      });
+    }
+  }
+  const closed = resolveMissingWithPrefix(
+    [CORI_EXPIRING_PREFIX],
+    seen,
+    "The CORI Expiry on the sheet is renewed, or has passed."
+  );
+  for (const id of closed) await refreshFinding(id);
 }
 
 /**
@@ -521,6 +678,15 @@ export async function lifecycleHourly(slack: WebClient): Promise<void> {
     await groupsSync();
   } catch (err) {
     log.error("hourly groups sync failed", { error: errorText(err) });
+  }
+  // Only once the roster comes from the sheet: before that, the sheet is
+  // not what hawk-mod goes by.
+  if (rosterCutoverDone()) {
+    try {
+      await coriWarnings(slack);
+    } catch (err) {
+      log.error("hourly CORI warnings failed", { error: errorText(err) });
+    }
   }
 }
 
