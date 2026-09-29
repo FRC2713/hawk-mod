@@ -19,8 +19,15 @@ export type ConsentStatus =
   | { state: "missing" }
   | { state: "expired"; expiresOn: IsoDate };
 
-/** Only students require consent — adults act on their own behalf. */
-export function consentStatus(person: Person, asOf: IsoDate): ConsentStatus {
+/**
+ * Only students require consent — adults act on their own behalf. Takes only
+ * the two fields it reads, so onboarding can ask it about a sheet row that has
+ * no roster row yet.
+ */
+export function consentStatus(
+  person: Pick<Person, "role" | "slack_consent_expires_on">,
+  asOf: IsoDate
+): ConsentStatus {
   if (person.role !== "student") return { state: "not_required" };
   const expiresOn = person.slack_consent_expires_on;
   if (!expiresOn) return { state: "missing" };
