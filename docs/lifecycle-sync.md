@@ -557,7 +557,9 @@ group` refusing copies, the leaving buttons reaching Slack, and the
    A Slack account the sheet does not know gets its own alert, named by its
    Slack name. The hourly Google Groups run owns these alerts and reads the
    Slack copies to raise them; if Slack cannot be read it raises what Google
-   shows and closes nothing.
+   shows and closes nothing. "Sync now" (`/hawkmod lifecycle sync`) runs the Slack groups check
+   after the roster, so a sheet edit's Slack difference and its **Apply**
+   appear without waiting for the hour.
 
 6. **Onboarding requests and safety net (H).** Google account requests,
    RHR Email directory check, Slack invites, all in the `onboarding-channel`

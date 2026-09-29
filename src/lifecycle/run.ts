@@ -466,7 +466,7 @@ async function raiseRedrawn(f: NewFinding): Promise<void> {
  * (a refusal carries **Apply anyway**), and closes what it no longer sees.
  * Changes no group: every Slack group change is an administrator's click.
  */
-export async function slackGroupsCheck(slack: WebClient): Promise<void> {
+export async function slackGroupsCheck(slack: WebClient): Promise<string> {
   let inputs;
   try {
     inputs = await readSlackCopyInputs(slack);
@@ -495,6 +495,15 @@ export async function slackGroupsCheck(slack: WebClient): Promise<void> {
     "The Slack groups match the lifecycle sheet."
   );
   for (const id of closed) await refreshFinding(id);
+  const held = decisions.filter((d) => d.kind === "held").length;
+  return [
+    differ
+      ? "Slack groups differ from the sheet: Apply is on the alert in the alert channel."
+      : "Slack groups match the sheet.",
+    held ? `${held} Slack group(s) held; see the alert channel.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**
@@ -1198,6 +1207,27 @@ export const NOT_YET_BUILT =
   "The roster has not been built from the lifecycle sheet yet, so there is " +
   "nothing to keep in step. Check it with `/hawkmod lifecycle roster`, then " +
   "build it with `/hawkmod lifecycle roster apply`.";
+
+/**
+ * "Sync now" (`/hawkmod lifecycle sync`, and the CLI): the roster, then the
+ * Slack groups check, so whoever just edited the sheet sees the new Slack
+ * difference — and its Apply — without waiting for the hour. Changes no
+ * Slack group itself. The hourly job runs the same two, separately.
+ */
+export async function syncNow(opts: {
+  slack: WebClient;
+  by: string;
+}): Promise<string> {
+  const roster = await rosterSync(opts);
+  if (!rosterCutoverDone()) return roster;
+  let slack: string;
+  try {
+    slack = await slackGroupsCheck(opts.slack);
+  } catch (err) {
+    slack = `The Slack groups were not checked (${errorText(err)}).`;
+  }
+  return `${roster}\n\n${slack}`;
+}
 
 /**
  * One run of the roster from the sheet, as the hourly job and "sync now" both
