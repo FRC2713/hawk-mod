@@ -15,7 +15,7 @@ import type {
  * CLI's `--members` — which Slack never offers — lists it.
  */
 
-const REASON: Record<HeldReason, string> = {
+export const REASON: Record<HeldReason, string> = {
   inactive: "Inactive on the sheet",
   status_unknown: "Active/Inactive is blank or unknown",
   role_gone: "no longer holds the role this group is for",

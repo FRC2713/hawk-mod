@@ -137,3 +137,60 @@ export async function listGroupHandles(client: WebClient): Promise<string[]> {
     .filter((h): h is string => Boolean(h))
     .sort();
 }
+
+/** A user group as `usergroups.list` describes it, before reading members. */
+export type WorkspaceGroup = {
+  id: string;
+  handle: string;
+  name: string;
+  disabled: boolean;
+  /** Default channels: someone added to the group is added to these. */
+  channels: string[];
+};
+
+/**
+ * Every user group in the workspace, disabled ones too, so a copy whose group
+ * was disabled is reported as that rather than as missing.
+ */
+export async function listUserGroups(
+  client: WebClient
+): Promise<WorkspaceGroup[]> {
+  const list = await client.usergroups.list({ include_disabled: true });
+  return (list.usergroups ?? [])
+    .filter((g): g is typeof g & { id: string } => Boolean(g.id))
+    .map((g) => ({
+      id: g.id,
+      handle: g.handle ?? "",
+      name: g.name ?? "",
+      disabled: Boolean(g.date_delete),
+      channels: g.prefs?.channels ?? [],
+    }));
+}
+
+/** A group's current members, by Slack user ID. */
+export async function groupMembers(
+  client: WebClient,
+  usergroupId: string
+): Promise<string[]> {
+  const res = await client.usergroups.users.list({ usergroup: usergroupId });
+  return res.users ?? [];
+}
+
+/**
+ * `#name (C0123ABC)` for a channel, the way every channel ID is shown
+ * (CLAUDE.md). Falls back to the bare ID when the bot cannot see the channel
+ * — a private one it is not in — rather than failing the whole report.
+ */
+export async function channelLabel(
+  client: WebClient,
+  channelId: string
+): Promise<string> {
+  try {
+    const info = await client.conversations.info({ channel: channelId });
+    return info.channel?.name
+      ? `#${info.channel.name} (${channelId})`
+      : channelId;
+  } catch {
+    return `${channelId} (private, or the bot cannot see it)`;
+  }
+}
