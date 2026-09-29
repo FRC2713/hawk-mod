@@ -1,10 +1,11 @@
 # Lifecycle sync
 
-Status: **steps 0–5 deployed; step 6 built.** The roster has come from the
-sheet since the first apply on 2026-09-28 (#25–#28), the Google Groups since
-the same day (#32–#37), and the Slack user groups since the first Apply on
-2026-09-29 (#38–#42); all three are checked hourly. Step 6, onboarding
-requests and the safety net, is #46, #48, #49 and the pull request after them. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
+Status: **steps 0–6 deployed.** The roster has come from the sheet since the
+first apply on 2026-09-28 (#25–#28), the Google Groups since the same day
+(#32–#37), and the Slack user groups since the first Apply on 2026-09-29
+(#38–#42); all three are checked hourly. Onboarding requests, the welcome and
+the safety net (step 6) have run hourly since 2026-09-29 (#45–#50). Step 7,
+offboarding, is next. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
 below was rewritten on 2026-09-27, after a first step 3 design showed it had
 never been written down; it replaces the earlier "direction of truth" section.
 
