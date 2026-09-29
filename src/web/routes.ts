@@ -11,6 +11,7 @@ import { isSettingKey, SETTING_KEYS, SETTINGS, setting } from "../settings.js";
 import { administrator, NOT_PERMITTED, type Actor } from "../slack/authz.js";
 import { describeValue, validateSetting } from "../slack/settingsAdmin.js";
 import { botClient } from "../slack/tokens.js";
+import { installedWorkspaceAddress } from "../slack/workspace.js";
 import {
   configPage,
   landingPage,
@@ -344,7 +345,8 @@ export const webRoutes: CustomRoute[] = [
   {
     path: "/",
     method: ["GET"],
-    handler: (_req, res) => html(res, 200, landingPage()),
+    handler: async (_req, res) =>
+      html(res, 200, landingPage(await installedWorkspaceAddress())),
   },
   {
     path: "/config",

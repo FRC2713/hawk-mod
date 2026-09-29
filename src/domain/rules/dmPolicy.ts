@@ -29,6 +29,33 @@ export type DmVerdict = {
 };
 
 /**
+ * Everyone in a conversation, by name, students first and marked: an alert
+ * names people and conversations, never content, and a count of "1 account
+ * not on the roster" names nobody anyone can go and ask.
+ */
+export function everyone(members: readonly Member[]): string {
+  const names = [
+    ...members.filter(isStudent).map((m) => `${label(m)} (student)`),
+    ...members.filter(isAdult).map(label),
+    ...members.filter((m) => !isKnown(m)).map(label),
+  ];
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/**
+ * When a conversation's recorded messages were sent, as calendar days where
+ * the team is. The first question about any DM finding is whether it happened
+ * yesterday or two years ago — an adult enrolling late brings their history
+ * with them.
+ */
+export function messageSpan(first: IsoDate, last: IsoDate): string {
+  return first === last
+    ? `Messages on ${first}.`
+    : `Messages from ${first} to ${last}.`;
+}
+
+/**
  * Classifies a DM or group DM against the adult conduct agreement (§4.1–4.2):
  *
  *   - no 1:1 adult–student DMs, ever;
@@ -85,7 +112,10 @@ export function classifyConversation(
       monitored: true,
       violation: "unknown_participant_with_student",
       severity: "violation",
-      summary: `Conversation includes a student and ${unknown.length} account(s) not on the roster.`,
+      summary:
+        `${kind === "im" ? "1:1 DM" : "Group DM"} with ${everyone(members)}: ` +
+        `a student and ${unknown.length === 1 ? "an account" : `${unknown.length} accounts`} ` +
+        "not on the roster.",
       ...base,
     };
   }
@@ -110,7 +140,9 @@ export function classifyConversation(
       monitored: true,
       violation: "group_without_second_adult",
       severity: "violation",
-      summary: `Group DM with ${students.length} student(s) but only ${screened.length} screened adult(s); two are required.`,
+      summary:
+        `Group DM with ${everyone(members)}: only ${screened.length} ` +
+        `screened adult${screened.length === 1 ? "" : "s"}; two are required.`,
       ...base,
     };
   }

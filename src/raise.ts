@@ -1,7 +1,7 @@
 import { findingByKey, upsertFinding } from "./db/repo.js";
 import type { NewFinding } from "./domain/findings.js";
 import { recurs } from "./domain/rules/recurrence.js";
-import { postFinding } from "./slack/alerts.js";
+import { postFinding, refreshFinding } from "./slack/alerts.js";
 
 /**
  * When the thing being reported happened, for findings that describe an event
@@ -44,6 +44,10 @@ export async function raise(
 
   const { id, isNew } = upsertFinding(f, { reopen });
   if (isNew) await postFinding(id);
+  // New words for a finding already posted are redrawn in place, without a
+  // ping: an alert whose text has fallen behind the database is one that
+  // misleads whoever reads it.
+  else if (existing && existing.summary !== f.summary) await refreshFinding(id);
   // `alerted` is what anything advisory should hang off — guidance to the people
   // involved, for instance — so it arrives once per occurrence rather than once
   // per message.
