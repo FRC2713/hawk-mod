@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   decideGroups,
+  GROUP_HELD_PREFIX,
   heldFinding,
   raAnnouncement,
+  runFailedFinding,
   type GroupDecision,
 } from "../src/domain/lifecycle/groupApply.js";
 import {
@@ -247,6 +249,16 @@ describe("what people are told", () => {
     );
     assert.equal(
       lifecycleAction({ kind: wrong.kind, dedupe_key: wrong.dedupeKey }),
+      null
+    );
+  });
+
+  it("raises a failed hourly run under the prefix a clean run closes", () => {
+    const f = runFailedFinding("Google said: Not Authorized");
+    assert.ok(f.dedupeKey.startsWith(GROUP_HELD_PREFIX));
+    assert.match(f.summary, /Not Authorized/);
+    assert.equal(
+      lifecycleAction({ kind: f.kind, dedupe_key: f.dedupeKey }),
       null
     );
   });

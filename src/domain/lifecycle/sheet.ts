@@ -113,6 +113,13 @@ export const SAMPLE_PERSON_IDS: ReadonlySet<string> = new Set([
 const PERSON_ID = /^P\d{4}$/;
 const SLACK_ID = /^[UW][A-Z0-9]{2,}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * Printable ASCII only. `\s` does not cover a zero-width space, and a pasted
+ * address can carry one that nothing on screen shows: Google then treats it
+ * as an address with no account behind it, and the add fails with nothing
+ * visibly wrong in the cell.
+ */
+const PLAIN = /^[\x20-\x7e]+$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Enough of a row to point a problem at it. */
@@ -153,6 +160,15 @@ function email(
   problems: Problems
 ): string | null {
   if (raw === "") return null;
+  if (!PLAIN.test(raw)) {
+    problems.add(
+      tab,
+      row._row,
+      personId,
+      `${column} has a hidden or non-ASCII character; retype it`
+    );
+    return null;
+  }
   if (EMAIL.test(raw)) return raw.toLowerCase();
   problems.add(tab, row._row, personId, `${column} is not an email address`);
   return null;

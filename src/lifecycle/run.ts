@@ -35,6 +35,7 @@ import type { GroupPlanResult } from "../domain/lifecycle/groupPlan.js";
 import {
   decideGroups,
   failedFinding,
+  runFailedFinding,
   GROUP_HELD_PREFIX,
   heldFinding,
   raAnnouncement,
@@ -660,7 +661,12 @@ export async function groupsSync(): Promise<string> {
     log.info("google groups sync skipped: never applied yet");
     return "The Google Groups have not been applied yet; nothing to keep in step.";
   }
-  return groupsReport({ apply: true, actor: HAWK_MOD });
+  try {
+    return await groupsReport({ apply: true, actor: HAWK_MOD });
+  } catch (err) {
+    await raise(runFailedFinding(errorText(err)));
+    throw err;
+  }
 }
 
 /**

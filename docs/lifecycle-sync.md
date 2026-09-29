@@ -1,11 +1,11 @@
 # Lifecycle sync
 
-Status: **steps 0–3 deployed.** The roster has come from the sheet since the
-first apply on 2026-09-28 (#25–#28); it runs hourly and on `lifecycle sync`.
-Step 4 is next. The scope was
-settled with Rachel Moore on 2026-09-25 and 26. The big picture below was
-rewritten on 2026-09-27, after a first step 3 design showed it had never been
-written down; it replaces the earlier "direction of truth" section.
+Status: **steps 0–4 deployed.** The roster has come from the sheet since the
+first apply on 2026-09-28 (#25–#28), and the Google Groups since the same day
+(#32–#37); both run hourly. Step 5 (Slack user groups) is being built. The
+scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
+below was rewritten on 2026-09-27, after a first step 3 design showed it had
+never been written down; it replaces the earlier "direction of truth" section.
 
 ## What it is
 
@@ -295,8 +295,11 @@ Parents drive is kept apart from students by design.
 
 **Copied to Slack (E):** `grp-students`→`@students`, `grp-mentors`→`@mentors`,
 `grp-student-leads`→`@student-leads`, `grp-mentor-leads`→`@mentor-leads`,
-`grp-ra`→`@ra-adults`. The mapping is a DB setting (handles validated against
-Slack), and every mapped handle is necessarily in `MANAGED_USERGROUPS`. Each
+`grp-ra`→`@ra-adults`. Each Slack group is found by its permanent ID in
+`SLACK_GROUP_IDS` (`domain/lifecycle/slackGroups.ts`), in code like the Google
+IDs, never by handle; an ID whose group has another handle is the wrong group
+and nothing is applied to it (decided 2026-09-28, replacing a DB setting
+keyed by handle). Each
 Slack group is computed from the sheet by the same `intendedGroups` as the
 Google group, restricted to people with a Slack account — a mentor not yet
 invited is in the Google group and absent from the Slack one, which is not
@@ -321,9 +324,11 @@ keeps no such token at all:
 - Removals of someone **leaving** are the same thing reached from their own
   finding: **Remove from groups** and **Remove from mentor groups** edit the
   Slack copies with the clicker's grant too.
-- A hand edit to a copied group shows up as a difference and is undone by the
-  next Apply, which names who was added or removed so the editor learns it did
-  not stick. It changes nobody's monitoring.
+- A hand edit to a copied group shows up as a difference. Someone removed
+  by hand who belongs is put back by the next Apply, which names them so the
+  editor learns it did not stick; someone added by hand who does not belong
+  is held and gets their own finding, like anyone leaving. It changes
+  nobody's monitoring.
 
 Nothing safety-relevant waits on this: roles come from the sheet, not from
 these groups. The cost is that someone new appears in `@students` when an
@@ -512,6 +517,37 @@ is where an administrator runs them.
    nothing changes without the click; Apply applies the difference as re-read
    at click time; a non-admin click and a clicker without a grant are refused;
    a hand edit is undone by the next Apply, reported, and changes no role.
+
+   Decided 2026-09-28, before building:
+
+   - **The Google rule, not "every difference".** Apply adds whoever the
+     sheet puts in a copy — someone removed by hand is put back — and removes
+     only a lead or RA flag turned off. Someone leaving (Inactive, role gone,
+     CORI lapsed) or an account the sheet does not account for, including
+     someone added by hand to a group they have no role for, is **held**:
+     kept, never added anywhere, and removed only from their own
+     `group_member_held` or `cori_lapsed` finding, whose buttons reach the
+     Slack copies too. A CORI lapse is a decision with a name on it, not one
+     line in a list.
+   - **Default channels are the point.** Adding someone to a copy adds them to
+     its default channels, which is how a new member lands in the right
+     channels; that is why joining `@mentors` waits for CORI. Removal from a
+     group leaves channels alone, and that is accepted.
+   - **One finding, redrawn in place.** `slack_groups_differ` is updated each
+     run and does not ping again when what differs changes; it alerts anew
+     only after closing and coming back.
+   - A failed hourly Google Groups run is a finding (`google_group_held`,
+     `run_failed`), closed by the next clean run — until now it was only a
+     log line on a host nobody has a shell on.
+
+   Built in four pull requests: (1) the pure planner
+   (`planSlackCopies`, `decideSlackCopies`), with the stricter sheet email
+   check and the failed-run finding; (2) `/hawkmod lifecycle slack-groups`,
+   a read-only dry run that also lists each group's default channels; (3)
+   the hourly finding with **Apply** and **Apply anyway**; (4) `/hawkmod
+group` refusing copies, the leaving buttons reaching Slack, and the
+   `student-group` / `mentor-group` / `managed-groups` settings retired.
+
 6. **Onboarding requests and safety net (H).** Google account requests,
    RHR Email directory check, Slack invites, all in the `onboarding-channel`
    setting's channel.

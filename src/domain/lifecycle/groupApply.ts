@@ -136,6 +136,27 @@ export function failedFinding(
 }
 
 /**
+ * The hourly groups run failed outright: Google refused hawk-mod@, the sheet
+ * could not be read, or anything else that stops the run before it settles.
+ * Without this the failure is a log line on a host nobody has a shell on, and
+ * the groups quietly stop following the sheet. Under the same prefix as the
+ * held groups, so the next run that settles cleanly closes it. The message is
+ * the error's own, which never carries the key (CLAUDE.md).
+ */
+export function runFailedFinding(message: string): NewFinding {
+  return {
+    kind: "google_group_held",
+    dedupeKey: dedupeKey("google_group_held", "run_failed"),
+    severity: "warn",
+    summary:
+      `The hourly Google Groups run failed (${message}). The groups were left ` +
+      "as they were, and nobody new is being added to them until a run " +
+      "succeeds. The next run tries again.",
+    detail: { why: "run_failed" },
+  };
+}
+
+/**
  * The alert-channel line for grp-ra changes, applied automatically or not:
  * grp-ra can edit the lifecycle sheet, so a change to it is a change to who
  * can change everyone's access. Names people; the alert channel may.
