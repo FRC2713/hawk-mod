@@ -5,7 +5,7 @@ first apply on 2026-09-28 (#25–#28), the Google Groups since the same day
 (#32–#37), and the Slack user groups since the first Apply on 2026-09-29
 (#38–#42); all three are checked hourly. Onboarding requests, the welcome and
 the safety net (step 6) have run hourly since 2026-09-29 (#45–#50). Step 7,
-offboarding, is next. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
+offboarding, is being built (see step 7 below). The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
 below was rewritten on 2026-09-27, after a first step 3 design showed it had
 never been written down; it replaces the earlier "direction of truth" section.
 
@@ -613,6 +613,46 @@ group` refusing copies, the leaving buttons reaching Slack, and the
    finding, and "Remove from groups" extended to every live group. _Verify:_
    nothing changes without the click; a non-admin click is refused; the
    removal covers groups the sheet does not compute.
+
+   Planned 2026-09-29 in four pull requests: (1) the pure planner,
+   `domain/lifecycle/offboarding.ts`; (2) reading every group in the
+   Workspace, and whether an account holds an admin role, and a
+   `/hawkmod lifecycle offboarding` dry run that posts nothing — no new
+   Google setup; (3) the alerts and buttons, which need `admin.directory.user`
+   delegated and **Users → Update → Suspend users** on `hawk-mod@`'s role;
+   (4) docs, and whatever the first clicks show. The first clicks are a test,
+   on a throwaway person and Google account Rachel adds to the sheet: Remove
+   from groups has never been clicked in production. Decided with Rachel
+   before building:
+
+   - **One accounts alert per person leaving**, in the alert channel beside
+     their other leaving alerts: **Suspend Google account** while their
+     account is active, and a line asking an admin to deactivate their Slack
+     account, which Slack Pro gives hawk-mod no way to do. It closes on its
+     own when Google shows the account suspended and Slack shows the account
+     deactivated.
+   - **Suspend is offered when a mentor is Inactive, their row is gone, or
+     they are no longer a Mentor** — a mentor turned volunteer should not
+     keep an account that reaches the Red Hawk drive. A lapsed CORI is not
+     leaving, and suspends nothing.
+   - **Leaving is per address.** An RHR Email is theirs while they are an
+     Active Mentor, a School Email while an Active Student, a Personal
+     Email (volunteers and alumni) while Active. A mentor's or student's
+     Personal Email is never looked for, and an address anyone Active still
+     uses — including as an Active student's parent — is never left behind.
+   - **Restore** is a button on the existing "suspended account" onboarding
+     request (step 6), re-reading the sheet and Google at the click, with a
+     reminder to give back any admin role. Monitoring and groups already
+     come back on their own.
+   - **Remove from groups reaches every group in the Workspace**, not just
+     the nine the sheet computes, including where the person is an owner or
+     manager; the alert lists each group and role before the click. Someone
+     leaving who is only in untracked groups gets the alert too.
+   - **An account holding any admin role is not offered Suspend.** Google
+     lets only a Super Admin change another admin's account — Help Desk
+     Admin and custom roles included — so the alert asks a Super Admin to
+     remove the role first.
+
 8. **Delegated admin roles (G).** **Report only** (decided 2026-09-26). Only a
    Super Admin can grant Groups Admin or Help Desk Admin, and the access plan
    keeps Super Admin to three named people — so `hawk-mod@` is never one.
