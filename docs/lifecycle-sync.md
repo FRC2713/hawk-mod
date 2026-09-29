@@ -654,6 +654,10 @@ group` refusing copies, the leaving buttons reaching Slack, and the
      Admin and custom roles included — so the alert asks a Super Admin to
      remove the role first.
 
+   Google setup Part 4 (the `admin.directory.user` scope, and Users →
+   Update → Suspend users on the role) was done 2026-09-29, before part 4
+   was deployed.
+
    Decided after the first dry run (2026-09-29), which found nobody
    leaving and eight groups the sheet does not compute — `bonfire`,
    `grp-contact`, `grp-equipment`, `grp-grants`, `grp-orders`, `Kitchens`,
@@ -669,7 +673,18 @@ group` refusing copies, the leaving buttons reaching Slack, and the
    - **Google accounts no RHR Email reaches are listed** in the dry run, to
      read once before deciding whether they should become an alert — the
      Google counterpart of Slack's `unknown_account`. Every one is a team
-     account, so it is named in full.
+     account, so it is named in full. The second dry run found two,
+     `calendar@` and `hawk-mod@`, and six outsider entries from at most
+     three Gmail addresses in `grp-contact`, `grp-grants`, `Kitchens` and
+     `MelroseKitchenTour`.
+   - **Each becomes a warning** (`google_account_unknown`, and
+     `group_outsider` once per address, listing its groups), acknowledged
+     once for a shared account or a known collaborator — no list of shared
+     accounts kept in code. `hawk-mod@` itself is never warned about.
+   - **Step 7 is finished only after a test** on a throwaway person and
+     Google account: join, leave, Remove from groups (its first real use),
+     Suspend, come back, Restore, then clean up by hand. The Slack half is
+     a reminder and is not part of the test.
 
 8. **Delegated admin roles (G).** **Report only** (decided 2026-09-26). Only a
    Super Admin can grant Groups Admin or Help Desk Admin, and the access plan

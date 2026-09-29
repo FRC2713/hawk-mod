@@ -243,3 +243,45 @@ the users scope alone, and posts nothing. If either step did not take, the
   users scope is missing from the delegation entry.
 - **"refused to list user accounts"** — step 2: the role lacks Users → Read,
   or is not assigned to `hawk-mod@`.
+
+## Part 4 — suspend and restore accounts (step 7 onwards)
+
+Done for Red Hawk on 2026-09-29. Step 7 suspends the Google account of
+someone leaving, and restores it if they come back — each only when an
+administrator clicks **Suspend Google account** or **Restore Google
+account**, and never deleting anything.
+
+1. **One more delegated scope.** Admin console → **Security → Access and
+   data control → API controls → Manage Domain Wide Delegation** → the
+   service account's row → **Edit**. Keep the three scopes already there and
+   add a fourth, comma-separated:
+   - `https://www.googleapis.com/auth/admin.directory.user`
+
+   Google has no narrower scope for suspending. On its own this one could
+   also create and delete accounts; the role in step 2 is what stops that.
+
+2. **Users → Update → Suspend users on the role.** Admin console → **Account
+   → Admin roles → hawk-mod group membership → Privileges → Edit**: under
+   **Users**, open **Update** and tick **Suspend users** only — not Update
+   itself, which ticks everything under it (Reset password among them), and
+   not Create, Delete, Move, Rename, Force password change or the aliases.
+
+The role then reads: Groups → Read and Update; Users → Read, and Update →
+Suspend users. Nothing changes in Google Cloud or hawk_suite, and no
+redeploy is needed.
+
+**Admin accounts cannot be suspended this way.** Google lets only a Super
+Admin change another admin's account — Help Desk Admin and custom roles
+included — so an account holding any admin role gets no Suspend button, and
+its alert asks a Super Admin to remove the role first.
+
+### Checking it
+
+`/hawkmod lifecycle offboarding` asks Google for a token with the new scope
+and changes nothing. Its last lines say either "Suspend and Restore: the
+delegation is in place" or "NOT set up", with Google's reason. It cannot show
+step 2: only a real suspension can. A click that Google refuses says which:
+
+- **"refused to let the service account change user accounts"** — step 1.
+- **"refused to suspend the account"** (or restore) — step 2, or the account
+  holds an admin role of its own.

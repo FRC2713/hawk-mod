@@ -5,6 +5,12 @@ import type { SheetPerson } from "./sheet.js";
 import type { GroupPlanResult, HeldReason } from "./groupPlan.js";
 import type { GroupName } from "./groups.js";
 import {
+  leavingWhy,
+  type Leaver,
+  type OffboardingReason,
+  type UntrackedMembership,
+} from "./offboarding.js";
+import {
   SLACK_GROUP_IDS,
   type SlackCopy,
   type SlackCopyPlan,
@@ -35,6 +41,12 @@ import {
  * Google Group, a Slack group or both, so one click removes them from all of
  * it. A Slack account the sheet does not know gets its own alert, named by
  * its Slack name — a Slack account is not a private address.
+ *
+ * Step 7 widens it to every other group in the Workspace — `grp-orders` and
+ * the like, which the sheet does not compute: someone leaving who is still in
+ * one is gathered into the same alert, and one click takes them out of
+ * those too. Only people leaving; an address the sheet does not have in such
+ * a group is a `group_outsider` warning, never a removal.
  *
  * Step 6's safety net joins the same alert: an Active mentor with a live
  * Slack account and no current CORI is `cori_lapsed` whether or not they are
@@ -70,6 +82,10 @@ export type HeldSubject = {
   entries: HeldEntry[];
   /** Held in Slack user group copies. */
   slack: SlackHeldEntry[];
+  /** Leaving, and still in groups the sheet does not compute. */
+  other: UntrackedMembership[];
+  /** Why they are leaving, when that is known from the offboarding plan. */
+  leaving: OffboardingReason | null;
   /** An Active mentor with a live Slack account and no current CORI. */
   inSlackWithoutCori: boolean;
 };
@@ -112,7 +128,9 @@ export function maskAddress(address: string): string {
 export function heldSubjects(
   plans: readonly GroupPlanResult[],
   slackPlans: readonly SlackCopyPlan[] = [],
-  inSlackWithoutCori: readonly string[] = []
+  inSlackWithoutCori: readonly string[] = [],
+  /** From the offboarding plan: people leaving, with the other groups they are in. */
+  leavers: readonly Leaver[] = []
 ): HeldSubject[] {
   const byKey = new Map<string, Omit<HeldSubject, "key" | "kind">>();
   const subject = (
@@ -133,6 +151,8 @@ export function heldSubjects(
         slackUserId: null,
         entries: [],
         slack: [],
+        other: [],
+        leaving: null,
         inSlackWithoutCori: false,
       })).entries.push({
         group: plan.group,
@@ -149,6 +169,8 @@ export function heldSubjects(
         slackUserId: h.personId ? null : h.slackUserId,
         entries: [],
         slack: [],
+        other: [],
+        leaving: null,
         inSlackWithoutCori: false,
       })).slack.push({
         copy: plan.copy,
@@ -164,14 +186,31 @@ export function heldSubjects(
       slackUserId: null,
       entries: [],
       slack: [],
+      other: [],
+      leaving: null,
       inSlackWithoutCori: false,
     })).inSlackWithoutCori = true;
   }
+  for (const l of leavers) {
+    if (!l.groups.length) continue;
+    const s = subject(l.personId, () => ({
+      personId: l.personId,
+      address: null,
+      slackUserId: null,
+      entries: [],
+      slack: [],
+      other: [],
+      leaving: null,
+      inSlackWithoutCori: false,
+    }));
+    s.other.push(...l.groups);
+    s.leaving = l.reason;
+  }
   return [...byKey.entries()].map(([id, s]) => {
     // Vacuously true for a mentor held nowhere but in Slack itself.
-    const coriOnly = [...s.entries, ...s.slack].every(
-      (e) => e.reason === "no_access"
-    );
+    const coriOnly =
+      !s.other.length &&
+      [...s.entries, ...s.slack].every((e) => e.reason === "no_access");
     const kind = coriOnly ? "cori_lapsed" : "group_member_held";
     return { ...s, kind, key: dedupeKey(kind, id) };
   });
@@ -186,6 +225,23 @@ const WHY: Record<Exclude<HeldReason, "not_on_sheet">, string> = {
   other_address: "is in a group under a second address of theirs",
   parent_not_listed: "is no longer an Active student",
 };
+
+const OTHER_ROLE: Record<UntrackedMembership["role"], string> = {
+  OWNER: " (owner)",
+  MANAGER: " (manager)",
+  MEMBER: "",
+};
+
+/** Each other group once, with the most senior role they hold there. */
+function otherGroups(other: readonly UntrackedMembership[]): string[] {
+  const rank = { OWNER: 0, MANAGER: 1, MEMBER: 2 } as const;
+  const best = new Map<string, UntrackedMembership>();
+  for (const o of other) {
+    const seen = best.get(o.groupId);
+    if (!seen || rank[o.role] < rank[seen.role]) best.set(o.groupId, o);
+  }
+  return [...best.values()].map((o) => `${o.groupName}${OTHER_ROLE[o.role]}`);
+}
 
 export function heldMemberFinding(
   s: HeldSubject,
@@ -203,6 +259,7 @@ export function heldMemberFinding(
     ...new Set([
       ...own.map((e) => e.group),
       ...s.slack.map((e) => `@${SLACK_GROUP_IDS[e.copy].handle}`),
+      ...otherGroups(s.other),
     ]),
   ].join(", ");
   const base = {
@@ -219,6 +276,15 @@ export function heldMemberFinding(
         ? { slack: s.slack.map((e) => ({ copy: e.copy, reason: e.reason })) }
         : {}),
       ...(s.inSlackWithoutCori ? { inSlackWithoutCori: true } : {}),
+      ...(s.other.length
+        ? {
+            other: s.other.map((o) => ({
+              groupId: o.groupId,
+              groupName: o.groupName,
+              role: o.role,
+            })),
+          }
+        : {}),
     },
   };
 
@@ -271,8 +337,12 @@ export function heldMemberFinding(
     };
   }
 
-  const why =
-    WHY[(own[0] ?? parents[0] ?? s.slack[0])!.reason as keyof typeof WHY];
+  const first = own[0] ?? parents[0] ?? s.slack[0];
+  const why = first
+    ? WHY[first.reason as keyof typeof WHY]
+    : s.leaving
+      ? leavingWhy(s.leaving)
+      : "is leaving";
   const where = [
     groups ? `still in ${groups}` : "",
     parents.length

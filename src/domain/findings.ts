@@ -53,6 +53,15 @@ export const FINDING_KINDS = [
   "onboarding_rhr_email",
   /** Someone ready for Slack is not in it: invite, or reactivate. */
   "onboarding_slack_invite",
+  /**
+   * Someone leaving still has a Google account (Suspend) or a Slack account
+   * (an admin deactivates it by hand).
+   */
+  "offboarding_accounts",
+  /** An active Google account no one's RHR Email on the sheet reaches. */
+  "google_account_unknown",
+  /** An address the sheet does not have, in a group it does not compute. */
+  "group_outsider",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];

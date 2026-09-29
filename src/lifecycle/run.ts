@@ -17,14 +17,18 @@ import {
   addMember,
   DIRECTORY_GROUP_MEMBER,
   DIRECTORY_GROUP_READONLY,
+  DIRECTORY_USER,
   DIRECTORY_USER_READONLY,
+  checkSuspendDelegation,
   listDomainGroups,
+  setSuspended,
   listDomainUsers,
   readGroup,
   removeMember,
 } from "../google/directory.js";
 import {
   planOnboarding,
+  rhrEmailProblem,
   type DirectoryAccount,
 } from "../domain/lifecycle/onboarding.js";
 import { formatOnboarding } from "../domain/lifecycle/onboardingReport.js";
@@ -33,9 +37,20 @@ import {
   planOffboarding,
   planUnaccounted,
   type DomainGroup,
+  type Leaver,
   type OffboardingAccount,
 } from "../domain/lifecycle/offboarding.js";
 import { formatOffboarding } from "../domain/lifecycle/offboardingReport.js";
+import {
+  GOOGLE_ACCOUNT_UNKNOWN,
+  GROUP_OUTSIDER,
+  OFFBOARDING_ACCOUNTS,
+  OFFBOARDING_DONE_NOTE,
+  groupOutsiderFindings,
+  offboardingAccountsFinding,
+  unknownGoogleAccountFinding,
+} from "../domain/lifecycle/offboardingFindings.js";
+import { installedWorkspaceAddress } from "../slack/workspace.js";
 import {
   ONBOARDING_DONE_NOTE,
   onboardingFinding,
@@ -54,6 +69,7 @@ import {
   HELD_MEMBER_PREFIXES,
   heldMemberFinding,
   heldSubjects,
+  type HeldSubject,
   mentorsInSlackWithoutCori,
 } from "../domain/lifecycle/heldMembers.js";
 import type { GroupPlanResult } from "../domain/lifecycle/groupPlan.js";
@@ -91,6 +107,7 @@ import {
   findingByKey,
   finishAuditRun,
   GROUPS_RUN,
+  insertAccountChange,
   insertGroupChange,
   listPeople,
   resolveMissingWithPrefix,
@@ -686,7 +703,7 @@ export async function groupsReport(
     source: "lifecycle_groups",
   });
   await settleHeldFindings(decisions, outcome.failed);
-  await settleHeldMembers(plans, parsed);
+  await settleHeldMembers(plans, parsed, directory);
   return `${text}\n\n${outcome.summary}`;
 }
 
@@ -697,7 +714,8 @@ export async function groupsReport(
  */
 async function settleHeldMembers(
   plans: GroupPlanResult[],
-  parsed: ReturnType<typeof parseSheet>
+  parsed: ReturnType<typeof parseSheet>,
+  directory: ReturnType<typeof serviceAccountClient>
 ): Promise<void> {
   const names = new Map(parsed.people.map((p) => [p.personId, p.name]));
   const slackByPerson = new Map(
@@ -716,9 +734,18 @@ async function settleHeldMembers(
       error: errorText(err),
     });
   }
+  // Step 7: people leaving who are still in groups the sheet does not
+  // compute. The same caution: if those groups cannot be read, raise what
+  // the rest shows and close nothing.
+  const leavers = await leaversInOtherGroups(parsed, directory);
   const seen = new Set<string>();
   const withoutCori = slack ? slackWithoutCori(parsed, slack.slackIds) : [];
-  for (const subject of heldSubjects(plans, slack?.plans ?? [], withoutCori)) {
+  for (const subject of heldSubjects(
+    plans,
+    slack?.plans ?? [],
+    withoutCori,
+    leavers ?? []
+  )) {
     const f = heldMemberFinding(subject, {
       names,
       inSlack: (id) => slackByPerson.has(id),
@@ -727,13 +754,54 @@ async function settleHeldMembers(
     seen.add(f.dedupeKey);
     await raise(f);
   }
-  if (!slack) return;
+  if (!slack || !leavers) return;
   const closed = resolveMissingWithPrefix(
     HELD_MEMBER_PREFIXES,
     seen,
     "No longer held: out of the group, or belongs in it again."
   );
   for (const id of closed) await refreshFinding(id);
+}
+
+/** hawk-mod's roster rows that carry a Person ID, as the offboarding plan reads them. */
+function rosterEntries() {
+  return listPeople(false).flatMap((p) =>
+    p.person_id
+      ? [
+          {
+            personId: p.person_id,
+            name: p.full_name,
+            email: p.email,
+            slackUserId: p.slack_user_id,
+          },
+        ]
+      : []
+  );
+}
+
+/**
+ * Everyone leaving who is still in a group the sheet does not compute, with
+ * those groups; `null` if the Workspace's groups could not be read.
+ */
+async function leaversInOtherGroups(
+  parsed: ReturnType<typeof parseSheet>,
+  directory: ReturnType<typeof serviceAccountClient>
+): Promise<Leaver[] | null> {
+  try {
+    const groups = await listDomainGroups(directory);
+    return planOffboarding({
+      people: parsed.people,
+      roster: rosterEntries(),
+      slackAccounts: [],
+      directory: null,
+      groups,
+    }).leavers.filter((l) => l.groups.length);
+  } catch (err) {
+    log.error("could not read the Workspace's other groups", {
+      error: errorText(err),
+    });
+    return null;
+  }
 }
 
 /** Active mentors with a live Slack account and no current CORI. */
@@ -765,11 +833,22 @@ export async function groupsRemoveHeld(opts: {
 }): Promise<{ text: string; done: boolean; stillInSlack?: boolean }> {
   const { parsed, directory, plans, found, missing } = await readGroupInputs();
   const slackBefore = await readSlackCopyInputs(botClient());
+  const leavers = await leaversInOtherGroups(parsed, directory);
   const subject = heldSubjects(
     plans,
     slackBefore.plans,
-    slackWithoutCori(parsed, slackBefore.slackIds)
+    slackWithoutCori(parsed, slackBefore.slackIds),
+    leavers ?? []
   ).find((s) => s.key === opts.key);
+  if (!subject && !leavers) {
+    // They may be held only in a group that could not be read: not done.
+    return {
+      text:
+        "The Workspace's groups could not be read, so nothing was removed. " +
+        "Try again later.",
+      done: false,
+    };
+  }
   if (!subject) {
     return {
       text: "Nothing is held for them any more; nothing was removed.",
@@ -824,6 +903,24 @@ export async function groupsRemoveHeld(opts: {
       `Not touched, because the group is wrong or missing: ${skipped.join(", ")}.`
     );
   }
+  // Step 7: the groups the sheet does not compute, read again just now.
+  let otherDone = true;
+  if (subject.other.length) {
+    const other = await removeFromOtherGroups({
+      directory,
+      subject,
+      actor: opts.actor,
+      reason: opts.reason,
+    });
+    lines.push(`Other groups: ${other.text}`);
+    otherDone = other.done;
+  } else if (!leavers && subject.personId) {
+    lines.push(
+      "Other groups: not checked, because the Workspace's groups could not " +
+        "be read. Nothing was removed from them; try again later."
+    );
+    otherDone = false;
+  }
   let slackDone = true;
   if (subject.slack.length) {
     const slack = await removeHeldFromSlack({
@@ -836,7 +933,7 @@ export async function groupsRemoveHeld(opts: {
     lines.push(`Slack: ${slack.text}`);
     slackDone = slack.done;
   }
-  const done = !failed && !skipped.length && slackDone;
+  const done = !failed && !skipped.length && slackDone && otherDone;
   // Out of every group, but still in Slack without CORI: the alert stays
   // open, redrawn to say only that, rather than closing now and coming back
   // at the next hourly run with a fresh ping.
@@ -860,6 +957,61 @@ export async function groupsRemoveHeld(opts: {
     text: lines.join("\n"),
     done,
     stillInSlack: subject.inSlackWithoutCori,
+  };
+}
+
+/**
+ * Remove from groups, for the groups the sheet does not compute (step 7):
+ * each membership the click-time re-read still finds, whatever the role —
+ * owners and managers too, which the alert listed before the click. Each
+ * removal is recorded against the clicker in `group_changes`, like the
+ * computed groups'. One refusal does not stop the rest.
+ */
+async function removeFromOtherGroups(opts: {
+  directory: ReturnType<typeof serviceAccountClient>;
+  subject: HeldSubject;
+  actor: GroupsActor;
+  reason: string;
+}): Promise<{ text: string; done: boolean }> {
+  const rosterId = opts.subject.personId
+    ? (listPeople(false).find((p) => p.person_id === opts.subject.personId)
+        ?.id ?? null)
+    : null;
+  const removed: string[] = [];
+  const failed: string[] = [];
+  for (const m of opts.subject.other) {
+    try {
+      await removeMember(opts.directory, m.groupId, m.address);
+    } catch (err) {
+      failed.push(`${m.groupName} (Google said: ${errorText(err)})`);
+      continue;
+    }
+    insertGroupChange({
+      usergroupId: m.groupId,
+      handle: m.groupName,
+      action: "remove",
+      subject: m.address,
+      personId: rosterId,
+      actor: opts.actor.slackUserId,
+      actorName: opts.actor.name,
+      reason: opts.reason,
+      source: "remove_from_groups",
+    });
+    removed.push(m.groupName);
+  }
+  log.info("removed leaver from other groups", {
+    by: opts.actor.name,
+    removed: removed.length,
+    failed: failed.length,
+  });
+  return {
+    text: [
+      removed.length ? `removed from ${[...new Set(removed)].join(", ")}.` : "",
+      failed.length ? `not removed from ${failed.join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    done: !failed.length,
   };
 }
 
@@ -1181,6 +1333,11 @@ export async function lifecycleHourly(slack: WebClient): Promise<void> {
     } catch (err) {
       log.error("hourly onboarding check failed", { error: errorText(err) });
     }
+    try {
+      await offboardingCheck(slack);
+    } catch (err) {
+      log.error("hourly offboarding check failed", { error: errorText(err) });
+    }
     // After the roster, which links newly arrived Slack accounts: the
     // welcome goes to whoever the roster now knows is an adult in Slack.
     try {
@@ -1305,7 +1462,13 @@ export async function syncNow(opts: {
   } catch (err) {
     onboarding = `Onboarding was not checked (${errorText(err)}).`;
   }
-  return `${roster}\n\n${slack}\n\n${onboarding}`;
+  let offboarding: string;
+  try {
+    offboarding = await offboardingCheck(opts.slack);
+  } catch (err) {
+    offboarding = `Offboarding was not checked (${errorText(err)}).`;
+  }
+  return `${roster}\n\n${slack}\n\n${onboarding}\n\n${offboarding}`;
 }
 
 /**
@@ -1450,7 +1613,10 @@ export async function onboardingCheck(slack: WebClient): Promise<string> {
  * of its own, so a refusal names the setting that is missing and the rest
  * of the plan still stands.
  */
-async function readOffboardingInputs(slack: WebClient) {
+async function readOffboardingInputs(
+  slack: WebClient,
+  opts: { groups?: boolean } = {}
+) {
   const env = requireGoogle();
   const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
   const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
@@ -1467,30 +1633,21 @@ async function readOffboardingInputs(slack: WebClient) {
   }
   let groups: DomainGroup[] | null = null;
   let groupsError: string | null = null;
-  try {
-    groups = await listDomainGroups(
-      serviceAccountClient(
-        env,
-        [DIRECTORY_GROUP_READONLY, DIRECTORY_GROUP_MEMBER],
-        googleActor()
-      )
-    );
-  } catch (err) {
-    groupsError = errorText(err);
-  }
+  // A Suspend click needs only the accounts; reading every group is skipped.
+  if (opts.groups !== false)
+    try {
+      groups = await listDomainGroups(
+        serviceAccountClient(
+          env,
+          [DIRECTORY_GROUP_READONLY, DIRECTORY_GROUP_MEMBER],
+          googleActor()
+        )
+      );
+    } catch (err) {
+      groupsError = errorText(err);
+    }
 
-  const roster = listPeople(false).flatMap((p) =>
-    p.person_id
-      ? [
-          {
-            personId: p.person_id,
-            name: p.full_name,
-            email: p.email,
-            slackUserId: p.slack_user_id,
-          },
-        ]
-      : []
-  );
+  const roster = rosterEntries();
   const plan = planOffboarding({
     people: parsed.people,
     roster,
@@ -1509,6 +1666,8 @@ async function readOffboardingInputs(slack: WebClient) {
     groups,
   });
   return {
+    env,
+    parsed,
     plan,
     unaccounted,
     users,
@@ -1536,10 +1695,21 @@ export async function offboardingReport(opts: {
     directoryError,
     groups,
     groupsError,
+    env,
   } = await readOffboardingInputs(opts.slack);
+  let suspend: { ok: true } | { error: string };
+  try {
+    await checkSuspendDelegation(
+      serviceAccountClient(env, [DIRECTORY_USER], googleActor())
+    );
+    suspend = { ok: true };
+  } catch (err) {
+    suspend = { error: errorText(err) };
+  }
   return formatOffboarding({
     plan,
     unaccounted,
+    suspend,
     asOf: today(),
     slackAccounts: users.length,
     directory: directory
@@ -1555,4 +1725,218 @@ export async function offboardingReport(opts: {
         }
       : { error: groupsError ?? "unknown error" },
   });
+}
+
+/** Where an admin deactivates a Slack account, or null if unknown. */
+async function slackAdminUrl(): Promise<string | null> {
+  const host = await installedWorkspaceAddress();
+  return host ? `https://${host}/admin` : null;
+}
+
+/**
+ * The hourly offboarding check (step 7): one accounts alert per person
+ * leaving with a Google or Slack account left, one warning per Google
+ * account no RHR Email reaches (hawk-mod@ itself aside), and one per
+ * outsider in a group the sheet does not compute. Each closes when the run
+ * no longer sees it — but only a run that read the part it depends on, so an
+ * unreadable Google never reads as "all done". Returns a line for "sync now".
+ */
+export async function offboardingCheck(slack: WebClient): Promise<string> {
+  const { plan, unaccounted, directoryError, groupsError } =
+    await readOffboardingInputs(slack);
+  const url = await slackAdminUrl();
+  const self = googleActor().toLowerCase();
+
+  const seen = new Set<string>();
+  let accounts = 0;
+  for (const l of plan.leavers) {
+    const f = offboardingAccountsFinding(l, url);
+    if (!f) continue;
+    seen.add(f.dedupeKey);
+    accounts++;
+    await raise(f);
+  }
+  let warnings = 0;
+  for (const a of unaccounted.accounts) {
+    if (a.account === self) continue;
+    const f = unknownGoogleAccountFinding(a);
+    seen.add(f.dedupeKey);
+    warnings++;
+    await raise(f);
+  }
+  for (const f of groupOutsiderFindings(unaccounted.outsiders)) {
+    seen.add(f.dedupeKey);
+    warnings++;
+    await raise(f);
+  }
+
+  const prefixes = [
+    ...(plan.directoryChecked
+      ? [`${OFFBOARDING_ACCOUNTS}:`, `${GOOGLE_ACCOUNT_UNKNOWN}:`]
+      : []),
+    ...(plan.groupsChecked ? [`${GROUP_OUTSIDER}:`] : []),
+  ];
+  const closed = resolveMissingWithPrefix(
+    prefixes,
+    seen,
+    OFFBOARDING_DONE_NOTE
+  );
+  for (const id of closed) await refreshFinding(id);
+
+  const errors = [
+    directoryError ? `Google accounts were not read (${directoryError}).` : "",
+    groupsError ? `The Workspace's groups were not read (${groupsError}).` : "",
+  ].filter(Boolean);
+  for (const e of errors)
+    log.error("offboarding: part not checked", { error: e });
+  return (
+    `Offboarding: ${accounts} accounts alert(s) and ${warnings} warning(s) ` +
+    `open, ${closed.length} done.` +
+    (errors.length ? ` ${errors.join(" ")}` : "")
+  );
+}
+
+/**
+ * **Suspend Google account**, from an accounts alert. Re-reads the sheet,
+ * the roster and Google now, and suspends only if the person is still
+ * leaving and the account is still active and holds no admin role. Never
+ * deletes. Recorded in `account_changes` against the clicker, with their
+ * reason. Returns what to tell the clicker, and the alert as it should read
+ * now — `null` when nothing is left for it to ask.
+ */
+export async function suspendAccount(opts: {
+  slack: WebClient;
+  personId: string;
+  actor: GroupsActor;
+  reason: string;
+}): Promise<{
+  text: string;
+  /** The alert as it should read now; `undefined` to leave it as it is. */
+  after: NewFinding | null | undefined;
+  changed: boolean;
+}> {
+  const { env, plan, directoryError } = await readOffboardingInputs(
+    opts.slack,
+    { groups: false }
+  );
+  const url = await slackAdminUrl();
+  const leaver = plan.leavers.find((l) => l.personId === opts.personId);
+  const now = (l: Leaver | undefined) =>
+    l ? offboardingAccountsFinding(l, url) : null;
+  if (!plan.directoryChecked) {
+    // Not "nothing left": Google simply could not be asked.
+    return {
+      text: `Google's accounts could not be read, so nothing was changed (${directoryError}).`,
+      after: undefined,
+      changed: false,
+    };
+  }
+  if (!leaver?.google) {
+    return {
+      text:
+        "The lifecycle sheet and Google no longer show an active account to " +
+        "suspend for them; nothing was changed.",
+      after: now(leaver),
+      changed: false,
+    };
+  }
+  if (leaver.google.admin) {
+    return {
+      text:
+        `${leaver.google.account} holds a Google admin role, which only a ` +
+        "Super Admin can change. Nothing was changed: a Super Admin removes " +
+        "the role first.",
+      after: now(leaver),
+      changed: false,
+    };
+  }
+  const account = leaver.google.account;
+  await setSuspended(
+    serviceAccountClient(env, [DIRECTORY_USER], googleActor()),
+    account,
+    true
+  );
+  insertAccountChange({
+    personId: opts.personId,
+    account,
+    action: "suspend",
+    actor: opts.actor.slackUserId,
+    actorName: opts.actor.name,
+    reason: opts.reason,
+  });
+  log.info("google account suspended", { by: opts.actor.name });
+  const after = now({ ...leaver, google: null });
+  return {
+    text:
+      `Suspended ${account}. Nothing was deleted; if they come back and the ` +
+      "sheet says Active again, the onboarding request offers Restore." +
+      (after ? " Their Slack account still needs deactivating by hand." : ""),
+    after,
+    changed: true,
+  };
+}
+
+/**
+ * **Restore Google account**, from the onboarding request an Active mentor
+ * with a suspended account raises. Re-reads the sheet and Google now, and
+ * restores only if they are still an Active Mentor and their RHR Email is
+ * still a suspended account. Admin roles are not restored — hawk-mod never
+ * grants one — so the reply reminds a Super Admin.
+ */
+export async function restoreAccount(opts: {
+  personId: string;
+  actor: GroupsActor;
+  reason: string | null;
+}): Promise<{ text: string; changed: boolean; stillTrue: boolean }> {
+  const env = requireGoogle();
+  const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
+  const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
+  const person = parsed.people.find((p) => p.personId === opts.personId);
+  const rhr = person?.mentor?.rhrEmail?.toLowerCase() ?? null;
+  if (
+    !person ||
+    person.status !== "active" ||
+    !person.roles.includes("Mentor") ||
+    !rhr
+  ) {
+    return {
+      text:
+        "The lifecycle sheet no longer says they are an Active Mentor with an " +
+        "RHR Email, so nothing was changed.",
+      changed: false,
+      stillTrue: false,
+    };
+  }
+  const directory = await listDomainUsers(
+    serviceAccountClient(env, [DIRECTORY_USER_READONLY], googleActor())
+  );
+  if (rhrEmailProblem(rhr, directory)?.kind !== "suspended") {
+    return {
+      text: `${rhr} is not a suspended account any more; nothing was changed.`,
+      changed: false,
+      stillTrue: false,
+    };
+  }
+  await setSuspended(
+    serviceAccountClient(env, [DIRECTORY_USER], googleActor()),
+    rhr,
+    false
+  );
+  insertAccountChange({
+    personId: opts.personId,
+    account: rhr,
+    action: "restore",
+    actor: opts.actor.slackUserId,
+    actorName: opts.actor.name,
+    reason: opts.reason,
+  });
+  log.info("google account restored", { by: opts.actor.name });
+  return {
+    text:
+      `Restored ${rhr}. They rejoin their groups at the next hourly run. ` +
+      "If they held a Google admin role, a Super Admin gives it back — " +
+      "hawk-mod never grants one.",
+    changed: true,
+    stillTrue: true,
+  };
 }

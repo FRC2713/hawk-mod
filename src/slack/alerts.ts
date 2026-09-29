@@ -8,6 +8,10 @@ import {
   isOnboardingKind,
   ONBOARDING_CLOSES_WHEN,
 } from "../domain/lifecycle/onboardingFindings.js";
+import {
+  OFFBOARDING_ACCOUNTS,
+  offersSuspend,
+} from "../domain/lifecycle/offboardingFindings.js";
 import { botClient } from "./tokens.js";
 
 /**
@@ -60,8 +64,12 @@ function postedChannel(f: Finding): string | null {
 function inAnyGroup(detail: string | null | undefined): boolean {
   // No detail is an older row, from before step 6: those were always groups.
   if (!detail) return true;
-  const d = JSON.parse(detail) as { entries?: unknown[]; slack?: unknown[] };
-  return Boolean(d.entries?.length || d.slack?.length);
+  const d = JSON.parse(detail) as {
+    entries?: unknown[];
+    slack?: unknown[];
+    other?: unknown[];
+  };
+  return Boolean(d.entries?.length || d.slack?.length || d.other?.length);
 }
 
 export const ACK_ACTION = "hawkmod_finding_ack";
@@ -73,6 +81,15 @@ export const APPLY_ANYWAY_ACTION = "hawkmod_groups_apply_anyway";
 export const REMOVE_FROM_GROUPS_ACTION = "hawkmod_remove_from_groups";
 export const SLACK_APPLY_ACTION = "hawkmod_slack_groups_apply";
 export const SLACK_APPLY_ANYWAY_ACTION = "hawkmod_slack_groups_apply_anyway";
+export const SUSPEND_GOOGLE_ACTION = "hawkmod_suspend_google_account";
+export const RESTORE_GOOGLE_ACTION = "hawkmod_restore_google_account";
+
+/** Whether an onboarding RHR Email request is about a suspended account. */
+function suspendedRequest(detail: string | null | undefined): boolean {
+  if (!detail) return false;
+  const d = JSON.parse(detail) as { problem?: { kind?: string } };
+  return d.problem?.kind === "suspended";
+}
 
 /**
  * The one change a lifecycle finding asks a person to make, if it asks one.
@@ -95,6 +112,27 @@ export function lifecycleAction(
   /** What the alert's footer says about the button, when not the default. */
   context?: string;
 } | null {
+  // Step 7: an Active mentor whose account is suspended — someone who came
+  // back — is restored by a click, re-read at the click. Access-giving and
+  // routine, like Apply; the note is optional and recorded.
+  if (f.kind === "onboarding_rhr_email" && suspendedRequest(f.detail)) {
+    return {
+      actionId: RESTORE_GOOGLE_ACTION,
+      label: "Restore Google account",
+      routine: true,
+      context:
+        "Restore re-reads the lifecycle sheet and Google first, and restores the account as hawk-mod@; it closes by itself if the account is restored some other way",
+    };
+  }
+  // Someone leaving with a Google account still active: Suspend, never
+  // delete. With only a Slack account left, or an account holding an admin
+  // role, there is nothing hawk-mod can do: Acknowledge and Resolve, and the
+  // run closes it once Google and Slack show it done.
+  if (f.kind === OFFBOARDING_ACCOUNTS) {
+    return offersSuspend(f.detail)
+      ? { actionId: SUSPEND_GOOGLE_ACTION, label: "Suspend Google account" }
+      : null;
+  }
   // An onboarding request is done by doing it, outside hawk-mod; the run
   // closes it when the sheet or Slack shows it. The button only says who
   // has it, so two people do not both create one account.

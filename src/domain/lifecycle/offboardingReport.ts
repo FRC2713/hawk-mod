@@ -62,6 +62,8 @@ export function formatOffboarding(opts: {
   groups: { untracked: DomainGroup[]; total: number } | { error: string };
   /** What nobody on the sheet accounts for; parts not read are left out. */
   unaccounted?: Unaccounted;
+  /** Whether hawk-mod@ may be given a token to suspend and restore accounts. */
+  suspend?: { ok: true } | { error: string };
 }): string {
   const { leavers } = opts.plan;
   const google = leavers.filter((l) => l.google);
@@ -111,10 +113,9 @@ export function formatOffboarding(opts: {
 
   lines.push(
     "",
-    "Once alerts are on, each person with a Google or Slack account left " +
-      "gets one accounts alert, and anyone still in a group gets Remove from " +
-      "groups, which will cover the groups above as well as the nine the " +
-      "sheet computes."
+    "Each person with a Google or Slack account left gets one accounts " +
+      "alert, and anyone still in a group gets Remove from groups, which " +
+      "covers the groups above as well as the nine the sheet computes."
   );
 
   const un = opts.unaccounted;
@@ -135,8 +136,8 @@ export function formatOffboarding(opts: {
     lines.push(
       "",
       `Members of groups the sheet does not compute who are not on the ` +
-        `lifecycle sheet: ${un.outsiders.length} (once alerts are on, each ` +
-        `is a warning; nobody is removed)`
+        `lifecycle sheet: ${un.outsiders.length} (each address is one ` +
+        `warning; nobody is removed)`
     );
     for (const o of un.outsiders) {
       lines.push(`  ${o.groupName}: ${maskAddress(o.address)}${ROLE[o.role]}`);
@@ -157,6 +158,16 @@ export function formatOffboarding(opts: {
         `  ${g.name || "(no name)"} (${g.id}): ${g.members.length} member(s)`
       );
     }
+  }
+
+  if (opts.suspend) {
+    lines.push(
+      "",
+      "ok" in opts.suspend
+        ? "Suspend and Restore: the delegation is in place. Whether " +
+            "hawk-mod@'s role may suspend shows only at the first click."
+        : "Suspend and Restore: NOT set up. " + opts.suspend.error
+    );
   }
 
   lines.push(

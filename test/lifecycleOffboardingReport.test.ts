@@ -279,7 +279,7 @@ describe("the offboarding dry run: what nobody accounts for", () => {
     );
     assert.match(
       text,
-      /who are not on the lifecycle sheet: 1 \(once alerts are on, each is a warning; nobody is removed\)\n {2}grp-orders: v…@supplier\.example \(manager\)/
+      /who are not on the lifecycle sheet: 1 \(each address is one warning; nobody is removed\)\n {2}grp-orders: v…@supplier\.example \(manager\)/
     );
     assert.doesNotMatch(text, /vendor@/);
   });
