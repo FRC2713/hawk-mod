@@ -11,9 +11,12 @@ import {
 import {
   groupsApplyAnyway,
   groupsRemoveHeld,
+  restoreAccount,
   rosterFindingStillTrue,
   slackGroupsApply,
+  suspendAccount,
 } from "../lifecycle/run.js";
+import { raise } from "../raise.js";
 import { GROUPS, type GroupName } from "../domain/lifecycle/groups.js";
 import {
   SLACK_COPIES,
@@ -28,6 +31,8 @@ import {
   REMOVE_FROM_GROUPS_ACTION,
   SLACK_APPLY_ACTION,
   SLACK_APPLY_ANYWAY_ACTION,
+  RESTORE_GOOGLE_ACTION,
+  SUSPEND_GOOGLE_ACTION,
   lifecycleAction,
   MAKE_ADULT_ACTION,
   RESOLVE_ACTION,
@@ -246,7 +251,9 @@ type LifecycleMeta = {
     | typeof APPLY_ANYWAY_ACTION
     | typeof REMOVE_FROM_GROUPS_ACTION
     | typeof SLACK_APPLY_ACTION
-    | typeof SLACK_APPLY_ANYWAY_ACTION;
+    | typeof SLACK_APPLY_ANYWAY_ACTION
+    | typeof SUSPEND_GOOGLE_ACTION
+    | typeof RESTORE_GOOGLE_ACTION;
   /** Where the button was, so the outcome can be told to the clicker there. */
   channel: string | null;
   /** The workspace, for the clicker's own group-editing grant. */
@@ -309,6 +316,19 @@ const VIEW_TEXT: Record<
       "Takes them out of the Google Groups and Slack user groups this alert lists — and a departing student's parents out of grp-parents, unless a sibling still keeps them in. Slack groups are changed as you, with your own group-editing permission. The sheet and the groups are read again first; anyone who belongs again by now is left alone. It does not end monitoring, and it does not deactivate anyone's Slack account.",
     placeholder: "Graduated in June.",
   },
+  [SUSPEND_GOOGLE_ACTION]: {
+    title: "Suspend account",
+    explain:
+      "Suspends their Google account, as hawk-mod@: they can no longer sign in, and nothing is deleted — it can be restored. The lifecycle sheet and Google are read again first, and nothing changes if they are no longer leaving, the account is already suspended, or it holds an admin role. It does not remove them from groups, end monitoring, or touch Slack.",
+    placeholder: "Stepped down as a mentor in September.",
+  },
+  [RESTORE_GOOGLE_ACTION]: {
+    title: "Restore account",
+    explain:
+      "Restores their suspended Google account, as hawk-mod@, so they can sign in again. The lifecycle sheet and Google are read again first, and nothing changes unless they are still an Active Mentor with a suspended account. Admin roles are not restored; a Super Admin gives those back.",
+    placeholder: "Optional: back for the 2027 season.",
+    optional: true,
+  },
   [APPLY_ANYWAY_ACTION]: {
     title: "Apply anyway",
     explain:
@@ -369,6 +389,8 @@ function registerLifecycleActions(app: App): void {
     REMOVE_FROM_GROUPS_ACTION,
     SLACK_APPLY_ACTION,
     SLACK_APPLY_ANYWAY_ACTION,
+    SUSPEND_GOOGLE_ACTION,
+    RESTORE_GOOGLE_ACTION,
   ] as const) {
     app.action(action, async ({ ack, body, client }) => {
       await ack();
@@ -483,6 +505,62 @@ async function applyLifecycleAction(
       await closeFinding(finding.id, by, `Removed from groups: ${note}`);
     }
     log.info("removed from groups", { findingId: finding.id, by });
+    return outcome.text;
+  }
+
+  if (meta.action === SUSPEND_GOOGLE_ACTION) {
+    const personId = finding.subject_ref;
+    if (!personId) {
+      return `Finding #${finding.id} names nobody; nothing was changed.`;
+    }
+    const outcome = await suspendAccount({
+      slack: client,
+      personId,
+      actor: caller,
+      reason: note,
+    });
+    // Redrawn as it reads now: without Suspend once suspended, or closed
+    // when nothing is left for it to ask (no Slack account either).
+    if (outcome.after) await raise(outcome.after);
+    else if (outcome.after === null) {
+      await closeFinding(
+        finding.id,
+        by,
+        outcome.changed ? `Suspended: ${note}` : "Nothing left to do."
+      );
+    }
+    log.info("suspend google account clicked", {
+      findingId: finding.id,
+      changed: outcome.changed,
+      by,
+    });
+    return outcome.text;
+  }
+
+  if (meta.action === RESTORE_GOOGLE_ACTION) {
+    const personId = finding.subject_ref;
+    if (!personId) {
+      return `Finding #${finding.id} names nobody; nothing was changed.`;
+    }
+    const outcome = await restoreAccount({
+      personId,
+      actor: caller,
+      reason: note || null,
+    });
+    // Restored, or no longer true: either way the request is finished.
+    // Closed now rather than at the next run, so nobody clicks it twice.
+    await closeFinding(
+      finding.id,
+      by,
+      outcome.changed
+        ? `Restored${note ? `: ${note}` : "."}`
+        : "No longer true on the lifecycle sheet or in Google."
+    );
+    log.info("restore google account clicked", {
+      findingId: finding.id,
+      changed: outcome.changed,
+      by,
+    });
     return outcome.text;
   }
 

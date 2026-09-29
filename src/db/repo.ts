@@ -521,6 +521,35 @@ export function insertGroupChange(input: GroupChangeInput): void {
     );
 }
 
+/**
+ * A Google account hawk-mod@ suspended or restored, after a click (step 7).
+ * Google's Admin log names hawk-mod@; this names the person who clicked.
+ */
+export function insertAccountChange(input: {
+  personId: string | null;
+  account: string;
+  action: "suspend" | "restore";
+  actor: string;
+  actorName: string;
+  reason: string | null;
+}): void {
+  db()
+    .prepare(
+      `INSERT INTO account_changes (person_id, account, action, actor,
+                                    actor_name, reason, changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.personId,
+      input.account,
+      input.action,
+      input.actor,
+      input.actorName,
+      input.reason,
+      nowIso()
+    );
+}
+
 export function listGroupChanges(limit = 100) {
   return db()
     .prepare(

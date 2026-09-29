@@ -378,3 +378,76 @@ function explainUsers(err: unknown): Error {
   }
   return new Error(`${text}${google}`);
 }
+
+/**
+ * Suspending and restoring an account, for step 7 — only ever after an
+ * administrator's click, and never deleting one. Google has no narrower
+ * scope for this than `admin.directory.user`, which could also create and
+ * delete accounts; what narrows it is hawk-mod@'s role, which holds only
+ * Users → Update → Suspend users (docs/google-setup.md, Part 4). Asked for in
+ * a client of its own, only when a button is clicked.
+ */
+export const DIRECTORY_USER =
+  "https://www.googleapis.com/auth/admin.directory.user";
+
+/**
+ * Suspends (`true`) or restores (`false`) one account, by its primary
+ * address. Asks for nothing back but the address and the new state.
+ */
+export async function setSuspended(
+  client: JWT,
+  account: string,
+  suspended: boolean
+): Promise<void> {
+  try {
+    await client.request({
+      url: `${API}/users/${encodeURIComponent(account)}?fields=primaryEmail,suspended`,
+      method: "PATCH",
+      data: { suspended },
+    });
+  } catch (err) {
+    throw explainSuspend(err, suspended);
+  }
+}
+
+/**
+ * Whether the delegation for suspending is in place: asks Google for a token
+ * with `admin.directory.user` as hawk-mod@, and changes nothing. It cannot
+ * show the role's Suspend users privilege — only a real suspension can — but
+ * it catches the step that is easiest to miss.
+ */
+export async function checkSuspendDelegation(client: JWT): Promise<void> {
+  try {
+    await client.getAccessToken();
+  } catch (err) {
+    throw explainSuspend(err, true);
+  }
+}
+
+function explainSuspend(err: unknown, suspending: boolean): Error {
+  const status = (err as { status?: number }).status;
+  const text = String((err as { message?: unknown }).message ?? err);
+  const google = ` (Google said: ${googleReason(err)})`;
+  if (text.includes("unauthorized_client")) {
+    return new Error(
+      "Google refused to let the service account change user accounts as " +
+        "hawk-mod@. Check the domain-wide delegation entry for its client ID " +
+        "also lists admin.directory.user (docs/google-setup.md, Part 4)." +
+        google
+    );
+  }
+  if (status === 403) {
+    return new Error(
+      `Google refused to ${suspending ? "suspend" : "restore"} the account. ` +
+        'Check that hawk-mod@\'s "hawk-mod group membership" admin role has ' +
+        "Users → Update → Suspend users (docs/google-setup.md, Part 4). If " +
+        "the account holds an admin role of its own, only a Super Admin can " +
+        "change it." +
+        google
+    );
+  }
+  if (status === 404) {
+    return new Error(`Google has no such account any more.${google}`);
+  }
+  return new Error(`${text}${google}`);
+}

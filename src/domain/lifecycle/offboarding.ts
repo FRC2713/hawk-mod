@@ -79,6 +79,22 @@ export type OffboardingReason =
   /** Their Person ID is not on the sheet any more; hawk-mod's roster has it. */
   | { kind: "gone" };
 
+/** Why someone is leaving, as the middle of a sentence. */
+export function leavingWhy(r: OffboardingReason): string {
+  switch (r.kind) {
+    case "inactive":
+      return "is Inactive on the lifecycle sheet";
+    case "status_unknown":
+      return "has a blank or unknown Active/Inactive on the lifecycle sheet";
+    case "role":
+      return r.roles.length
+        ? `is now ${r.roles.join(", ")} on the lifecycle sheet, not a Mentor or Student`
+        : "holds no role on the lifecycle sheet";
+    case "gone":
+      return "is no longer on the lifecycle sheet";
+  }
+}
+
 /** An untracked group that still holds one of a leaver's addresses. */
 export type UntrackedMembership = {
   groupId: string;
