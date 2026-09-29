@@ -1,9 +1,9 @@
 # Lifecycle sync
 
-Status: **steps 0–4 deployed.** The roster has come from the sheet since the
-first apply on 2026-09-28 (#25–#28), and the Google Groups since the same day
-(#32–#37); both run hourly. Step 5 (Slack user groups) is being built: the planner and dry run are deployed (#38, #39); Apply is part 3. The
-scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
+Status: **steps 0–5 deployed.** The roster has come from the sheet since the
+first apply on 2026-09-28 (#25–#28), the Google Groups since the same day
+(#32–#37), and the Slack user groups since the first Apply on 2026-09-29
+(#38–#42); all three are checked hourly. Step 6 is next. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
 below was rewritten on 2026-09-27, after a first step 3 design showed it had
 never been written down; it replaces the earlier "direction of truth" section.
 
@@ -511,7 +511,7 @@ is where an administrator runs them.
    only what is still held. `cori_expiring` runs hourly once the roster comes
    from the sheet, and messages the mentor in Slack once per expiry date.
 
-5. **Slack user groups (E).** Same computed membership, copied to Slack by an
+5. **Slack user groups (E).** _Done (#38–#42, first Apply 2026-09-29)._ Same computed membership, copied to Slack by an
    administrator's **Apply** click on one `slack_groups_differ` finding, with
    the clicker's own grant; `/hawkmod group` refuses copied groups. _Verify:_
    nothing changes without the click; Apply applies the difference as re-read
