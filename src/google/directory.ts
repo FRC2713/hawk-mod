@@ -1,4 +1,5 @@
 import type { JWT } from "google-auth-library";
+import type { DirectoryAccount } from "../domain/lifecycle/onboarding.js";
 
 /**
  * Google's Directory API, for group membership — and, in this step, only for
@@ -180,4 +181,100 @@ export async function removeMember(
     if ((err as { status?: number }).status === 404) return;
     throw new Error(googleReason(err));
   }
+}
+
+/**
+ * Reading user accounts, for step 6: is each mentor's RHR Email a real,
+ * working account? Read-only, and delegated on its own line
+ * (docs/google-setup.md), with Users → Read added to hawk-mod@'s role.
+ * Asked for in a client of its own, so a refusal names exactly the setting
+ * that is missing rather than failing the groups run too.
+ */
+export const DIRECTORY_USER_READONLY =
+  "https://www.googleapis.com/auth/admin.directory.user.readonly";
+
+export type UsersPage = {
+  users?: {
+    primaryEmail?: string;
+    aliases?: string[];
+    nonEditableAliases?: string[];
+    suspended?: boolean;
+  }[];
+  nextPageToken?: string;
+};
+
+/** One page of users as directory accounts, addresses lower-cased. */
+export function pageUsers(page: UsersPage): DirectoryAccount[] {
+  return (page.users ?? []).flatMap((u) =>
+    u.primaryEmail
+      ? [
+          {
+            primaryEmail: u.primaryEmail.toLowerCase(),
+            aliases: [
+              ...(u.aliases ?? []),
+              ...(u.nonEditableAliases ?? []),
+            ].map((a) => a.toLowerCase()),
+            suspended: Boolean(u.suspended),
+          },
+        ]
+      : []
+  );
+}
+
+/**
+ * Every user account in the Workspace: its primary address, its aliases, and
+ * whether it is suspended. Nothing else is requested — not names, not phone
+ * numbers, not the org unit.
+ */
+export async function listDomainUsers(
+  client: JWT
+): Promise<DirectoryAccount[]> {
+  const accounts: DirectoryAccount[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      customer: "my_customer",
+      maxResults: "500",
+      fields:
+        "users(primaryEmail,aliases,nonEditableAliases,suspended),nextPageToken",
+      ...(pageToken ? { pageToken } : {}),
+    });
+    let page: UsersPage;
+    try {
+      const res = await client.request<UsersPage>({
+        url: `${API}/users?${params}`,
+      });
+      page = res.data;
+    } catch (err) {
+      throw explainUsers(err);
+    }
+    accounts.push(...pageUsers(page));
+    pageToken = page.nextPageToken || undefined;
+  } while (pageToken);
+  return accounts;
+}
+
+/** The two things Rachel set up for this, each named by its refusal. */
+function explainUsers(err: unknown): Error {
+  const status = (err as { status?: number }).status;
+  const text = String((err as { message?: unknown }).message ?? err);
+  const google = ` (Google said: ${googleReason(err)})`;
+  if (text.includes("unauthorized_client")) {
+    return new Error(
+      "Google refused to let the service account read user accounts as " +
+        "hawk-mod@. Check the domain-wide delegation entry for its client ID " +
+        "also lists admin.directory.user.readonly (docs/google-setup.md, " +
+        "Part 3)." +
+        google
+    );
+  }
+  if (status === 403) {
+    return new Error(
+      "Google refused to list user accounts. Check that hawk-mod@'s " +
+        '"hawk-mod group membership" admin role has Users → Read ' +
+        "(docs/google-setup.md, Part 3)." +
+        google
+    );
+  }
+  return new Error(`${text}${google}`);
 }
