@@ -13,6 +13,7 @@ import {
   groupsReport,
   slackGroupsReport,
   lifecyclePlanReport,
+  offboardingReport,
   onboardingReport,
   rosterReport,
   syncNow,
@@ -56,6 +57,10 @@ const USAGE = `hawk-mod cli
   lifecycle onboarding         the Google accounts, RHR Email fixes and Slack
                                invites the sheet calls for, by Person ID.
                                Posts nothing. Needs the Slack install too
+  lifecycle offboarding        what people leaving still have: Google accounts
+                               to suspend, Slack accounts to deactivate, and
+                               groups the sheet does not compute, by Person
+                               ID. Posts nothing. Needs the Slack install too
   lifecycle sync               what the hourly job does: apply the roster from
                                the sheet, write Slack User IDs back, and check
                                the Slack groups (raising the Apply alert).
@@ -202,9 +207,11 @@ async function main() {
         console.log(await syncNow({ slack: botClient(), by: "cli" }));
       else if (args[0] === "onboarding")
         console.log(await onboardingReport({ slack: botClient() }));
+      else if (args[0] === "offboarding")
+        console.log(await offboardingReport({ slack: botClient() }));
       else
         throw new Error(
-          "usage: lifecycle plan|slack-ids|roster|sync|groups|slack-groups|onboarding"
+          "usage: lifecycle plan|slack-ids|roster|sync|groups|slack-groups|onboarding|offboarding"
         );
       return;
     default:

@@ -30,7 +30,7 @@ function googleError(status: number, message: string): Error {
 }
 
 describe("reading Google's user accounts", () => {
-  it("keeps the primary address, every alias, and suspension, lower-cased", () => {
+  it("keeps the primary address, every alias, suspension and any admin role, lower-cased", () => {
     assert.deepEqual(
       pageUsers({
         users: [
@@ -41,6 +41,8 @@ describe("reading Google's user accounts", () => {
             suspended: false,
           },
           { primaryEmail: "gone@rhr.example", suspended: true },
+          { primaryEmail: "boss@rhr.example", isAdmin: true },
+          { primaryEmail: "helpdesk@rhr.example", isDelegatedAdmin: true },
           { aliases: ["no-primary@rhr.example"] },
         ],
       }),
@@ -49,13 +51,31 @@ describe("reading Google's user accounts", () => {
           primaryEmail: "jordan.lee@rhr.example",
           aliases: ["jlee@rhr.example", "jordan.lee@rhr.test-google-a.com"],
           suspended: false,
+          admin: false,
         },
-        { primaryEmail: "gone@rhr.example", aliases: [], suspended: true },
+        {
+          primaryEmail: "gone@rhr.example",
+          aliases: [],
+          suspended: true,
+          admin: false,
+        },
+        {
+          primaryEmail: "boss@rhr.example",
+          aliases: [],
+          suspended: false,
+          admin: true,
+        },
+        {
+          primaryEmail: "helpdesk@rhr.example",
+          aliases: [],
+          suspended: false,
+          admin: true,
+        },
       ]
     );
   });
 
-  it("reads every page, asking for nothing but addresses and suspension", async () => {
+  it("reads every page, asking for nothing but addresses, suspension and admin", async () => {
     const google = fakeGoogle([
       { users: [{ primaryEmail: "a@rhr.example" }], nextPageToken: "p2" },
       { users: [{ primaryEmail: "b@rhr.example" }] },
@@ -70,7 +90,7 @@ describe("reading Google's user accounts", () => {
     const fields = new URL(google.urls[0]!).searchParams.get("fields");
     assert.equal(
       fields,
-      "users(primaryEmail,aliases,nonEditableAliases,suspended),nextPageToken"
+      "users(primaryEmail,aliases,nonEditableAliases,suspended,isAdmin,isDelegatedAdmin),nextPageToken"
     );
   });
 
