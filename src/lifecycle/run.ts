@@ -31,6 +31,7 @@ import { formatOnboarding } from "../domain/lifecycle/onboardingReport.js";
 import {
   isTrackedGroup,
   planOffboarding,
+  planUnaccounted,
   type DomainGroup,
   type OffboardingAccount,
 } from "../domain/lifecycle/offboarding.js";
@@ -1478,20 +1479,21 @@ async function readOffboardingInputs(slack: WebClient) {
     groupsError = errorText(err);
   }
 
+  const roster = listPeople(false).flatMap((p) =>
+    p.person_id
+      ? [
+          {
+            personId: p.person_id,
+            name: p.full_name,
+            email: p.email,
+            slackUserId: p.slack_user_id,
+          },
+        ]
+      : []
+  );
   const plan = planOffboarding({
     people: parsed.people,
-    roster: listPeople(false).flatMap((p) =>
-      p.person_id
-        ? [
-            {
-              personId: p.person_id,
-              name: p.full_name,
-              email: p.email,
-              slackUserId: p.slack_user_id,
-            },
-          ]
-        : []
-    ),
+    roster,
     slackAccounts: users.map((u) => ({
       id: u.id,
       email: u.email,
@@ -1500,7 +1502,21 @@ async function readOffboardingInputs(slack: WebClient) {
     directory,
     groups,
   });
-  return { plan, users, directory, directoryError, groups, groupsError };
+  const unaccounted = planUnaccounted({
+    people: parsed.people,
+    roster,
+    directory,
+    groups,
+  });
+  return {
+    plan,
+    unaccounted,
+    users,
+    directory,
+    directoryError,
+    groups,
+    groupsError,
+  };
 }
 
 /**
@@ -1512,10 +1528,18 @@ async function readOffboardingInputs(slack: WebClient) {
 export async function offboardingReport(opts: {
   slack: WebClient;
 }): Promise<string> {
-  const { plan, users, directory, directoryError, groups, groupsError } =
-    await readOffboardingInputs(opts.slack);
+  const {
+    plan,
+    unaccounted,
+    users,
+    directory,
+    directoryError,
+    groups,
+    groupsError,
+  } = await readOffboardingInputs(opts.slack);
   return formatOffboarding({
     plan,
+    unaccounted,
     asOf: today(),
     slackAccounts: users.length,
     directory: directory

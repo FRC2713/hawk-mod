@@ -294,3 +294,98 @@ export function planOffboarding(args: {
     groupsChecked: groups !== null,
   };
 }
+
+/** A Google account no one on the sheet or the roster accounts for. */
+export type UnaccountedAccount = { account: string; admin: boolean };
+
+/**
+ * Someone in a group the sheet does not compute whose address the sheet does
+ * not have. Warned about, never removed: Red Hawk's other groups can hold
+ * outside collaborators (decided 2026-09-29).
+ */
+export type Outsider = UntrackedMembership;
+
+export type Unaccounted = {
+  /** Active accounts, by primary address. */
+  accounts: UnaccountedAccount[];
+  /** How many suspended accounts are unaccounted for too; not listed. */
+  suspended: number;
+  outsiders: Outsider[];
+};
+
+/**
+ * What nobody on the sheet accounts for: Google accounts no RHR Email (or
+ * roster address) reaches — an old mentor never put on the sheet, a shared
+ * inbox, hawk-mod@ itself — and members of the groups the sheet does not
+ * compute whose address the sheet does not have. Both are lists to read, not
+ * leavers: nothing here is suspended or removed.
+ *
+ * An address is on the sheet if it is anyone's RHR Email, School Email or
+ * Personal Email, whatever their status, or a parent address anyone lists —
+ * except a current student's Personal Email, which is never a way into a
+ * group, so finding one there is worth a warning. An address that is an
+ * alias of a Google account counts as that account's primary, and the other
+ * way round.
+ */
+export function planUnaccounted(args: {
+  people: readonly SheetPerson[];
+  roster: readonly RosterEntry[];
+  directory: readonly OffboardingAccount[] | null;
+  groups: readonly DomainGroup[] | null;
+}): Unaccounted {
+  const known = new Set<string>();
+  const add = (a: string | null | undefined) => {
+    if (a) known.add(lower(a));
+  };
+  for (const p of args.people) {
+    add(p.mentor?.rhrEmail);
+    add(p.student?.schoolEmail);
+    if (!p.roles.includes("Student")) add(p.personalEmail);
+    for (const a of p.parentEmails) add(a);
+  }
+  for (const r of args.roster) add(r.email);
+
+  // Every address of a Google account, keyed to the whole account.
+  const accountOf = new Map<string, OffboardingAccount>();
+  for (const a of args.directory ?? []) {
+    for (const x of [a.primaryEmail, ...a.aliases]) accountOf.set(lower(x), a);
+  }
+  const addressesOf = (a: OffboardingAccount) =>
+    [a.primaryEmail, ...a.aliases].map(lower);
+  const isKnown = (address: string) => {
+    const account = accountOf.get(address);
+    return account
+      ? addressesOf(account).some((x) => known.has(x))
+      : known.has(address);
+  };
+
+  const accounts: UnaccountedAccount[] = [];
+  let suspended = 0;
+  for (const a of args.directory ?? []) {
+    if (addressesOf(a).some((x) => known.has(x))) continue;
+    if (a.suspended) suspended++;
+    else accounts.push({ account: lower(a.primaryEmail), admin: a.admin });
+  }
+  accounts.sort((x, y) => x.account.localeCompare(y.account));
+
+  const outsiders: Outsider[] = [];
+  for (const g of args.groups ?? []) {
+    if (TRACKED.has(g.id)) continue;
+    for (const m of g.members) {
+      const address = lower(m.address);
+      if (isKnown(address)) continue;
+      outsiders.push({
+        groupId: g.id,
+        groupName: g.name,
+        address,
+        role: m.role,
+      });
+    }
+  }
+  outsiders.sort(
+    (x, y) =>
+      x.groupName.localeCompare(y.groupName) ||
+      x.address.localeCompare(y.address)
+  );
+  return { accounts, suspended, outsiders };
+}

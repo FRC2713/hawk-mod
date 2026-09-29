@@ -614,13 +614,14 @@ group` refusing copies, the leaving buttons reaching Slack, and the
    nothing changes without the click; a non-admin click is refused; the
    removal covers groups the sheet does not compute.
 
-   Planned 2026-09-29 in four pull requests: (1) the pure planner,
-   `domain/lifecycle/offboarding.ts`; (2) reading every group in the
-   Workspace, and whether an account holds an admin role, and a
-   `/hawkmod lifecycle offboarding` dry run that posts nothing — no new
-   Google setup; (3) the alerts and buttons, which need `admin.directory.user`
+   Planned 2026-09-29 in four pull requests, and five after the first dry
+   run: (1) the pure planner, `domain/lifecycle/offboarding.ts` (#54); (2)
+   reading every group in the Workspace, and whether an account holds an
+   admin role, and a `/hawkmod lifecycle offboarding` dry run that posts
+   nothing — no new Google setup (#55); (3) two more lists in that dry run,
+   below; (4) the alerts and buttons, which need `admin.directory.user`
    delegated and **Users → Update → Suspend users** on `hawk-mod@`'s role;
-   (4) docs, and whatever the first clicks show. The first clicks are a test,
+   (5) docs, and whatever the first clicks show. The first clicks are a test,
    on a throwaway person and Google account Rachel adds to the sheet: Remove
    from groups has never been clicked in production. Decided with Rachel
    before building:
@@ -652,6 +653,23 @@ group` refusing copies, the leaving buttons reaching Slack, and the
      lets only a Super Admin change another admin's account — Help Desk
      Admin and custom roles included — so the alert asks a Super Admin to
      remove the role first.
+
+   Decided after the first dry run (2026-09-29), which found nobody
+   leaving and eight groups the sheet does not compute — `bonfire`,
+   `grp-contact`, `grp-equipment`, `grp-grants`, `grp-orders`, `Kitchens`,
+   `MelroseKitchenTour` and `Test1`:
+
+   - **All eight are team groups**, and Remove from groups covers them.
+   - **Someone in them the sheet does not have is a warning, never a
+     removal**: these groups may hold outside collaborators, and that may
+     need revisiting if there come to be more of them. An address counts as
+     on the sheet if it is anyone's RHR, School or Personal Email, or a
+     parent address — except a current student's Personal Email, which is
+     never a way into a group. The warning shows the address partly hidden.
+   - **Google accounts no RHR Email reaches are listed** in the dry run, to
+     read once before deciding whether they should become an alert — the
+     Google counterpart of Slack's `unknown_account`. Every one is a team
+     account, so it is named in full.
 
 8. **Delegated admin roles (G).** **Report only** (decided 2026-09-26). Only a
    Super Admin can grant Groups Admin or Help Desk Admin, and the access plan

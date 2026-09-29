@@ -4,6 +4,7 @@ import { GOOGLE_GROUP_IDS } from "../src/domain/lifecycle/groups.js";
 import type { OnboardingSlackAccount } from "../src/domain/lifecycle/onboarding.js";
 import {
   planOffboarding,
+  planUnaccounted,
   type DomainGroup,
   type OffboardingAccount,
   type RosterEntry,
@@ -525,5 +526,116 @@ describe("offboarding: rows gone from the sheet", () => {
       directory: [account("p0001@rhr.example")],
     });
     assert.deepEqual(p.leavers, []);
+  });
+});
+
+describe("what nobody on the sheet accounts for", () => {
+  function unaccounted(args: {
+    people: SheetPerson[];
+    roster?: RosterEntry[];
+    directory?: OffboardingAccount[] | null;
+    groups?: DomainGroup[] | null;
+  }) {
+    return planUnaccounted({ roster: [], directory: [], groups: [], ...args });
+  }
+
+  it("lists active Google accounts no RHR Email reaches, and counts suspended ones", () => {
+    const u = unaccounted({
+      people: [
+        mentor("P0001"),
+        mentor("P0002", { status: "inactive" }),
+        mentor("P0003", { rhrEmail: "alias@rhr.example" }),
+      ],
+      roster: [
+        {
+          personId: "P0009",
+          name: "Gone",
+          email: "p0009@rhr.example",
+          slackUserId: null,
+        },
+      ],
+      directory: [
+        account("p0001@rhr.example"),
+        // An Inactive mentor's account is on the sheet: it is a leaver's.
+        account("p0002@rhr.example"),
+        // Reached through an alias.
+        account("first.last@rhr.example", { aliases: ["alias@rhr.example"] }),
+        account("p0009@rhr.example"),
+        account("hawk-mod@rhr.example", { admin: true }),
+        account("orders@rhr.example"),
+        account("old.mentor@rhr.example", { suspended: true }),
+      ],
+    });
+    assert.deepEqual(u.accounts, [
+      { account: "hawk-mod@rhr.example", admin: true },
+      { account: "orders@rhr.example", admin: false },
+    ]);
+    assert.equal(u.suspended, 1);
+  });
+
+  it("warns about members of other groups the sheet does not have, never of the nine it computes", () => {
+    const tracked: DomainGroup = {
+      id: GOOGLE_GROUP_IDS["grp-mentors"],
+      name: "grp-mentors",
+      members: [{ address: "stranger@gmail.example", role: "MEMBER" }],
+    };
+    const u = unaccounted({
+      people: [
+        mentor("P0001"),
+        volunteer("P0003", { status: "inactive" }),
+        student("P0002", { parentEmails: ["mom@home.example"] }),
+      ],
+      directory: null,
+      groups: [
+        tracked,
+        group("grp-orders", [
+          ["p0001@rhr.example"],
+          // A mentor's Personal Email is theirs.
+          ["p0001@personal.example"],
+          ["p0003@personal.example"],
+          ["mom@home.example"],
+          ["vendor@supplier.example", "MANAGER"],
+        ]),
+        group("bonfire", [["Friend@Gmail.example"]]),
+      ],
+    });
+    assert.deepEqual(
+      u.outsiders.map((o) => [o.groupName, o.address, o.role]),
+      [
+        ["bonfire", "friend@gmail.example", "MEMBER"],
+        ["grp-orders", "vendor@supplier.example", "MANAGER"],
+      ]
+    );
+  });
+
+  it("warns about a student's Personal Email in a group: it is never a way in", () => {
+    const u = unaccounted({
+      people: [student("P0002")],
+      groups: [group("grp-orders", [["p0002@personal.example"]])],
+    });
+    assert.deepEqual(
+      u.outsiders.map((o) => o.address),
+      ["p0002@personal.example"]
+    );
+  });
+
+  it("counts a Google alias in a group as its account", () => {
+    const u = unaccounted({
+      people: [mentor("P0001")],
+      directory: [
+        account("p0001@rhr.example", { aliases: ["pat@rhr.example"] }),
+      ],
+      groups: [group("grp-orders", [["pat@rhr.example"]])],
+    });
+    assert.deepEqual(u.outsiders, []);
+  });
+
+  it("lists nothing it could not read", () => {
+    const u = unaccounted({
+      people: [],
+      directory: null,
+      groups: null,
+    });
+    assert.deepEqual(u, { accounts: [], suspended: 0, outsiders: [] });
   });
 });

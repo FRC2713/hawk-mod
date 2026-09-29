@@ -253,3 +253,44 @@ describe("the offboarding dry run", () => {
     assert.match(text, /Read 294 Slack accounts\./);
   });
 });
+
+describe("the offboarding dry run: what nobody accounts for", () => {
+  const unaccounted = {
+    accounts: [
+      { account: "hawk-mod@rhr.example", admin: true },
+      { account: "orders@rhr.example", admin: false },
+    ],
+    suspended: 2,
+    outsiders: [
+      {
+        groupId: "g1",
+        groupName: "grp-orders",
+        address: "vendor@supplier.example",
+        role: "MANAGER" as const,
+      },
+    ],
+  };
+
+  it("names team accounts in full and outsiders partly hidden", () => {
+    const text = report({ unaccounted });
+    assert.match(
+      text,
+      /Active Google accounts the lifecycle sheet does not account for \(no one's RHR Email\): 2\n {2}hawk-mod@rhr\.example \(holds an admin role\)\n {2}orders@rhr\.example\n {2}and 2 suspended, not listed/
+    );
+    assert.match(
+      text,
+      /who are not on the lifecycle sheet: 1 \(once alerts are on, each is a warning; nobody is removed\)\n {2}grp-orders: v…@supplier\.example \(manager\)/
+    );
+    assert.doesNotMatch(text, /vendor@/);
+  });
+
+  it("leaves out a list whose read failed", () => {
+    const text = report({
+      unaccounted,
+      directory: { error: "Google refused to list user accounts." },
+      groups: { error: "Google refused to read the list of groups." },
+    });
+    assert.doesNotMatch(text, /does not account for/);
+    assert.doesNotMatch(text, /not on the lifecycle sheet/);
+  });
+});

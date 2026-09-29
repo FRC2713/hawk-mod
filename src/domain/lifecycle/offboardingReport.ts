@@ -1,15 +1,22 @@
 import type { IsoDate } from "../dates.js";
+import { maskAddress } from "./heldMembers.js";
 import type {
   DomainGroup,
   Leaver,
   OffboardingPlan,
   OffboardingReason,
+  Unaccounted,
 } from "./offboarding.js";
 
 /**
  * The offboarding dry run, as `/hawkmod lifecycle offboarding` posts it.
- * Person IDs, reasons and group names only — never a name or an address: it
- * can be run in any channel, and some of the people leaving are minors.
+ * Person IDs, reasons and group names only — never a name, and never an
+ * address anyone might have given as their own: it can be run in any
+ * channel, and some of the people leaving are minors. Two exceptions, both
+ * for things the sheet cannot name: a Google account nobody accounts for is
+ * shown by its address, since every one is a Red Hawk team account, and an
+ * outsider in a group is shown partly hidden (`k…@gmail.com`), as held
+ * members are.
  */
 
 export function reasonText(r: OffboardingReason): string {
@@ -53,6 +60,8 @@ export function formatOffboarding(opts: {
   directory: { count: number; admins: number } | { error: string };
   /** The groups the sheet does not compute, as read, or why they were not. */
   groups: { untracked: DomainGroup[]; total: number } | { error: string };
+  /** What nobody on the sheet accounts for; parts not read are left out. */
+  unaccounted?: Unaccounted;
 }): string {
   const { leavers } = opts.plan;
   const google = leavers.filter((l) => l.google);
@@ -107,6 +116,32 @@ export function formatOffboarding(opts: {
       "groups, which will cover the groups above as well as the nine the " +
       "sheet computes."
   );
+
+  const un = opts.unaccounted;
+  if (un && !("error" in opts.directory)) {
+    lines.push(
+      "",
+      `Active Google accounts the lifecycle sheet does not account for ` +
+        `(no one's RHR Email): ${un.accounts.length}`
+    );
+    for (const a of un.accounts) {
+      lines.push(`  ${a.account}${a.admin ? " (holds an admin role)" : ""}`);
+    }
+    if (un.suspended) {
+      lines.push(`  and ${un.suspended} suspended, not listed`);
+    }
+  }
+  if (un && !("error" in opts.groups)) {
+    lines.push(
+      "",
+      `Members of groups the sheet does not compute who are not on the ` +
+        `lifecycle sheet: ${un.outsiders.length} (once alerts are on, each ` +
+        `is a warning; nobody is removed)`
+    );
+    for (const o of un.outsiders) {
+      lines.push(`  ${o.groupName}: ${maskAddress(o.address)}${ROLE[o.role]}`);
+    }
+  }
 
   if (!("error" in opts.groups)) {
     const { untracked, total } = opts.groups;
