@@ -54,6 +54,12 @@ export const SETTINGS = {
     kind: "channel",
     hint: "where onboarding requests are posted (Google accounts to create, Slack invites); while unset, they go to the alert channel",
   },
+  "announcement-channel": {
+    env: "ANNOUNCEMENT_CHANNEL_ID",
+    label: "Enrollment announcements",
+    kind: "channel",
+    hint: "where hawk-mod says that someone has enrolled; while unset, nobody is told",
+  },
   "report-time": {
     env: "REPORT_TIME",
     label: "Morning report time",

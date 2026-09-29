@@ -2,7 +2,11 @@ import { getFinding, setFindingAlertTs } from "../db/repo.js";
 import type { Finding } from "../domain/findings.js";
 import { severityEmoji } from "../domain/findings.js";
 import { log } from "../logger.js";
-import { settingValue } from "../settings.js";
+import { onboardingChannel, settingValue } from "../settings.js";
+import {
+  inviteAddressLine,
+  isOnboardingKind,
+} from "../domain/lifecycle/onboardingFindings.js";
 import { botClient } from "./tokens.js";
 
 /**
@@ -26,7 +30,33 @@ function alertChannel(context: string): string | null {
   return channel;
 }
 
+/**
+ * Where a finding is posted: onboarding requests to `onboarding-channel` (the
+ * alert channel while that is unset), everything else to the alert channel.
+ */
+function postingChannel(f: Pick<Finding, "id" | "kind">): string | null {
+  if (!isOnboardingKind(f.kind)) return alertChannel(`finding ${f.id}`);
+  const { channel } = onboardingChannel();
+  if (!channel) {
+    log.error(
+      "no onboarding or alert channel configured; nobody is being asked",
+      {
+        context: `finding ${f.id}`,
+        fix: "/hawkmod config set onboarding-channel #channel",
+      }
+    );
+    return null;
+  }
+  return channel;
+}
+
+/** Where a posted finding's message is: where it was posted. */
+function postedChannel(f: Finding): string | null {
+  return f.alert_channel ?? alertChannel(`finding ${f.id}`);
+}
+
 export const ACK_ACTION = "hawkmod_finding_ack";
+export const ONBOARDING_ON_IT_ACTION = "hawkmod_onboarding_on_it";
 export const RESOLVE_ACTION = "hawkmod_finding_resolve";
 export const END_MONITORING_ACTION = "hawkmod_end_monitoring";
 export const MAKE_ADULT_ACTION = "hawkmod_make_adult";
@@ -51,7 +81,21 @@ export function lifecycleAction(f: Pick<Finding, "kind" | "dedupe_key">): {
    * while what it applies is still true — and its note is optional.
    */
   routine?: true;
+  /** What the alert's footer says about the button, when not the default. */
+  context?: string;
 } | null {
+  // An onboarding request is done by doing it, outside hawk-mod; the run
+  // closes it when the sheet or Slack shows it. The button only says who
+  // has it, so two people do not both create one account.
+  if (isOnboardingKind(f.kind)) {
+    return {
+      actionId: ONBOARDING_ON_IT_ACTION,
+      label: "I'm on it",
+      routine: true,
+      context:
+        "closes by itself once the lifecycle sheet or Slack shows it done",
+    };
+  }
   // Every Slack group change is a click (step 5). Apply is the routine one;
   // Apply anyway, for a refused copy, is the override.
   if (f.kind === "slack_groups_differ") {
@@ -114,6 +158,15 @@ export function findingBlocks(f: Finding): {
       text: { type: "mrkdwn", text: headline, verbatim: true },
     },
   ];
+  // Only on the posted request, in the onboarding channel: never in the
+  // summary, which `/hawkmod findings` prints wherever it is run.
+  const address = f.status === "open" ? inviteAddressLine(f) : null;
+  if (address) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: address, verbatim: true },
+    });
+  }
 
   const lifecycle = lifecycleAction(f);
   if (f.status === "open") {
@@ -157,11 +210,13 @@ export function findingBlocks(f: Finding): {
           text:
             `finding #${f.id}` +
             (f.subject_ref ? ` · \`${f.subject_ref}\`` : "") +
-            (lifecycle?.routine
-              ? ` · ${lifecycle.label} re-reads the lifecycle sheet first and changes Slack as you`
-              : lifecycle
-                ? ` · ${lifecycle.label} asks for a reason and re-reads the lifecycle sheet first`
-                : " · both ask for a reason, which the quarterly audit reads"),
+            (lifecycle?.context
+              ? ` · ${lifecycle.context}`
+              : lifecycle?.routine
+                ? ` · ${lifecycle.label} re-reads the lifecycle sheet first and changes Slack as you`
+                : lifecycle
+                  ? ` · ${lifecycle.label} asks for a reason and re-reads the lifecycle sheet first`
+                  : " · both ask for a reason, which the quarterly audit reads"),
         },
       ],
     });
@@ -191,9 +246,13 @@ export function findingBlocks(f: Finding): {
  * one saying "Resolved by …" above a live recurrence is how a channel stops
  * being believed.
  */
-async function supersede(previousTs: string, finding: Finding): Promise<void> {
+async function supersede(
+  previousTs: string,
+  previousChannel: string | null,
+  finding: Finding
+): Promise<void> {
   try {
-    const channel = alertChannel("supersede");
+    const channel = previousChannel ?? alertChannel("supersede");
     if (!channel) return;
     await botClient().chat.update({
       channel,
@@ -232,9 +291,10 @@ export async function postFinding(findingId: number): Promise<void> {
   const finding = getFinding(findingId);
   if (!finding) return;
   const previousTs = finding.alert_ts;
+  const previousChannel = finding.alert_channel;
   const { text, blocks } = findingBlocks(finding);
   try {
-    const channel = alertChannel(`finding ${findingId}`);
+    const channel = postingChannel(finding);
     if (!channel) return;
     const res = await botClient().chat.postMessage({
       channel,
@@ -242,11 +302,11 @@ export async function postFinding(findingId: number): Promise<void> {
       blocks: blocks as never,
     });
     if (!res.ts) return;
-    setFindingAlertTs(findingId, res.ts);
+    setFindingAlertTs(findingId, res.ts, channel);
     // Only once the replacement is actually in the channel: if the post failed,
     // the old message is the only one there and must keep its buttons.
     if (previousTs && previousTs !== res.ts)
-      await supersede(previousTs, finding);
+      await supersede(previousTs, previousChannel, finding);
   } catch (err) {
     // A failed alert must not abort the sweep; the finding is already durable.
     log.error("could not post finding", { findingId, error: String(err) });
@@ -259,7 +319,7 @@ export async function refreshFinding(findingId: number): Promise<void> {
   if (!finding?.alert_ts) return;
   const { text, blocks } = findingBlocks(finding);
   try {
-    const channel = alertChannel(`finding ${finding.id}`);
+    const channel = postedChannel(finding);
     if (!channel) return;
     await botClient().chat.update({
       channel,

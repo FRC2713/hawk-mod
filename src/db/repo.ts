@@ -1058,8 +1058,78 @@ export function resolveFinding(
   return info.changes > 0;
 }
 
-export function setFindingAlertTs(id: number, ts: string): void {
-  db().prepare("UPDATE findings SET alert_ts = ? WHERE id = ?").run(ts, id);
+/** Where an alert was posted: its timestamp, and the channel it is in. */
+export function setFindingAlertTs(
+  id: number,
+  ts: string,
+  channel: string
+): void {
+  db()
+    .prepare("UPDATE findings SET alert_ts = ?, alert_channel = ? WHERE id = ?")
+    .run(ts, channel, id);
+}
+
+/* ---------------------------------------------------- onboarding messages */
+
+/** Un-records a message whose send failed, so the next run tries again. */
+export function forgetOnboardingMessage(
+  slackUserId: string,
+  kind: OnboardingMessageKind
+): void {
+  db()
+    .prepare(
+      "DELETE FROM onboarding_messages WHERE slack_user_id = ? AND kind = ?"
+    )
+    .run(slackUserId, kind);
+}
+
+export type OnboardingMessageKind = "baseline" | "welcome" | "reminder";
+
+/**
+ * What hawk-mod has already sent each adult about enrolling, by Slack user
+ * ID, with when. `baseline` is the adults who were already in Slack when the
+ * welcome shipped, and who are sent nothing (decided 2026-09-29).
+ */
+export function onboardingMessagesSent(): Map<
+  string,
+  Partial<Record<OnboardingMessageKind, string>>
+> {
+  const rows = db()
+    .prepare<
+      [],
+      { slack_user_id: string; kind: OnboardingMessageKind; sent_at: string }
+    >("SELECT slack_user_id, kind, sent_at FROM onboarding_messages")
+    .all();
+  const sent = new Map<
+    string,
+    Partial<Record<OnboardingMessageKind, string>>
+  >();
+  for (const r of rows) {
+    sent.set(r.slack_user_id, {
+      ...sent.get(r.slack_user_id),
+      [r.kind]: r.sent_at,
+    });
+  }
+  return sent;
+}
+
+/**
+ * Records one message as sent. Returns false if it already was: the primary
+ * key is what stops a second hourly run, or the join event racing the hourly
+ * run, from sending it twice.
+ */
+export function recordOnboardingMessage(
+  slackUserId: string,
+  kind: OnboardingMessageKind,
+  at: string = nowIso()
+): boolean {
+  const info = db()
+    .prepare(
+      `INSERT OR IGNORE INTO onboarding_messages (slack_user_id, kind, sent_at)
+       VALUES (?, ?, ?)`
+    )
+    .run(slackUserId, kind, at);
+  return info.changes > 0;
 }
 
 /**

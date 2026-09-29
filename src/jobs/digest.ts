@@ -4,6 +4,8 @@ import type { Finding, Severity } from "../domain/findings.js";
 import { severityEmoji } from "../domain/findings.js";
 import { requiresEnrollment } from "../domain/people.js";
 import { postToAlertChannel } from "../slack/alerts.js";
+import { isOnboardingKind } from "../domain/lifecycle/onboardingFindings.js";
+import { onboardingChannel } from "../settings.js";
 
 const DIGEST_CAP = 20;
 
@@ -31,7 +33,18 @@ function lineSections(lines: string[]): unknown[] {
  * line stays short: the finding's own alert in this channel carries the kind,
  * the buttons, and the detail.
  */
-export function digestBlocks(open: Finding[]): unknown[] {
+export function digestBlocks(
+  open: Finding[],
+  onboarding: {
+    waiting: number;
+    taken: number;
+    channel: string | undefined;
+  } = {
+    waiting: 0,
+    taken: 0,
+    channel: undefined,
+  }
+): unknown[] {
   const blocks: unknown[] = [
     {
       type: "header",
@@ -63,6 +76,22 @@ export function digestBlocks(open: Finding[]): unknown[] {
     );
   }
 
+  // Counted, never listed: each request is a task in its own channel, and an
+  // invite carries a student's address that has no business here.
+  if (onboarding.waiting > 0) {
+    const where = onboarding.channel ? ` in <#${onboarding.channel}>` : "";
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text:
+          `:clipboard: *Onboarding* — ${onboarding.waiting} request` +
+          `${onboarding.waiting === 1 ? "" : "s"} waiting${where}` +
+          (onboarding.taken ? `, ${onboarding.taken} of them taken` : ""),
+      },
+    });
+  }
+
   if (open.length > shown) {
     blocks.push({
       type: "section",
@@ -92,12 +121,17 @@ export function digestBlocks(open: Finding[]): unknown[] {
 
 /** One message a day, only when there is something open. Silence means clean. */
 export async function postDigest(): Promise<void> {
-  const open = listFindings("open");
-  if (open.length === 0) return;
+  const all = listFindings("open");
+  const open = all.filter((f) => !isOnboardingKind(f.kind));
+  const taken = listFindings("acknowledged").filter((f) =>
+    isOnboardingKind(f.kind)
+  ).length;
+  const waiting = all.length - open.length + taken;
+  if (open.length === 0 && waiting === 0) return;
 
   await postToAlertChannel(
     `${APP_NAME}: ${open.length} open finding(s)`,
-    digestBlocks(open)
+    digestBlocks(open, { waiting, taken, channel: onboardingChannel().channel })
   );
 }
 
