@@ -36,9 +36,15 @@ export type DirectoryAccount = {
   suspended: boolean;
 };
 
-/** Why an RHR Email on the sheet will not work. */
+/** Why an RHR Email on the sheet does not reach a working account. */
 export type RhrEmailProblem =
-  /** No Google account has this address: a typo, or never created. */
+  /**
+   * No Google account has this address. Usually not a mistake: the address
+   * a mentor has agreed to goes on the sheet first, and the account is
+   * created from it (as Rachel described the flow, 2026-09-29). So this is a
+   * Google account request, naming the address — which is also where a typo
+   * gets seen, by the person about to create it.
+   */
   | { kind: "not_an_account" }
   /** The account exists and is suspended. */
   | { kind: "suspended" }
@@ -51,15 +57,31 @@ export type RhrEmailProblem =
 
 export type OnboardingRole = "mentor" | "student";
 
+/** What is wrong with an RHR Email that has an account behind it. */
+export type AccountProblem = Exclude<
+  RhrEmailProblem,
+  { kind: "not_an_account" }
+>;
+
 export type OnboardingRequest =
-  /** An Active mentor with no RHR Email: a Super Admin creates the account. */
-  | { kind: "google_account"; personId: string; name: string }
-  /** An Active mentor's RHR Email is not a working Google account. */
+  /**
+   * An Active mentor with no Google account: a Super Admin creates it, at
+   * the RHR Email on the sheet, or — when that is blank — at an address
+   * agreed with them, which then goes on the sheet.
+   */
+  | {
+      kind: "google_account";
+      personId: string;
+      name: string;
+      /** The RHR Email on the sheet, or null if it is blank. */
+      address: string | null;
+    }
+  /** An Active mentor's RHR Email is suspended, or an alias. */
   | {
       kind: "rhr_email";
       personId: string;
       name: string;
-      problem: RhrEmailProblem;
+      problem: AccountProblem;
     }
   /** Ready, with no Slack account: an admin invites this address. */
   | {
@@ -92,8 +114,10 @@ export type OnboardingPlan = {
   notReady: NotReady[];
   /**
    * Whether RHR Emails were checked against Google. `false` when the
-   * directory could not be read: no RHR Email request is made, and so none
-   * that is open may be closed on the strength of this plan.
+   * directory could not be read: no request that depends on Google is made
+   * (an account to create at a filled-in address, a suspended account, an
+   * alias), and so none that is open may be closed on the strength of this
+   * plan.
    */
   directoryChecked: boolean;
 };
@@ -180,11 +204,20 @@ export function planOnboarding(
       if (!rhr) {
         // Not waiting for CORI: the account may exist before CORI is done;
         // it joins no group and gets no Slack invite until then.
-        requests.push({ kind: "google_account", personId, name });
+        requests.push({
+          kind: "google_account",
+          personId,
+          name,
+          address: null,
+        });
         continue;
       }
+      // Unknown when Google could not be read: then nothing is asked about
+      // the account, and the Slack invite goes ahead unchecked.
       const problem = directory ? rhrEmailProblem(rhr, directory) : null;
-      if (problem) {
+      if (problem?.kind === "not_an_account") {
+        requests.push({ kind: "google_account", personId, name, address: rhr });
+      } else if (problem) {
         requests.push({ kind: "rhr_email", personId, name, problem });
       }
       const account = slackAccountOf(
@@ -205,11 +238,14 @@ export function planOnboarding(
       }
       if (problem) {
         // Inviting an address that does not reach them helps nobody; the
-        // rhr_email request above is what has to happen first.
+        // request above is what has to happen first.
         notReady.push({
           personId,
           role,
-          reason: "their RHR Email needs fixing first",
+          reason:
+            problem.kind === "not_an_account"
+              ? "their Google account has not been created yet"
+              : "their RHR Email needs fixing first",
         });
         continue;
       }

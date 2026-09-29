@@ -66,6 +66,7 @@ describe("onboarding requests as findings", () => {
       kind: "google_account",
       personId: "P0042",
       name: "Jordan Lee",
+      address: null,
     });
     assert.equal(f.kind, "onboarding_google_account");
     assert.equal(f.dedupeKey, "onboarding_google_account:P0042");
@@ -73,6 +74,22 @@ describe("onboarding requests as findings", () => {
       f.summary,
       "Create a Google account for P0042 Jordan Lee, then type the address " +
         "into their RHR Email on the lifecycle sheet."
+    );
+  });
+
+  it("names the RHR Email the account is to be created at", () => {
+    const f = onboardingFinding({
+      kind: "google_account",
+      personId: "P0073",
+      name: "Alexa Mentor",
+      address: "alexa@rhr.example",
+    });
+    assert.equal(f.dedupeKey, "onboarding_google_account:P0073");
+    assert.equal(
+      f.summary,
+      "Create a Google account for P0073 Alexa Mentor at alexa@rhr.example, " +
+        "the RHR Email on the lifecycle sheet. If that address is a typo, " +
+        "fix the sheet instead."
     );
   });
 
@@ -124,10 +141,13 @@ describe("onboarding requests as findings", () => {
     assert.match(f.summary, /primary address, sam\.park@rhr\.example\.$/);
   });
 
-  it("closes RHR Email requests only after a run that read Google", () => {
-    assert.ok(onboardingPrefixes(true).includes("onboarding_rhr_email:"));
-    assert.ok(!onboardingPrefixes(false).includes("onboarding_rhr_email:"));
-    assert.ok(onboardingPrefixes(false).includes("onboarding_slack_invite:"));
+  it("closes account requests only after a run that read Google", () => {
+    assert.deepEqual(onboardingPrefixes(true), [
+      "onboarding_google_account:",
+      "onboarding_rhr_email:",
+      "onboarding_slack_invite:",
+    ]);
+    assert.deepEqual(onboardingPrefixes(false), ["onboarding_slack_invite:"]);
   });
 
   it("offers I'm on it, and no Acknowledge or Resolve", () => {

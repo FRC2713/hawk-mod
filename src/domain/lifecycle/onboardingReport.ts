@@ -3,7 +3,7 @@ import type {
   NotReady,
   OnboardingPlan,
   OnboardingRequest,
-  RhrEmailProblem,
+  AccountProblem,
 } from "./onboarding.js";
 
 /**
@@ -13,8 +13,7 @@ import type {
  * with the address to invite, go only to the onboarding channel.
  */
 
-const PROBLEM: Record<RhrEmailProblem["kind"], string> = {
-  not_an_account: "no Google account has this address",
+const PROBLEM: Record<AccountProblem["kind"], string> = {
   suspended: "the Google account is suspended",
   alias:
     "it is an alias of another account; use that account's primary address",
@@ -48,19 +47,25 @@ export function formatOnboarding(opts: {
   const lines = [
     `Onboarding as of ${opts.asOf} (dry run: nothing posted)`,
     "",
-    `Google accounts to create (Active mentors with no RHR Email): ${google.length}`,
+    `Google accounts to create (Active mentors with no account yet): ${google.length}`,
   ];
-  if (google.length) lines.push(`  ${ids(google)}`);
+  for (const r of google) {
+    lines.push(
+      `  ${r.personId}: ${r.address ? "at the RHR Email on the sheet" : "no RHR Email on the sheet yet"}`
+    );
+  }
 
   lines.push("");
   if ("error" in opts.directory) {
     lines.push(
-      "RHR Emails: NOT checked. Google's user accounts could not be read:",
+      "RHR Emails: NOT checked against Google, so accounts still to create " +
+        "at a filled-in address are not listed. Google's user accounts could " +
+        "not be read:",
       `  ${opts.directory.error}`
     );
   } else {
     lines.push(
-      `RHR Emails that are not a working Google account: ${rhr.length}` +
+      `RHR Emails that are suspended or an alias: ${rhr.length}` +
         ` (checked against ${opts.directory.count} Google accounts)`
     );
     for (const r of rhr)

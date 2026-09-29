@@ -1,5 +1,5 @@
 import type { FindingKind, NewFinding } from "../findings.js";
-import type { OnboardingRequest, RhrEmailProblem } from "./onboarding.js";
+import type { AccountProblem, OnboardingRequest } from "./onboarding.js";
 
 /**
  * Onboarding requests as findings: one per person per task, posted to the
@@ -37,21 +37,15 @@ const KIND: Record<OnboardingRequest["kind"], OnboardingKind> = {
 
 /** Every onboarding finding's dedupe key starts with its kind and a colon. */
 export function onboardingPrefixes(directoryChecked: boolean): string[] {
-  // An RHR Email request can only be closed by a run that read Google: one
-  // that could not, cannot say the address has been fixed.
+  // Google account and RHR Email requests can only be closed by a run that
+  // read Google: one that could not, cannot say the account now exists.
   return ONBOARDING_KINDS.filter(
-    (k) => directoryChecked || k !== "onboarding_rhr_email"
+    (k) => directoryChecked || k === "onboarding_slack_invite"
   ).map((k) => `${k}:`);
 }
 
-function rhrSummary(who: string, problem: RhrEmailProblem): string {
+function rhrSummary(who: string, problem: AccountProblem): string {
   switch (problem.kind) {
-    case "not_an_account":
-      return (
-        `${who}'s RHR Email on the lifecycle sheet is not a Google account. ` +
-        "Check it for a typo: until it is right, they join no mentor group " +
-        "and cannot be invited to Slack."
-      );
     case "suspended":
       return (
         `${who}'s RHR Email belongs to a suspended Google account. Restore ` +
@@ -74,12 +68,18 @@ export function onboardingFinding(r: OnboardingRequest): NewFinding {
   };
   switch (r.kind) {
     case "google_account":
+      // A mentor's RHR address is an adult's team account, so it may be
+      // named here, unlike a student's.
       return {
         ...base,
         severity: "info",
-        summary:
-          `Create a Google account for ${who}, then type the address into ` +
-          "their RHR Email on the lifecycle sheet.",
+        summary: r.address
+          ? `Create a Google account for ${who} at ${r.address}, the RHR ` +
+            "Email on the lifecycle sheet. If that address is a typo, fix " +
+            "the sheet instead."
+          : `Create a Google account for ${who}, then type the address into ` +
+            "their RHR Email on the lifecycle sheet.",
+        detail: { address: r.address },
       };
     case "rhr_email":
       return {

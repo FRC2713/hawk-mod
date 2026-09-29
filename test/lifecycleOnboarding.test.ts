@@ -119,7 +119,12 @@ describe("Google account requests", () => {
   it("asks for an account for an Active mentor with no RHR Email", () => {
     const { requests } = plan([mentor("P0042", { rhrEmail: null })]);
     assert.deepEqual(requests, [
-      { kind: "google_account", personId: "P0042", name: "Mentor P0042" },
+      {
+        kind: "google_account",
+        personId: "P0042",
+        name: "Mentor P0042",
+        address: null,
+      },
     ]);
   });
 
@@ -158,7 +163,7 @@ describe("Google account requests", () => {
     assert.deepEqual(requests, []);
   });
 
-  it("carries no address", () => {
+  it("carries no address when the sheet has none", () => {
     const [r] = plan([mentor("P0042", { rhrEmail: null })]).requests;
     assert.doesNotMatch(JSON.stringify(r), /@/);
   });
@@ -212,18 +217,36 @@ describe("the RHR Email directory check", () => {
     );
   });
 
-  it("raises a request for an Active mentor's broken address", () => {
+  it("asks for the account at the RHR Email the sheet already has (P0073)", () => {
+    // The agreed address goes on the sheet first; the account comes after.
     const { requests } = plan(
-      [mentor("P0042")],
-      [live("U1", "p0042@rhr.example")],
+      [mentor("P0073")],
+      [live("U1", "p0073@rhr.example")],
       []
+    );
+    assert.deepEqual(requests, [
+      {
+        kind: "google_account",
+        personId: "P0073",
+        name: "Mentor P0073",
+        address: "p0073@rhr.example",
+      },
+    ]);
+  });
+
+  it("raises an RHR Email request for a suspended account", () => {
+    const people = [mentor("P0042")];
+    const { requests } = plan(
+      people,
+      [live("U1", "p0042@rhr.example")],
+      [{ primaryEmail: "p0042@rhr.example", aliases: [], suspended: true }]
     );
     assert.deepEqual(requests, [
       {
         kind: "rhr_email",
         personId: "P0042",
         name: "Mentor P0042",
-        problem: { kind: "not_an_account" },
+        problem: { kind: "suspended" },
       },
     ]);
   });
@@ -277,19 +300,38 @@ describe("Slack invites for mentors", () => {
     ]);
   });
 
-  it("does not invite an address that is not a working account", () => {
+  it("does not invite a mentor whose Google account is not created yet", () => {
     const { requests, notReady } = plan([mentor("P0042")], [], []);
     assert.deepEqual(
       requests.map((r) => r.kind),
-      ["rhr_email"]
+      ["google_account"]
     );
     assert.deepEqual(notReady, [
       {
         personId: "P0042",
         role: "mentor",
-        reason: "their RHR Email needs fixing first",
+        reason: "their Google account has not been created yet",
       },
     ]);
+  });
+
+  it("does not invite a mentor whose RHR Email is an alias", () => {
+    const { requests, notReady } = plan(
+      [mentor("P0042")],
+      [],
+      [
+        {
+          primaryEmail: "jordan@rhr.example",
+          aliases: ["p0042@rhr.example"],
+          suspended: false,
+        },
+      ]
+    );
+    assert.deepEqual(
+      requests.map((r) => r.kind),
+      ["rhr_email"]
+    );
+    assert.equal(notReady[0]?.reason, "their RHR Email needs fixing first");
   });
 
   it("leaves out a mentor already in Slack under their RHR Email", () => {
