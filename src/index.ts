@@ -11,22 +11,13 @@ async function main() {
   const app = createApp();
   await app.start(cfg.PORT);
   startSchedules();
-  const students = setting("student-group");
-  const mentors = setting("mentor-group");
   const alerts = setting("alert-channel");
 
   log.info("hawk-mod started", {
     port: cfg.PORT,
     logMode: cfg.LOG_MODE,
     installUrl: `${cfg.PUBLIC_URL}/slack/install`,
-    // Silence here used to look identical to "the groups are empty". The
-    // source matters as much as the value: "which group?" and "who set it?"
-    // are the two questions asked when the roster looks wrong.
-    roleSource:
-      students.value || mentors.value
-        ? `user groups (@${students.value ?? "-"} [${students.source}] / ` +
-          `@${mentors.value ?? "-"} [${mentors.source}])`
-        : "CSV import only — no user groups configured",
+    roleSource: "the lifecycle sheet",
     alertChannel: alerts.value ? `${alerts.value} [${alerts.source}]` : "unset",
   });
 

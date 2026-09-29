@@ -14,7 +14,7 @@ import {
   slackGroupsReport,
   lifecyclePlanReport,
   rosterReport,
-  rosterSync,
+  syncNow,
   slackIdsReport,
 } from "../lifecycle/run.js";
 import { botClient } from "../slack/tokens.js";
@@ -53,8 +53,9 @@ const USAGE = `hawk-mod cli
                                with its default channels. Changes nothing.
                                Needs the Slack install too
   lifecycle sync               what the hourly job does: apply the roster from
-                               the sheet and write Slack User IDs back. Does
-                               nothing until the first roster --apply
+                               the sheet, write Slack User IDs back, and check
+                               the Slack groups (raising the Apply alert).
+                               Does nothing until the first roster --apply
 `;
 
 /** Retired at the cutover; the sheet is where these facts live now. */
@@ -194,7 +195,7 @@ async function main() {
       else if (args[0] === "slack-groups")
         console.log(await slackGroupsReport({ slack: botClient() }));
       else if (args[0] === "sync")
-        console.log(await rosterSync({ slack: botClient(), by: "cli" }));
+        console.log(await syncNow({ slack: botClient(), by: "cli" }));
       else
         throw new Error(
           "usage: lifecycle plan|slack-ids|roster|sync|groups|slack-groups"

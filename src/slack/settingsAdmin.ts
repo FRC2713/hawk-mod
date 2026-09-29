@@ -5,6 +5,7 @@ import {
   SETTINGS,
   type SettingKey,
 } from "../settings.js";
+import { isSlackCopy } from "../domain/lifecycle/slackGroups.js";
 import { resolveGroup } from "./userGroups.js";
 
 /**
@@ -95,10 +96,6 @@ export async function validateSetting(
     .map((h) => h.match(/^<!subteam\^[A-Z0-9]+\|@?([^>]+)>$/i)?.[1] ?? h)
     .map((h) => h.replace(/^@/, ""));
 
-  if (kind === "usergroup" && handles.length !== 1) {
-    return { error: `\`${key}\` takes exactly one user group.` };
-  }
-
   for (const handle of handles) {
     const group = await resolveGroup(client, handle);
     if (!group) {
@@ -107,6 +104,14 @@ export async function validateSetting(
           `No user group @${handle} in this workspace. Nothing was changed — ` +
           `a stored typo looks exactly like an empty group, which is why this ` +
           `is checked before saving.`,
+      };
+    }
+    if (isSlackCopy(group.id)) {
+      return {
+        error:
+          `@${group.handle} is copied from the lifecycle sheet, so ` +
+          `\`/hawkmod group\` never edits it: edit the sheet, and apply the ` +
+          `change from the Slack groups alert. Nothing was changed.`,
       };
     }
   }

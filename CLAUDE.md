@@ -103,8 +103,9 @@ wherever an id is shown the channel's current name is shown with it
 code or config. A setting whose effect is scheduled — `report-time` —
 reschedules immediately; leaving it until tomorrow would mean the setting
 looked applied and was not. Every change lands in `setting_changes`. The
-`student-group` / `mentor-group` settings no longer decide anyone's role; step
-5 of the lifecycle sync makes those groups copies of the sheet.
+`student-group` / `mentor-group` settings were retired at step 5: those groups
+are copies of the sheet, found by ID in `SLACK_GROUP_IDS`. `managed-groups` is
+what `/hawkmod group` may edit, and refuses a copy.
 
 Note `settings.ts` reads `process.env` directly rather than through `config()` —
 it is reachable from the CLI, and `config()` there would throw at import time.
@@ -159,7 +160,8 @@ see less, and the only ones no rule, job or sync can reach.
 
 **Group membership is for mentions; the roster is monitoring.** `/hawkmod group
 add|remove` edits the Slack user group and nothing else, and its reply says the
-roster is unchanged rather than letting the caller assume otherwise. `CONTEXT.md` keeps the
+roster is unchanged rather than letting the caller assume otherwise. It refuses
+the groups copied from the sheet, which change only by Apply. `CONTEXT.md` keeps the
 two words apart; conflating them is how a graduated student ends up monitored
 forever, or a returning one ends up invisible.
 

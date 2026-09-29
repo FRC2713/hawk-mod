@@ -546,7 +546,20 @@ is where an administrator runs them.
    a read-only dry run that also lists each group's default channels; (3)
    the hourly finding with **Apply** and **Apply anyway**; (4) `/hawkmod
 group` refusing copies, the leaving buttons reaching Slack, and the
-   `student-group` / `mentor-group` / `managed-groups` settings retired.
+   `student-group` / `mentor-group` settings retired.
+
+   Built that way, with two details settled while building part 4
+   (2026-09-28): `managed-groups` stays, as the list of other groups
+   `/hawkmod group` may edit, and refuses a copy; and someone held in a Slack
+   copy is gathered into the same one-per-person `group_member_held` /
+   `cori_lapsed` alert as the Google Groups, so one **Remove from groups**
+   takes them out of both — the Slack half as the clicker, with their grant.
+   A Slack account the sheet does not know gets its own alert, named by its
+   Slack name. The hourly Google Groups run owns these alerts and reads the
+   Slack copies to raise them; if Slack cannot be read it raises what Google
+   shows and closes nothing. "Sync now" (`/hawkmod lifecycle sync`) runs the Slack groups check
+   after the roster, so a sheet edit's Slack difference and its **Apply**
+   appear without waiting for the hour.
 
 6. **Onboarding requests and safety net (H).** Google account requests,
    RHR Email directory check, Slack invites, all in the `onboarding-channel`

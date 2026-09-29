@@ -17,8 +17,6 @@ const schema = z.object({
   // Slack user groups that declare roles. Seeds for the settings of the same
   // name; leave both unset and unconfigured and the roster is maintained purely
   // by CSV import.
-  STUDENT_USERGROUP: z.string().optional(),
-  ADULT_USERGROUP: z.string().optional(),
   // Seed for the `managed-groups` setting; see src/settings.ts for what the
   // allowlist is actually for.
   MANAGED_USERGROUPS: z.string().optional(),

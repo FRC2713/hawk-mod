@@ -106,7 +106,13 @@ export function findingBlocks(f: Finding): {
 } {
   const headline = `${severityEmoji(f.severity)} *${f.kind}* — ${f.summary}`;
   const blocks: unknown[] = [
-    { type: "section", text: { type: "mrkdwn", text: headline } },
+    // verbatim: Slack otherwise turns a plain "@students" in a summary into
+    // a live mention of the whole group. Findings name groups; they must
+    // never ping one.
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: headline, verbatim: true },
+    },
   ];
 
   const lifecycle = lifecycleAction(f);

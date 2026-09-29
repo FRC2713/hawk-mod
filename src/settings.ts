@@ -14,7 +14,7 @@ import { getSetting } from "./db/repo.js";
  * so nothing breaks for a host that already has one and there is no flag day.
  */
 
-export type SettingKind = "usergroup" | "usergroup_list" | "channel" | "time";
+export type SettingKind = "usergroup_list" | "channel" | "time";
 
 export type SettingSpec = {
   /** The environment variable this used to live in, and still falls back to. */
@@ -32,23 +32,15 @@ export type SettingSpec = {
  * every stored token undecryptable and every enrolled adult silently invisible.
  */
 export const SETTINGS = {
-  "student-group": {
-    env: "STUDENT_USERGROUP",
-    label: "Student user group",
-    kind: "usergroup",
-    hint: "@students, for mentions — roles come from the lifecycle sheet",
-  },
-  "mentor-group": {
-    env: "ADULT_USERGROUP",
-    label: "Mentor user group",
-    kind: "usergroup",
-    hint: "@mentors, for mentions — roles come from the lifecycle sheet",
-  },
+  // `student-group` and `mentor-group` were retired at lifecycle step 5: the
+  // Slack groups they named are copies of the lifecycle sheet, found by ID in
+  // SLACK_GROUP_IDS, and roles come from the sheet. A value still stored for
+  // either is ignored.
   "managed-groups": {
     env: "MANAGED_USERGROUPS",
-    label: "Other editable groups",
+    label: "Groups /hawkmod group may edit",
     kind: "usergroup_list",
-    hint: "comma separated; the two role groups are always editable",
+    hint: "comma separated; never the groups copied from the lifecycle sheet",
   },
   "alert-channel": {
     env: "ALERT_CHANNEL_ID",
@@ -131,15 +123,12 @@ export function settingValue(key: SettingKey): string | undefined {
 /**
  * Handles `/hawkmod group` is permitted to edit.
  *
- * The two role groups are always editable — they are the ones hawk-mod is for.
- * Everything else has to be named, because `usergroups.users.update` replaces a
+ * Every one has to be named, because `usergroups.users.update` replaces a
  * group's whole membership, so a bad plan does not corrupt a group, it empties
- * one. This bounds how many groups a single bug can reach.
+ * one. This bounds how many groups a single bug can reach. The groups copied
+ * from the lifecycle sheet are refused whatever this says
+ * (`slack/groupAdmin.ts`): they change only by Apply.
  */
 export function managedGroupHandles(): Set<string> {
-  return new Set([
-    ...parseHandles(settingValue("student-group")),
-    ...parseHandles(settingValue("mentor-group")),
-    ...parseHandles(settingValue("managed-groups")),
-  ]);
+  return new Set(parseHandles(settingValue("managed-groups")));
 }

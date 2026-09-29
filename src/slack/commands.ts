@@ -42,7 +42,7 @@ import {
   lifecyclePlanReport,
   slackGroupsReport,
   rosterReport,
-  rosterSync,
+  syncNow,
   slackIdsReport,
 } from "../lifecycle/run.js";
 
@@ -63,7 +63,7 @@ const HELP = [
   "`/hawkmod lifecycle plan` — read the lifecycle sheet; changes nothing",
   "`/hawkmod lifecycle slack-ids` — which Slack User IDs the sheet is missing; add `apply` to fill them in",
   "`/hawkmod lifecycle roster` — what building the roster from the sheet would change; add `apply` to make the changes",
-  "`/hawkmod lifecycle sync` — read the sheet now and update the roster (it also runs hourly)",
+  "`/hawkmod lifecycle sync` — read the sheet now: update the roster and check the Slack groups (both also run hourly)",
   "`/hawkmod lifecycle groups` — the Google Groups against the sheet; add `apply` to add everyone the sheet puts in them (then hourly)",
   "`/hawkmod lifecycle slack-groups` — the Slack user groups against the sheet, with their default channels; changes nothing",
   "",
@@ -198,7 +198,7 @@ export function registerCommands(app: App): void {
             response_type: "ephemeral",
             text:
               "```" +
-              (await rosterSync({ slack: client, by: caller.name })) +
+              (await syncNow({ slack: client, by: caller.name })) +
               "```",
           });
           return;
@@ -267,7 +267,7 @@ export function registerCommands(app: App): void {
                       },
                     })
                   : what === "sync"
-                    ? await rosterSync({ slack: client, by: caller.name })
+                    ? await syncNow({ slack: client, by: caller.name })
                     : what === "roster"
                       ? await rosterReport({
                           slack: client,

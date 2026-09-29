@@ -85,6 +85,7 @@ import { refreshFinding } from "../slack/alerts.js";
 import { applyRosterChanges } from "./applyRoster.js";
 import { log } from "../logger.js";
 import { fetchWorkspaceUsers } from "../slack/roster.js";
+import { botClient } from "../slack/tokens.js";
 import {
   decideSlackCopies,
   membershipAfter,
@@ -465,7 +466,7 @@ async function raiseRedrawn(f: NewFinding): Promise<void> {
  * (a refusal carries **Apply anyway**), and closes what it no longer sees.
  * Changes no group: every Slack group change is an administrator's click.
  */
-export async function slackGroupsCheck(slack: WebClient): Promise<void> {
+export async function slackGroupsCheck(slack: WebClient): Promise<string> {
   let inputs;
   try {
     inputs = await readSlackCopyInputs(slack);
@@ -494,6 +495,15 @@ export async function slackGroupsCheck(slack: WebClient): Promise<void> {
     "The Slack groups match the lifecycle sheet."
   );
   for (const id of closed) await refreshFinding(id);
+  const held = decisions.filter((d) => d.kind === "held").length;
+  return [
+    differ
+      ? "Slack groups differ from the sheet: Apply is on the alert in the alert channel."
+      : "Slack groups match the sheet.",
+    held ? `${held} Slack group(s) held; see the alert channel.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**
@@ -672,15 +682,28 @@ async function settleHeldMembers(
       p.person_id && p.slack_user_id ? [[p.person_id, p.slack_user_id]] : []
     )
   );
+  // The Slack copies hold people too, and gather into the same alerts. If
+  // Slack cannot be read, raise what Google shows and close nothing: a
+  // Slack-only alert must not close because Slack was unreachable.
+  let slack: Awaited<ReturnType<typeof readSlackCopyInputs>> | null = null;
+  try {
+    slack = await readSlackCopyInputs(botClient());
+  } catch (err) {
+    log.error("could not read the Slack groups for held members", {
+      error: errorText(err),
+    });
+  }
   const seen = new Set<string>();
-  for (const subject of heldSubjects(plans)) {
+  for (const subject of heldSubjects(plans, slack?.plans ?? [])) {
     const f = heldMemberFinding(subject, {
       names,
       inSlack: (id) => slackByPerson.has(id),
+      slackNames: new Map((slack?.users ?? []).map((u) => [u.id, u.realName])),
     });
     seen.add(f.dedupeKey);
-    await raise(f);
+    await raiseRedrawn(f);
   }
+  if (!slack) return;
   const closed = resolveMissingWithPrefix(
     HELD_MEMBER_PREFIXES,
     seen,
@@ -701,9 +724,14 @@ export async function groupsRemoveHeld(opts: {
   key: string;
   actor: GroupsActor;
   reason: string;
+  /** The workspace, for the clicker's own grant to edit the Slack copies. */
+  teamId: string | null;
 }): Promise<{ text: string; done: boolean }> {
   const { parsed, directory, plans, found, missing } = await readGroupInputs();
-  const subject = heldSubjects(plans).find((s) => s.key === opts.key);
+  const slackBefore = await readSlackCopyInputs(botClient());
+  const subject = heldSubjects(plans, slackBefore.plans).find(
+    (s) => s.key === opts.key
+  );
   if (!subject) {
     return {
       text: "Nothing is held for them any more; nothing was removed.",
@@ -739,24 +767,142 @@ export async function groupsRemoveHeld(opts: {
       })),
     });
   }
-  const outcome = await applyAndRecord({
-    decisions,
-    directory,
-    parsed,
-    actor: opts.actor,
-    reason: opts.reason,
-    source: "remove_from_groups",
-  });
-  const lines = [outcome.summary];
+  const lines: string[] = [];
+  let failed = 0;
+  if (decisions.length) {
+    const outcome = await applyAndRecord({
+      decisions,
+      directory,
+      parsed,
+      actor: opts.actor,
+      reason: opts.reason,
+      source: "remove_from_groups",
+    });
+    lines.push(`Google Groups: ${outcome.summary}`);
+    failed += outcome.failed.length;
+  }
   if (skipped.length) {
     lines.push(
       `Not touched, because the group is wrong or missing: ${skipped.join(", ")}.`
     );
   }
+  let slackDone = true;
+  if (subject.slack.length) {
+    const slack = await removeHeldFromSlack({
+      key: opts.key,
+      googlePlans: plans,
+      actor: opts.actor,
+      reason: opts.reason,
+      teamId: opts.teamId,
+    });
+    lines.push(`Slack: ${slack.text}`);
+    slackDone = slack.done;
+  }
   return {
     text: lines.join("\n"),
-    done: !outcome.failed.length && !skipped.length,
+    done: !failed && !skipped.length && slackDone,
   };
+}
+
+/**
+ * The Slack half of Remove from groups: takes the person (or account) out of
+ * the Slack copies they are still held in, as the clicker, with their own
+ * grant, inside the group-write lock. Re-reads the groups inside the lock, so
+ * only what is held at that moment is removed. Never empties a group — Slack
+ * refuses that, and it is a person's job in Slack — and never touches a copy
+ * whose ID leads to the wrong group.
+ */
+async function removeHeldFromSlack(opts: {
+  key: string;
+  googlePlans: GroupPlanResult[];
+  actor: GroupsActor;
+  reason: string;
+  teamId: string | null;
+}): Promise<{ text: string; done: boolean }> {
+  if (!opts.teamId) {
+    return {
+      text: "not changed: Slack did not say which workspace.",
+      done: false,
+    };
+  }
+  const outcome = await withGroupEditor(
+    opts.teamId,
+    opts.actor.slackUserId,
+    async (editor) => {
+      const now = await readSlackCopyInputs(botClient());
+      const subject = heldSubjects(opts.googlePlans, now.plans).find(
+        (s) => s.key === opts.key
+      );
+      if (!subject?.slack.length) {
+        return { text: "nothing is held there any more.", done: true };
+      }
+      const rosterIds = new Map(
+        listPeople(false).flatMap((p) =>
+          p.person_id ? [[p.person_id, p.id] as const] : []
+        )
+      );
+      const removed: string[] = [];
+      const notDone: string[] = [];
+      for (const copy of SLACK_COPIES) {
+        const ids = subject.slack
+          .filter((e) => e.copy === copy)
+          .map((e) => e.slackUserId);
+        if (!ids.length) continue;
+        const { handle } = SLACK_GROUP_IDS[copy];
+        const group = now.found[copy];
+        if (!group || group.handle.toLowerCase() !== handle) {
+          notDone.push(`@${handle} (wrong or missing group)`);
+          continue;
+        }
+        const members = (now.actual[copy] ?? []).filter(
+          (m) => !ids.includes(m)
+        );
+        if (!members.length) {
+          notDone.push(`@${handle} (it would be empty; Slack refuses that)`);
+          continue;
+        }
+        try {
+          await setGroupMembership(editor, group.id, members);
+        } catch (err) {
+          notDone.push(`@${handle} (Slack said: ${errorText(err)})`);
+          continue;
+        }
+        for (const id of ids) {
+          insertGroupChange({
+            usergroupId: group.id,
+            handle: group.handle,
+            action: "remove",
+            subject: id,
+            personId: subject.personId
+              ? (rosterIds.get(subject.personId) ?? null)
+              : null,
+            actor: opts.actor.slackUserId,
+            actorName: opts.actor.name,
+            reason: opts.reason,
+            source: "remove_from_groups",
+          });
+        }
+        removed.push(`@${handle}`);
+      }
+      log.info("removed held member from slack groups", {
+        by: opts.actor.name,
+        removed: removed.length,
+        notDone: notDone.length,
+      });
+      return {
+        text: [
+          removed.length ? `removed from ${removed.join(", ")}.` : "",
+          notDone.length ? `not removed from ${notDone.join(", ")}.` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        done: !notDone.length,
+      };
+    }
+  );
+  return outcome.ok
+    ? outcome.value
+    : { text: `not changed. ${outcome.reason}`, done: false };
 }
 
 /**
@@ -1061,6 +1207,27 @@ export const NOT_YET_BUILT =
   "The roster has not been built from the lifecycle sheet yet, so there is " +
   "nothing to keep in step. Check it with `/hawkmod lifecycle roster`, then " +
   "build it with `/hawkmod lifecycle roster apply`.";
+
+/**
+ * "Sync now" (`/hawkmod lifecycle sync`, and the CLI): the roster, then the
+ * Slack groups check, so whoever just edited the sheet sees the new Slack
+ * difference — and its Apply — without waiting for the hour. Changes no
+ * Slack group itself. The hourly job runs the same two, separately.
+ */
+export async function syncNow(opts: {
+  slack: WebClient;
+  by: string;
+}): Promise<string> {
+  const roster = await rosterSync(opts);
+  if (!rosterCutoverDone()) return roster;
+  let slack: string;
+  try {
+    slack = await slackGroupsCheck(opts.slack);
+  } catch (err) {
+    slack = `The Slack groups were not checked (${errorText(err)}).`;
+  }
+  return `${roster}\n\n${slack}`;
+}
 
 /**
  * One run of the roster from the sheet, as the hourly job and "sync now" both
