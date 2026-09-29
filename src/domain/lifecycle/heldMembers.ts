@@ -1,4 +1,7 @@
+import type { IsoDate } from "../dates.js";
 import { dedupeKey, type NewFinding } from "../findings.js";
+import { hasAccess } from "./groups.js";
+import type { SheetPerson } from "./sheet.js";
 import type { GroupPlanResult, HeldReason } from "./groupPlan.js";
 import type { GroupName } from "./groups.js";
 import {
@@ -32,6 +35,12 @@ import {
  * Google Group, a Slack group or both, so one click removes them from all of
  * it. A Slack account the sheet does not know gets its own alert, named by
  * its Slack name — a Slack account is not a private address.
+ *
+ * Step 6's safety net joins the same alert: an Active mentor with a live
+ * Slack account and no current CORI is `cori_lapsed` whether or not they are
+ * in any group — one alert per mentor, not one per place they are (decided
+ * 2026-09-29). Slack Pro cannot restrict a member, so for the Slack account
+ * the alert asks a person to deactivate it; hawk-mod removes nothing there.
  */
 
 export type HeldEntry = {
@@ -61,7 +70,32 @@ export type HeldSubject = {
   entries: HeldEntry[];
   /** Held in Slack user group copies. */
   slack: SlackHeldEntry[];
+  /** An Active mentor with a live Slack account and no current CORI. */
+  inSlackWithoutCori: boolean;
 };
+
+/**
+ * Active mentors with a live Slack account and no current CORI — the Slack
+ * half of "may have access", which Slack Pro cannot enforce. A student who
+ * also mentors is a student, and gated by consent instead.
+ */
+export function mentorsInSlackWithoutCori(
+  people: readonly SheetPerson[],
+  hasLiveSlack: (p: SheetPerson) => boolean,
+  asOf: IsoDate
+): string[] {
+  return people
+    .filter(
+      (p) =>
+        p.status === "active" &&
+        p.roles.includes("Mentor") &&
+        !p.roles.includes("Student") &&
+        !hasAccess(p, asOf) &&
+        hasLiveSlack(p)
+    )
+    .map((p) => p.personId)
+    .sort();
+}
 
 export const HELD_MEMBER_PREFIXES = [
   "group_member_held:",
@@ -77,7 +111,8 @@ export function maskAddress(address: string): string {
 
 export function heldSubjects(
   plans: readonly GroupPlanResult[],
-  slackPlans: readonly SlackCopyPlan[] = []
+  slackPlans: readonly SlackCopyPlan[] = [],
+  inSlackWithoutCori: readonly string[] = []
 ): HeldSubject[] {
   const byKey = new Map<string, Omit<HeldSubject, "key" | "kind">>();
   const subject = (
@@ -98,6 +133,7 @@ export function heldSubjects(
         slackUserId: null,
         entries: [],
         slack: [],
+        inSlackWithoutCori: false,
       })).entries.push({
         group: plan.group,
         address: h.address,
@@ -113,6 +149,7 @@ export function heldSubjects(
         slackUserId: h.personId ? null : h.slackUserId,
         entries: [],
         slack: [],
+        inSlackWithoutCori: false,
       })).slack.push({
         copy: plan.copy,
         slackUserId: h.slackUserId,
@@ -120,7 +157,18 @@ export function heldSubjects(
       });
     }
   }
+  for (const personId of inSlackWithoutCori) {
+    subject(personId, () => ({
+      personId,
+      address: null,
+      slackUserId: null,
+      entries: [],
+      slack: [],
+      inSlackWithoutCori: false,
+    })).inSlackWithoutCori = true;
+  }
   return [...byKey.entries()].map(([id, s]) => {
+    // Vacuously true for a mentor held nowhere but in Slack itself.
     const coriOnly = [...s.entries, ...s.slack].every(
       (e) => e.reason === "no_access"
     );
@@ -170,6 +218,7 @@ export function heldMemberFinding(
       ...(s.slack.length
         ? { slack: s.slack.map((e) => ({ copy: e.copy, reason: e.reason })) }
         : {}),
+      ...(s.inSlackWithoutCori ? { inSlackWithoutCori: true } : {}),
     },
   };
 
@@ -198,20 +247,27 @@ export function heldMemberFinding(
   const name = opts.names.get(s.personId);
   const who = name ? `${s.personId} ${name}` : s.personId;
   if (s.kind === "cori_lapsed") {
+    const where = groups
+      ? `is still in ${groups}` +
+        (s.inSlackWithoutCori ? ", and has a Slack account" : "")
+      : "has a Slack account";
+    const rejoin = groups
+      ? " They rejoin on their own once a current CORI Expiry is on the sheet" +
+        (opts.inSlack(s.personId)
+          ? " (the Slack groups when an administrator clicks Apply)."
+          : ".")
+      : "";
+    const slack = s.inSlackWithoutCori
+      ? " Slack Pro cannot restrict a member: an administrator should " +
+        "deactivate their Slack account until a current CORI Expiry is on " +
+        "the sheet, or enter it there if CORI is done."
+      : "";
     return {
       ...base,
       kind: "cori_lapsed",
       summary:
-        `${who} does not have CORI current, and is still in ${groups}. ` +
-        `Nothing was removed; they rejoin on their own once a current CORI ` +
-        `Expiry is on the sheet` +
-        (opts.inSlack(s.personId)
-          ? " (the Slack groups when an administrator clicks Apply)."
-          : ".") +
-        (opts.inSlack(s.personId)
-          ? " If they are removed, an administrator must also take them out of " +
-            "Slack: hawk-mod cannot, on Slack Pro."
-          : ""),
+        `${who} does not have CORI current, and ${where}. Nothing was ` +
+        `removed.${rejoin}${slack}`,
     };
   }
 

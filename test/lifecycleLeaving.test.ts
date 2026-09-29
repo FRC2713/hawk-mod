@@ -148,8 +148,13 @@ describe("what the alerts say and offer", () => {
     assert.equal(maskAddress("kid@home.example"), "k…@home.example");
   });
 
-  it("reminds about Slack for a lapsed mentor who is in it", () => {
-    assert.match(finding("cori_lapsed:P0010", true).summary, /out of Slack/);
+  it("asks for the Slack account to be deactivated, for a lapsed mentor in Slack", () => {
+    const inSlack = heldSubjects(plans, [], ["P0010"]).find(
+      (x) => x.key === "cori_lapsed:P0010"
+    )!;
+    const f = heldMemberFinding(inSlack, { names, inSlack: () => true });
+    assert.match(f.summary, /, and has a Slack account\./);
+    assert.match(f.summary, /should deactivate their Slack account/);
     assert.doesNotMatch(finding("cori_lapsed:P0010", false).summary, /Slack/);
   });
 

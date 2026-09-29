@@ -10,7 +10,7 @@ import {
 } from "../db/repo.js";
 import { today } from "../domain/dates.js";
 import { dedupeKey } from "../domain/findings.js";
-import { matchSlackAccount } from "../domain/people.js";
+import { matchSlackAccount, unknownAccountSummary } from "../domain/people.js";
 import { consentStatus, mayHoldAccount } from "../domain/rules/consent.js";
 import { log } from "../logger.js";
 import { evaluateChannel } from "../monitor/channels.js";
@@ -166,7 +166,8 @@ export function registerEvents(app: App): void {
       id?: string;
       is_bot?: boolean;
       name?: string;
-      profile?: { email?: string };
+      real_name?: string;
+      profile?: { email?: string; real_name?: string };
     };
     if (!user.id || user.is_bot) return;
     const match = matchSlackAccount(
@@ -188,7 +189,12 @@ export function registerEvents(app: App): void {
         kind: "unknown_account",
         dedupeKey: dedupeKey("unknown_account", user.id),
         severity: "violation",
-        summary: `New Slack account <@${user.id}> is not on the roster.`,
+        summary: unknownAccountSummary({
+          id: user.id,
+          name: user.name ?? null,
+          realName: user.real_name ?? user.profile?.real_name ?? null,
+          email: user.profile?.email ?? null,
+        }),
         subjectRef: user.id,
       });
       return;

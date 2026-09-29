@@ -31,7 +31,8 @@ CLI subcommands: `set-role` (`district_observer` only), `sweep`,
 `backfill`, `findings [status]`, `export-conversation <id> [out.json]`,
 `lifecycle plan [--members]`, `lifecycle slack-ids [--apply]`,
 `lifecycle roster [--apply]`, `lifecycle sync`,
-`lifecycle groups [--members] [--apply]`, `lifecycle slack-groups`. (`import-roster` and
+`lifecycle groups [--members] [--apply]`, `lifecycle slack-groups`,
+`lifecycle onboarding`. (`import-roster` and
 `import-consents` refuse: those facts come from the lifecycle sheet.) None of
 them is a bootstrap step: administrative access is Slack's Workspace
 Owner/Admin flags, read live in `src/slack/authz.ts`, so a fresh install is
@@ -103,6 +104,9 @@ wherever an id is shown the channel's current name is shown with it
 code or config. A setting whose effect is scheduled — `report-time` —
 reschedules immediately; leaving it until tomorrow would mean the setting
 looked applied and was not. Every change lands in `setting_changes`. The
+`onboarding-channel` (where onboarding requests go; the alert channel
+while unset) and `announcement-channel` ("X enrolled"; nobody is told
+while unset) are channels like `alert-channel`. The
 `student-group` / `mentor-group` settings were retired at step 5: those groups
 are copies of the sheet, found by ID in `SLACK_GROUP_IDS`. `managed-groups` is
 what `/hawkmod group` may edit, and refuses a copy.
@@ -328,6 +332,23 @@ account the sheet does not know is held, and the membership Apply sends keeps
 them (`membershipAfter`) — `usergroups.users.update` replaces the whole list,
 so leaving someone out removes them. What the copies are _for_ is their
 default channels.
+
+**Onboarding asks; it never acts** (step 6, capability H). The pure planner
+(`domain/lifecycle/onboarding.ts`) reads the sheet, Slack's accounts and
+Google's user accounts (as `hawk-mod@`, read-only, in a client of its own)
+and asks for what only a person can do: a Google account for an Active
+mentor with none (Super Admins create them; the agreed address goes on the
+sheet first), an RHR Email that is suspended or an alias, and a Slack invite
+once someone is ready — a mentor with CORI current, a student with Slack
+Consent current — by RHR or School Email, never a personal one. Each is one
+`onboarding_*` finding per person, posted to `onboarding-channel` with an
+**I'm on it** button, and closed by the run once the sheet or Slack shows it
+done. The invite address is a line on the posted request alone, never in the
+summary. Findings remember the channel they were posted in
+(`alert_channel`), which is how these are redrawn. A mentor in Slack without
+CORI is a `cori_lapsed` alert (Slack Pro cannot restrict them). New adults
+get one welcome DM on joining and one reminder a week later
+(`slack/welcome.ts`), and nothing after.
 
 **Two paths reach the same log.** Events (`src/slack/events.ts`) give real-time
 capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each adult's

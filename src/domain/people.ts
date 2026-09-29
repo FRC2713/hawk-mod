@@ -123,3 +123,24 @@ export function matchSlackAccount(
   if (person && !person.slack_user_id) return { kind: "link", person };
   return { kind: "unknown" };
 }
+
+/**
+ * The `unknown_account` alert's words, the same from the join event and the
+ * nightly sweep. The roster is a copy of the lifecycle sheet, so the usual
+ * cause is someone on the sheet whose Slack email is not their RHR or School
+ * Email — and the fix is their Slack User ID typed onto their row. Names the
+ * account by its Slack name, never as a live mention.
+ */
+export function unknownAccountSummary(u: {
+  id: string;
+  name: string | null;
+  realName: string | null;
+  email: string | null;
+}): string {
+  const handle = u.name ? `@${u.name}, ` : "";
+  return (
+    `Slack account ${u.realName || u.name || u.id} (${handle}` +
+    `${u.email ?? "no email"}) is not matched to anyone on the lifecycle ` +
+    `sheet. If they are on it, type ${u.id} into their row's Slack User ID.`
+  );
+}

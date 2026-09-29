@@ -45,6 +45,7 @@ import {
   HELD_MEMBER_PREFIXES,
   heldMemberFinding,
   heldSubjects,
+  mentorsInSlackWithoutCori,
 } from "../domain/lifecycle/heldMembers.js";
 import type { GroupPlanResult } from "../domain/lifecycle/groupPlan.js";
 import {
@@ -433,7 +434,17 @@ async function readSlackCopyInputs(slack: WebClient) {
     actual,
     asOf: today(),
   });
-  return { parsed, users, workspace, plans, actual, found, read, disabled };
+  return {
+    parsed,
+    users,
+    workspace,
+    plans,
+    actual,
+    found,
+    read,
+    disabled,
+    slackIds,
+  };
 }
 
 /**
@@ -697,7 +708,8 @@ async function settleHeldMembers(
     });
   }
   const seen = new Set<string>();
-  for (const subject of heldSubjects(plans, slack?.plans ?? [])) {
+  const withoutCori = slack ? slackWithoutCori(parsed, slack.slackIds) : [];
+  for (const subject of heldSubjects(plans, slack?.plans ?? [], withoutCori)) {
     const f = heldMemberFinding(subject, {
       names,
       inSlack: (id) => slackByPerson.has(id),
@@ -715,6 +727,18 @@ async function settleHeldMembers(
   for (const id of closed) await refreshFinding(id);
 }
 
+/** Active mentors with a live Slack account and no current CORI. */
+function slackWithoutCori(
+  parsed: ReturnType<typeof parseSheet>,
+  slackIds: ReadonlyMap<string, string>
+): string[] {
+  return mentorsInSlackWithoutCori(
+    parsed.people,
+    (p) => slackIds.has(p.personId),
+    today()
+  );
+}
+
 /**
  * **Remove from groups** (or **Remove from mentor groups**), from a
  * `group_member_held` or `cori_lapsed` finding's button. Re-reads the sheet
@@ -729,12 +753,14 @@ export async function groupsRemoveHeld(opts: {
   reason: string;
   /** The workspace, for the clicker's own grant to edit the Slack copies. */
   teamId: string | null;
-}): Promise<{ text: string; done: boolean }> {
+}): Promise<{ text: string; done: boolean; stillInSlack?: boolean }> {
   const { parsed, directory, plans, found, missing } = await readGroupInputs();
   const slackBefore = await readSlackCopyInputs(botClient());
-  const subject = heldSubjects(plans, slackBefore.plans).find(
-    (s) => s.key === opts.key
-  );
+  const subject = heldSubjects(
+    plans,
+    slackBefore.plans,
+    slackWithoutCori(parsed, slackBefore.slackIds)
+  ).find((s) => s.key === opts.key);
   if (!subject) {
     return {
       text: "Nothing is held for them any more; nothing was removed.",
@@ -801,9 +827,30 @@ export async function groupsRemoveHeld(opts: {
     lines.push(`Slack: ${slack.text}`);
     slackDone = slack.done;
   }
+  const done = !failed && !skipped.length && slackDone;
+  // Out of every group, but still in Slack without CORI: the alert stays
+  // open, redrawn to say only that, rather than closing now and coming back
+  // at the next hourly run with a fresh ping.
+  if (done && subject.inSlackWithoutCori) {
+    await raise(
+      heldMemberFinding(
+        { ...subject, entries: [], slack: [] },
+        {
+          names: new Map(parsed.people.map((p) => [p.personId, p.name])),
+          inSlack: () => true,
+        }
+      )
+    );
+    lines.push(
+      "They are still in Slack without CORI current, so this alert stays " +
+        "open until their Slack account is deactivated or a current CORI " +
+        "Expiry is on the sheet."
+    );
+  }
   return {
     text: lines.join("\n"),
-    done: !failed && !skipped.length && slackDone,
+    done,
+    stillInSlack: subject.inSlackWithoutCori,
   };
 }
 
@@ -1319,7 +1366,16 @@ async function readOnboardingInputs(slack: WebClient) {
     directory,
     asOf
   );
-  return { asOf, plan, users, directory, directoryError };
+  const live = new Set(users.filter((u) => !u.isDeleted).map((u) => u.id));
+  const rosterSlack = new Map(
+    listPeople(false).flatMap((p) =>
+      p.person_id && p.slack_user_id && live.has(p.slack_user_id)
+        ? [[p.person_id, p.slack_user_id] as const]
+        : []
+    )
+  );
+  const withoutCori = slackWithoutCori(parsed, rosterSlack);
+  return { asOf, plan, users, directory, directoryError, withoutCori };
 }
 
 /**
@@ -1329,7 +1385,7 @@ async function readOnboardingInputs(slack: WebClient) {
 export async function onboardingReport(opts: {
   slack: WebClient;
 }): Promise<string> {
-  const { asOf, plan, users, directory, directoryError } =
+  const { asOf, plan, users, directory, directoryError, withoutCori } =
     await readOnboardingInputs(opts.slack);
   const { channel, fallback } = onboardingChannel();
   return formatOnboarding({
@@ -1343,6 +1399,7 @@ export async function onboardingReport(opts: {
       ? await describeValue(opts.slack, "alert-channel", channel)
       : "nowhere: neither onboarding-channel nor alert-channel is set",
     channelIsFallback: fallback,
+    slackWithoutCori: withoutCori,
   });
 }
 

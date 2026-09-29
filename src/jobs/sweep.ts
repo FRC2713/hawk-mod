@@ -13,7 +13,7 @@ import {
   type FindingKind,
   type NewFinding,
 } from "../domain/findings.js";
-import { requiresEnrollment } from "../domain/people.js";
+import { requiresEnrollment, unknownAccountSummary } from "../domain/people.js";
 import { consentStatus, mayHoldAccount } from "../domain/rules/consent.js";
 import {
   describeScreening,
@@ -100,7 +100,7 @@ export async function runSweep(): Promise<SweepStats> {
       kind: "unknown_account",
       dedupeKey: dedupeKey("unknown_account", u.id),
       severity: "violation",
-      summary: `Slack account @${u.name} (${u.email ?? "no email"}) is not on the roster.`,
+      summary: unknownAccountSummary(u),
       subjectRef: u.id,
       detail: { realName: u.realName, isOwner: u.isOwner, isAdmin: u.isAdmin },
     });
