@@ -53,6 +53,22 @@ export const USER_SCOPES = [
  */
 export const GROUP_ADMIN_USER_SCOPES = ["usergroups:write"];
 
+/**
+ * The authorization for group editing: no bot scopes — it adds a permission
+ * to one person's token and must not re-grant or alter the workspace
+ * installation — `usergroups:write` only, `metadata` so the callback knows
+ * which grant came back, and the redirect named explicitly so Slack cannot
+ * send it to another of the app's registered URLs.
+ */
+export function groupAuthorizeOptions(publicUrl: string): InstallURLOptions {
+  return {
+    scopes: [],
+    userScopes: GROUP_ADMIN_USER_SCOPES,
+    metadata: GROUP_ADMIN_METADATA,
+    redirectUri: `${publicUrl}/slack/oauth_redirect`,
+  };
+}
+
 export function createApp(): App {
   const cfg = config();
 
@@ -61,13 +77,18 @@ export function createApp(): App {
    * either on `App`'s public type, so reaching the URL generator needs this
    * shape. `receiver` is private, hence the double assertion; keeping the
    * target structural rather than `any` still means a Bolt upgrade that changes
-   * `generateInstallUrl` breaks here at compile time rather than at an
+   * `handleInstallPath` breaks here at compile time rather than at an
    * administrator's first click.
    */
   type WithInstaller = {
     receiver?: {
       installer?: {
-        generateInstallUrl(options: InstallURLOptions): Promise<string>;
+        handleInstallPath(
+          req: import("http").IncomingMessage,
+          res: import("http").ServerResponse,
+          options?: undefined,
+          installOptions?: InstallURLOptions
+        ): Promise<void>;
       };
     };
   };
@@ -84,21 +105,23 @@ export function createApp(): App {
    * callback which one came back.
    */
   const authorizeGroups = async (
-    _req: import("http").IncomingMessage,
+    req: import("http").IncomingMessage,
     res: import("http").ServerResponse
   ): Promise<void> => {
     try {
       const installer = (self as unknown as WithInstaller).receiver?.installer;
       if (!installer) throw new Error("no install provider on the receiver");
-      const url = await installer.generateInstallUrl({
-        // No bot scopes: this authorization adds a permission to one person's
-        // token and must not re-grant or alter the workspace installation.
-        scopes: [],
-        userScopes: GROUP_ADMIN_USER_SCOPES,
-        metadata: GROUP_ADMIN_METADATA,
-      });
-      res.writeHead(302, { location: url });
-      res.end();
+      // handleInstallPath, not generateInstallUrl: it also sets the state
+      // cookie the callback checks, and redirects (directInstall). Calling
+      // generateInstallUrl alone left both out, so every authorization came
+      // back "expired" — and, with no redirect_uri, Slack sent it to the
+      // app's first registered URL, which may be the web sign-in callback.
+      await installer.handleInstallPath(
+        req,
+        res,
+        undefined,
+        groupAuthorizeOptions(cfg.PUBLIC_URL)
+      );
     } catch (err) {
       log.error("could not build group authorization url", {
         error: String(err),
