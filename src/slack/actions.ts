@@ -477,7 +477,9 @@ async function applyLifecycleAction(
       reason: note,
       teamId: meta.teamId,
     });
-    if (outcome.done) {
+    // Still in Slack without CORI: groupsRemoveHeld has redrawn the alert to
+    // say only that, and it stays open for the Slack account.
+    if (outcome.done && !outcome.stillInSlack) {
       await closeFinding(finding.id, by, `Removed from groups: ${note}`);
     }
     log.info("removed from groups", { findingId: finding.id, by });

@@ -55,6 +55,14 @@ function postedChannel(f: Finding): string | null {
   return f.alert_channel ?? alertChannel(`finding ${f.id}`);
 }
 
+/** Whether a held-member finding's detail lists any group, Google or Slack. */
+function inAnyGroup(detail: string | null | undefined): boolean {
+  // No detail is an older row, from before step 6: those were always groups.
+  if (!detail) return true;
+  const d = JSON.parse(detail) as { entries?: unknown[]; slack?: unknown[] };
+  return Boolean(d.entries?.length || d.slack?.length);
+}
+
 export const ACK_ACTION = "hawkmod_finding_ack";
 export const ONBOARDING_ON_IT_ACTION = "hawkmod_onboarding_on_it";
 export const RESOLVE_ACTION = "hawkmod_finding_resolve";
@@ -72,7 +80,9 @@ export const SLACK_APPLY_ANYWAY_ACTION = "hawkmod_slack_groups_apply_anyway";
  * they are leaving; Apply anyway the only override of a groups refusal. The user-group
  * sync's old `roster_drift` records a move already made, and offers nothing.
  */
-export function lifecycleAction(f: Pick<Finding, "kind" | "dedupe_key">): {
+export function lifecycleAction(
+  f: Pick<Finding, "kind" | "dedupe_key"> & { detail?: string | null }
+): {
   actionId: string;
   label: string;
   /**
@@ -120,10 +130,15 @@ export function lifecycleAction(f: Pick<Finding, "kind" | "dedupe_key">): {
     return { actionId: REMOVE_FROM_GROUPS_ACTION, label: "Remove from groups" };
   }
   if (f.kind === "cori_lapsed") {
-    return {
-      actionId: REMOVE_FROM_GROUPS_ACTION,
-      label: "Remove from mentor groups",
-    };
+    // A mentor held nowhere but in Slack itself has no group to be removed
+    // from, and hawk-mod cannot deactivate a Slack account: that alert asks
+    // a person to, and offers Acknowledge and Resolve like any other.
+    return inAnyGroup(f.detail)
+      ? {
+          actionId: REMOVE_FROM_GROUPS_ACTION,
+          label: "Remove from mentor groups",
+        }
+      : null;
   }
   // Only a refused plan: a wrong group or a missing one is fixed in the code
   // or in Google, and nothing should offer to apply past it.

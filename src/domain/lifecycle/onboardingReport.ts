@@ -33,6 +33,8 @@ export function formatOnboarding(opts: {
   channel: string;
   /** True when that is the alert channel because `onboarding-channel` is unset. */
   channelIsFallback: boolean;
+  /** Active mentors in Slack without CORI current: each a `cori_lapsed` alert. */
+  slackWithoutCori?: readonly string[];
 }): string {
   const { plan } = opts;
   const of = <K extends OnboardingRequest["kind"]>(kind: K) =>
@@ -89,6 +91,14 @@ export function formatOnboarding(opts: {
   for (const n of plan.notReady as NotReady[]) {
     lines.push(`  ${n.personId} (${n.role}): ${n.reason}`);
   }
+
+  const withoutCori = opts.slackWithoutCori ?? [];
+  lines.push(
+    "",
+    `Mentors in Slack without CORI current (each a cori_lapsed alert in the ` +
+      `alert channel): ${withoutCori.length}`
+  );
+  if (withoutCori.length) lines.push(`  ${withoutCori.join(", ")}`);
 
   lines.push(
     "",

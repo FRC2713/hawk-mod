@@ -1,9 +1,10 @@
 # Lifecycle sync
 
-Status: **steps 0–5 deployed.** The roster has come from the sheet since the
-first apply on 2026-09-28 (#25–#28), the Google Groups since the same day
-(#32–#37), and the Slack user groups since the first Apply on 2026-09-29
-(#38–#42); all three are checked hourly. Step 6 is next. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
+Status: **steps 0–5 deployed; step 6 built.** The roster has come from the
+sheet since the first apply on 2026-09-28 (#25–#28), the Google Groups since
+the same day (#32–#37), and the Slack user groups since the first Apply on
+2026-09-29 (#38–#42); all three are checked hourly. Step 6, onboarding
+requests and the safety net, is #46, #48, #49 and the pull request after them. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
 below was rewritten on 2026-09-27, after a first step 3 design showed it had
 never been written down; it replaces the earlier "direction of truth" section.
 
@@ -570,6 +571,43 @@ group` refusing copies, the leaving buttons reaching Slack, and the
    _Verify:_ readiness rule tests per role; a request is posted once and
    closes when the sheet is filled in; a mentor in Slack without CORI is a
    finding.
+
+   Planned and built 2026-09-29 in four pull requests: (1) the pure planner,
+   `domain/lifecycle/onboarding.ts` (#46); (2) reading Google's user
+   accounts as `hawk-mod@` (a third delegated scope, `user.readonly`, and
+   Users → Read on its role: docs/google-setup.md, Part 3) and the
+   `/hawkmod lifecycle onboarding` dry run (#48); (3) the requests, posted
+   hourly, and the welcome (#49); (4) the safety net and these docs.
+   Decided with Rachel along the way:
+
+   - **Super Admins alone create Google accounts** for now; a custom
+     create-only role can follow if that becomes a bottleneck.
+   - **The RHR Email goes on the sheet before the account exists.** The
+     first dry run called such an address a problem; it is the ordinary
+     "create this account" request, and names the address. Only a
+     suspended account or an alias is an RHR Email problem.
+   - **Only Active mentors' RHR Emails are checked.**
+   - **`onboarding-channel` unset means the alert channel**, and the dry run
+     and `/hawkmod config` say so.
+   - **A request's student address is never in its summary**, which
+     `/hawkmod findings` and the morning report print; it is a separate line
+     on the posted request alone. The morning report only counts requests.
+   - **An alert remembers its channel** (`findings.alert_channel`), so a
+     request is redrawn where it was posted.
+   - **A mentor in Slack without CORI is one `cori_lapsed` alert**, not a
+     second kind: the same alert as being held in a mentor group, with
+     **Remove from mentor groups** only while they are in one. After that
+     click it stays open, saying only that they are in Slack, until they are
+     deactivated there or their CORI is on the sheet.
+   - **Welcome and one reminder.** hawk-mod messages an adult the moment
+     they join Slack (or are first linked), with the landing page, the
+     workspace address and where to ask (`#admin-official`, by ID), and once
+     more seven days later if they have not enrolled; then nothing — the
+     administrators' `adult_not_enrolled` alert carries it from there.
+     Adults already in Slack when this shipped were recorded and sent
+     nothing. It replaces the Workflow Builder welcome, and "X enrolled"
+     goes to `announcement-channel` when the enrollment actually happens.
+
 7. **Offboarding / reactivation (I).** Suspend / un-suspend on the leaving
    finding, and "Remove from groups" extended to every live group. _Verify:_
    nothing changes without the click; a non-admin click is refused; the
