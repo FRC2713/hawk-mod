@@ -211,3 +211,35 @@ changes nothing. What it can say:
   the wrong line. Nothing is applied to that group until it is fixed.
 - Otherwise, per group, who would join, who would leave on their own (a lead
   or RA flag turned off), and who is held for a click, by Person ID.
+
+## Part 3 — read user accounts (step 6 onwards)
+
+Done for Red Hawk on 2026-09-29. Step 6 checks each Active mentor's RHR Email
+against Google's directory — a typo there silently leaves the mentor out of
+every group — so hawk-mod reads user accounts: each account's primary
+address, its aliases, and whether it is suspended. Nothing else.
+
+1. **One more delegated scope.** Admin console → **Security → Access and
+   data control → API controls → Manage Domain Wide Delegation** → the
+   service account's row → **Edit**. Keep the two group scopes and add a
+   third, comma-separated:
+   - `https://www.googleapis.com/auth/admin.directory.user.readonly`
+2. **Users → Read on the role.** Admin console → **Account → Admin roles →
+   hawk-mod group membership → Privileges → Edit**: tick **Users → Read**
+   only. Not Create, Update or Delete: accounts are created by a Super Admin
+   (decided 2026-09-29), and suspending one is step 7's, when it asks for
+   Users → Update.
+
+Nothing changes in Google Cloud or in hawk_suite, and no redeploy is needed.
+Allow up to an hour for Google to apply it.
+
+### Checking it
+
+`/hawkmod lifecycle onboarding` reads the accounts in a client that asks for
+the users scope alone, and posts nothing. If either step did not take, the
+"RHR Emails" line says NOT checked and why:
+
+- **"refused to let the service account read user accounts"** — step 1: the
+  users scope is missing from the delegation entry.
+- **"refused to list user accounts"** — step 2: the role lacks Users → Read,
+  or is not assigned to `hawk-mod@`.

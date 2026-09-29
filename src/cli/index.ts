@@ -13,6 +13,7 @@ import {
   groupsReport,
   slackGroupsReport,
   lifecyclePlanReport,
+  onboardingReport,
   rosterReport,
   syncNow,
   slackIdsReport,
@@ -52,6 +53,9 @@ const USAGE = `hawk-mod cli
   lifecycle slack-groups       each Slack user group copy against the sheet,
                                with its default channels. Changes nothing.
                                Needs the Slack install too
+  lifecycle onboarding         the Google accounts, RHR Email fixes and Slack
+                               invites the sheet calls for, by Person ID.
+                               Posts nothing. Needs the Slack install too
   lifecycle sync               what the hourly job does: apply the roster from
                                the sheet, write Slack User IDs back, and check
                                the Slack groups (raising the Apply alert).
@@ -196,9 +200,11 @@ async function main() {
         console.log(await slackGroupsReport({ slack: botClient() }));
       else if (args[0] === "sync")
         console.log(await syncNow({ slack: botClient(), by: "cli" }));
+      else if (args[0] === "onboarding")
+        console.log(await onboardingReport({ slack: botClient() }));
       else
         throw new Error(
-          "usage: lifecycle plan|slack-ids|roster|sync|groups|slack-groups"
+          "usage: lifecycle plan|slack-ids|roster|sync|groups|slack-groups|onboarding"
         );
       return;
     default:

@@ -40,6 +40,7 @@ import { rescheduleReports } from "../jobs/schedule.js";
 import {
   groupsReport,
   lifecyclePlanReport,
+  onboardingReport,
   slackGroupsReport,
   rosterReport,
   syncNow,
@@ -66,6 +67,7 @@ const HELP = [
   "`/hawkmod lifecycle sync` — read the sheet now: update the roster and check the Slack groups (both also run hourly)",
   "`/hawkmod lifecycle groups` — the Google Groups against the sheet; add `apply` to add everyone the sheet puts in them (then hourly)",
   "`/hawkmod lifecycle slack-groups` — the Slack user groups against the sheet, with their default channels; changes nothing",
+  "`/hawkmod lifecycle onboarding` — Google accounts to create, RHR Emails to fix and Slack invites the sheet calls for; posts nothing",
   "",
   "_Who is a student or a mentor, their screening dates and their consent all",
   "come from the lifecycle sheet. To change them, edit the sheet, then",
@@ -235,7 +237,8 @@ export function registerCommands(app: App): void {
             what !== "roster" &&
             what !== "sync" &&
             what !== "groups" &&
-            what !== "slack-groups"
+            what !== "slack-groups" &&
+            what !== "onboarding"
           ) {
             await respond({
               response_type: "ephemeral",
@@ -244,7 +247,8 @@ export function registerCommands(app: App): void {
                 "`/hawkmod lifecycle slack-ids [apply]` or " +
                 "`/hawkmod lifecycle roster [apply]`, " +
                 "`/hawkmod lifecycle sync`, `/hawkmod lifecycle groups [apply]` " +
-                "or `/hawkmod lifecycle slack-groups`",
+                "`/hawkmod lifecycle slack-groups` " +
+                "or `/hawkmod lifecycle onboarding`",
             });
             return;
           }
@@ -255,32 +259,34 @@ export function registerCommands(app: App): void {
           const report =
             what === "plan"
               ? await lifecyclePlanReport()
-              : what === "slack-groups"
-                ? await slackGroupsReport({ slack: client })
-                : what === "groups"
-                  ? await groupsReport({
-                      apply: flag === "apply",
-                      applyHint: "/hawkmod lifecycle groups apply",
-                      actor: {
-                        slackUserId: caller.slackUserId,
-                        name: caller.name,
-                      },
-                    })
-                  : what === "sync"
-                    ? await syncNow({ slack: client, by: caller.name })
-                    : what === "roster"
-                      ? await rosterReport({
-                          slack: client,
-                          apply: flag === "apply",
-                          applyHint: "/hawkmod lifecycle roster apply",
-                          by: caller.name,
-                        })
-                      : await slackIdsReport({
-                          slack: client,
-                          apply: flag === "apply",
-                          applyHint: "/hawkmod lifecycle slack-ids apply",
-                          by: caller.name,
-                        });
+              : what === "onboarding"
+                ? await onboardingReport({ slack: client })
+                : what === "slack-groups"
+                  ? await slackGroupsReport({ slack: client })
+                  : what === "groups"
+                    ? await groupsReport({
+                        apply: flag === "apply",
+                        applyHint: "/hawkmod lifecycle groups apply",
+                        actor: {
+                          slackUserId: caller.slackUserId,
+                          name: caller.name,
+                        },
+                      })
+                    : what === "sync"
+                      ? await syncNow({ slack: client, by: caller.name })
+                      : what === "roster"
+                        ? await rosterReport({
+                            slack: client,
+                            apply: flag === "apply",
+                            applyHint: "/hawkmod lifecycle roster apply",
+                            by: caller.name,
+                          })
+                        : await slackIdsReport({
+                            slack: client,
+                            apply: flag === "apply",
+                            applyHint: "/hawkmod lifecycle slack-ids apply",
+                            by: caller.name,
+                          });
           await respond({
             response_type: "ephemeral",
             text: "```" + report + "```",

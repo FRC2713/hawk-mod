@@ -17,9 +17,18 @@ import {
   addMember,
   DIRECTORY_GROUP_MEMBER,
   DIRECTORY_GROUP_READONLY,
+  DIRECTORY_USER_READONLY,
+  listDomainUsers,
   readGroup,
   removeMember,
 } from "../google/directory.js";
+import {
+  planOnboarding,
+  type DirectoryAccount,
+} from "../domain/lifecycle/onboarding.js";
+import { formatOnboarding } from "../domain/lifecycle/onboardingReport.js";
+import { onboardingChannel } from "../settings.js";
+import { describeValue } from "../slack/settingsAdmin.js";
 import {
   CORI_EXPIRING_PREFIX,
   coriExpiringFinding,
@@ -1267,4 +1276,51 @@ export async function rosterSync(opts: {
     ids = `Slack User IDs were not written back (${errorText(err)}); the next run tries again.`;
   }
   return `${roster}\n\n${ids}`;
+}
+
+/**
+ * Step 6: the onboarding requests hawk-mod would post, read from the sheet,
+ * Slack and Google now. Changes nothing and posts nothing. Google's user
+ * accounts are read in a client of their own, with the one read-only users
+ * scope, so a refusal says which setting is missing — and still shows
+ * everything the sheet and Slack can say without them.
+ */
+export async function onboardingReport(opts: {
+  slack: WebClient;
+}): Promise<string> {
+  const env = requireGoogle();
+  const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
+  const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
+
+  const users = (await fetchWorkspaceUsers(opts.slack)).filter((u) => !u.isBot);
+  let directory: DirectoryAccount[] | null = null;
+  let directoryError: string | null = null;
+  try {
+    directory = await listDomainUsers(
+      serviceAccountClient(env, [DIRECTORY_USER_READONLY], googleActor())
+    );
+  } catch (err) {
+    directoryError = errorText(err);
+  }
+
+  const asOf = today();
+  const plan = planOnboarding(
+    parsed.people,
+    users.map((u) => ({ id: u.id, email: u.email, deactivated: u.isDeleted })),
+    directory,
+    asOf
+  );
+  const { channel, fallback } = onboardingChannel();
+  return formatOnboarding({
+    plan,
+    asOf,
+    slackAccounts: users.length,
+    directory: directory
+      ? { count: directory.length }
+      : { error: directoryError ?? "unknown error" },
+    channel: channel
+      ? await describeValue(opts.slack, "alert-channel", channel)
+      : "nowhere: neither onboarding-channel nor alert-channel is set",
+    channelIsFallback: fallback,
+  });
 }

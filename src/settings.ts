@@ -48,6 +48,12 @@ export const SETTINGS = {
     kind: "channel",
     hint: "where findings are posted",
   },
+  "onboarding-channel": {
+    env: "ONBOARDING_CHANNEL_ID",
+    label: "Onboarding request channel",
+    kind: "channel",
+    hint: "where onboarding requests are posted (Google accounts to create, Slack invites); while unset, they go to the alert channel",
+  },
   "report-time": {
     env: "REPORT_TIME",
     label: "Morning report time",
@@ -118,6 +124,20 @@ export function setting(key: SettingKey): Resolved {
 /** The value alone, for the many callers that do not care where it came from. */
 export function settingValue(key: SettingKey): string | undefined {
   return setting(key).value;
+}
+
+/**
+ * Where onboarding requests go: `onboarding-channel`, or the alert channel
+ * while that is unset (decided 2026-09-29) — a request with nowhere to go is
+ * a gap, and the alert channel is adult-only too. `fallback` says which.
+ */
+export function onboardingChannel(): {
+  channel: string | undefined;
+  fallback: boolean;
+} {
+  const own = settingValue("onboarding-channel");
+  if (own) return { channel: own, fallback: false };
+  return { channel: settingValue("alert-channel"), fallback: true };
 }
 
 /**
