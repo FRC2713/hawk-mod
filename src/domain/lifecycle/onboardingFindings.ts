@@ -120,6 +120,18 @@ export function inviteAddressLine(f: {
   return detail.address ? `Address to invite: \`${detail.address}\`` : null;
 }
 
+/**
+ * What each request's footer says closes it — where hawk-mod looks to see it
+ * done. A Google account is done when Google has it, not when the sheet or
+ * Slack says anything.
+ */
+export const ONBOARDING_CLOSES_WHEN: Record<OnboardingKind, string> = {
+  onboarding_google_account: "closes by itself once Google has the account",
+  onboarding_rhr_email:
+    "closes by itself once the RHR Email on the lifecycle sheet is a working Google account",
+  onboarding_slack_invite: "closes by itself once they are in Slack",
+};
+
 /** Why the lifecycle run closed a request: it saw the task done. */
 export const ONBOARDING_DONE_NOTE =
-  "Done: the lifecycle sheet or Slack now shows it, or the person no longer needs it.";
+  "Done: Google, Slack or the lifecycle sheet now shows it, or the person no longer needs it.";

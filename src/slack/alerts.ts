@@ -6,6 +6,7 @@ import { onboardingChannel, settingValue } from "../settings.js";
 import {
   inviteAddressLine,
   isOnboardingKind,
+  ONBOARDING_CLOSES_WHEN,
 } from "../domain/lifecycle/onboardingFindings.js";
 import { botClient } from "./tokens.js";
 
@@ -102,8 +103,7 @@ export function lifecycleAction(
       actionId: ONBOARDING_ON_IT_ACTION,
       label: "I'm on it",
       routine: true,
-      context:
-        "closes by itself once the lifecycle sheet or Slack shows it done",
+      context: ONBOARDING_CLOSES_WHEN[f.kind],
     };
   }
   // Every Slack group change is a click (step 5). Apply is the routine one;

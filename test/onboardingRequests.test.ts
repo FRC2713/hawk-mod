@@ -155,10 +155,19 @@ describe("onboarding requests as findings", () => {
     assert.match(text, new RegExp(ONBOARDING_ON_IT_ACTION));
     assert.match(text, /I'm on it/);
     assert.doesNotMatch(text, /Acknowledge|"Resolve"/);
-    assert.match(
-      text,
-      /closes by itself once the lifecycle sheet or Slack shows it done/
-    );
+    assert.match(text, /closes by itself once they are in Slack/);
+  });
+
+  it("says a Google account request closes when Google has the account", () => {
+    const google = asFinding({
+      kind: "google_account",
+      personId: "P0073",
+      name: "Alexa Mentor",
+      address: "alexa@rhr.example",
+    });
+    const text = JSON.stringify(findingBlocks(google).blocks);
+    assert.match(text, /closes by itself once Google has the account/);
+    assert.doesNotMatch(text, /Slack shows it/);
   });
 
   it("is told apart from every other finding", () => {
