@@ -148,6 +148,30 @@ describe("what the alerts say and offer", () => {
     assert.equal(maskAddress("kid@home.example"), "k…@home.example");
   });
 
+  it("names grp-parents for a parent address no student lists", () => {
+    // #142 read "is in . Nothing was removed." (2026-09-29).
+    const [s] = heldSubjects(
+      planGoogleGroups({
+        people,
+        actual: { "grp-parents": ["mom@home.example", "gone@home.example"] },
+        asOf: AS_OF,
+      })
+    ).filter((x) => x.key === "group_member_held:address:gone@home.example");
+    assert.equal(
+      heldMemberFinding(s!, { names, inSlack: () => false }).summary,
+      "An address the lifecycle sheet does not account for, g…@home.example, " +
+        "is in grp-parents: no student lists it as a parent. Nothing was removed."
+    );
+  });
+
+  it("names the group for any other unplaceable address", () => {
+    assert.equal(
+      finding("group_member_held:address:stranger@elsewhere.example").summary,
+      "An address the lifecycle sheet does not account for, " +
+        "s…@elsewhere.example, is in grp-mentors. Nothing was removed."
+    );
+  });
+
   it("asks for the Slack account to be deactivated, for a lapsed mentor in Slack", () => {
     const inSlack = heldSubjects(plans, [], ["P0010"]).find(
       (x) => x.key === "cori_lapsed:P0010"
