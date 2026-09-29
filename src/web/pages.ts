@@ -61,7 +61,15 @@ ${body}
 </html>`;
 }
 
-export function landingPage(): string {
+/**
+ * `workspace` is the installed workspace's address (`frc2713.slack.com`), or
+ * `null` when it is not known, in which case the line is left out.
+ */
+export function landingPage(workspace: string | null): string {
+  const whichWorkspace = workspace
+    ? ` If Slack asks which workspace, enter
+  <strong>${esc(workspace)}</strong>.`
+    : "";
   return page(
     APP_NAME,
     "34rem",
@@ -74,11 +82,12 @@ export function landingPage(): string {
   the control. Conversations with no student in them are never recorded.</p>
   <p><strong>Mentors:</strong> enrolling is what makes your DMs visible, and
   it is a personal, named authorization —
-  <a href="/slack/install">enroll here</a>. You can revoke it at any time from
-  Slack &rarr; Settings &rarr; Manage apps.</p>
+  <a href="/slack/install">enroll here</a>.${whichWorkspace} You can revoke it
+  at any time from Slack &rarr; Settings &rarr; Manage apps.</p>
   <p><strong>Coaches and admins:</strong> the
-  <a href="/config">configuration page</a> shows and changes which user groups
-  declare roles and where findings are posted. It asks you to sign in with
+  <a href="/config">configuration page</a> shows and changes where findings
+  are posted, when the morning report arrives, and which other user groups
+  <code>/hawkmod group</code> may edit. It asks you to sign in with
   Slack, and is limited to workspace Owners and Admins &mdash; the same rule as
   <code>/hawkmod</code>.</p>
   <footer class="muted">Day to day, ${APP_NAME} lives in Slack:
