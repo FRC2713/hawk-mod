@@ -65,6 +65,12 @@ export type Member = {
 
 export type HeldMember = Member & { reason: HeldReason };
 
+/** The reasons that mean someone is leaving a group's part of the team. */
+export type LeavingReason = Extract<
+  HeldReason,
+  "inactive" | "status_unknown" | "role_gone" | "no_access"
+>;
+
 export type GroupPlanResult = {
   group: GroupName;
   add: Member[];
@@ -89,13 +95,15 @@ const ROLE_FOR: Record<PersonGroup, readonly SheetRole[]> = {
 
 /**
  * Why a current member no longer belongs, if it is because they are leaving
- * the group's part of the team; null when it is only a flag turned off.
+ * the group's part of the team; null when it is only a flag turned off. The
+ * Slack copies (`slackGroups.ts`) sort their members with this too, so the
+ * two kinds of group cannot disagree about who is leaving.
  */
-function leaving(
+export function leaving(
   group: PersonGroup,
   p: SheetPerson,
   asOf: IsoDate
-): HeldReason | null {
+): LeavingReason | null {
   if (p.status === "inactive") return "inactive";
   if (p.status === "unknown") return "status_unknown";
   const roles = ROLE_FOR[group].filter((r) => p.roles.includes(r));
@@ -108,7 +116,11 @@ function leaving(
   return null;
 }
 
-function refusal(current: Set<string>, desired: Set<string>): string | null {
+/** Why a plan's automatic changes must not be applied, or null. */
+export function planRefusal(
+  current: ReadonlySet<string>,
+  desired: ReadonlySet<string>
+): string | null {
   const nothingToDo =
     [...desired].every((a) => current.has(a)) &&
     [...current].every((a) => desired.has(a));
@@ -215,7 +227,7 @@ export function planGoogleGroups(args: {
       add: add.sort(byAddress),
       automatic: automatic.sort(byAddress),
       held: held.sort(byAddress),
-      refusal: refusal(current, desired),
+      refusal: planRefusal(current, desired),
     };
   });
 }

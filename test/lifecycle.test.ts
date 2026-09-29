@@ -279,6 +279,46 @@ describe("lifecycle sheet parsing", () => {
     for (const p of problems) assert.ok(!p.message.includes(secret));
   });
 
+  it("refuses an email with a hidden or non-ASCII character, by Person ID", () => {
+    for (const bad of [
+      "p0010\u200b@redhawkrobotics.org", // zero-width space
+      "p0010@redhawkrobotics.org\u00a0x", // non-breaking space
+      "zoë@redhawkrobotics.org",
+      "\ufeffp0010@redhawkrobotics.org", // byte-order mark
+    ]) {
+      const parsed = parseSheet(sheet(mentor("P0010", { "RHR Email": bad })));
+      assert.equal(parsed.people[0]!.mentor?.rhrEmail, null, bad);
+      const problem = parsed.problems.find((p) => p.message.includes("RHR"));
+      assert.equal(problem?.personId, "P0010");
+      assert.match(problem!.message, /hidden or non-ASCII/);
+      assert.ok(!problem!.message.includes("redhawkrobotics"));
+    }
+  });
+
+  it("still calls a visible space not an email address", () => {
+    const { problems } = parseSheet(
+      sheet(mentor("P0010", { "RHR Email": "p0010 @redhawkrobotics.org" }))
+    );
+    assert.ok(
+      problems.some((p) => p.message === "RHR Email is not an email address")
+    );
+  });
+
+  it("refuses a hidden character in a parent's email too", () => {
+    const parsed = parseSheet(
+      sheet({
+        ...student("P0020"),
+        contacts: [["mum\u200b@home.example", "Parent/Guardian", "1"]],
+      })
+    );
+    assert.deepEqual(parsed.people[0]!.parentEmails, []);
+    assert.ok(
+      parsed.problems.some(
+        (p) => p.personId === "P0020" && /hidden or non-ASCII/.test(p.message)
+      )
+    );
+  });
+
   it("skips blank rows", () => {
     const data = sheet(mentor("P0010"));
     data.People.push(row("People", 20, {}));
