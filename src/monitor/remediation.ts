@@ -82,7 +82,8 @@ export async function remediateOneOnOnes(
     // to the alarm, rather than leaving a violation that looks unanswered.
     if (finding.alert_ts) {
       try {
-        const channel = settingValue("alert-channel");
+        // In the thread of the alert, wherever it was posted.
+        const channel = finding.alert_channel ?? settingValue("alert-channel");
         if (!channel) throw new Error("no alert channel configured");
         await botClient().chat.postMessage({
           channel,

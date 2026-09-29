@@ -47,6 +47,12 @@ export const FINDING_KINDS = [
    * copy's plan was refused (Apply anyway), or a copy could not be applied to.
    */
   "slack_groups_differ",
+  /** An Active mentor has no RHR Email: a Super Admin creates the account. */
+  "onboarding_google_account",
+  /** An Active mentor's RHR Email is not a working Google account. */
+  "onboarding_rhr_email",
+  /** Someone ready for Slack is not in it: invite, or reactivate. */
+  "onboarding_slack_invite",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];
@@ -69,6 +75,9 @@ export type Finding = {
   resolved_by: string | null;
   resolution_note: string | null;
   alert_ts: string | null;
+  /** The channel `alert_ts` is in; null on alerts older than migration 0010,
+   * which are all in the alert channel. */
+  alert_channel: string | null;
 };
 
 export type NewFinding = {

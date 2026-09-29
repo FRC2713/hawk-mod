@@ -92,7 +92,18 @@ describe("reading Google's user accounts", () => {
 
 const PLAN: OnboardingPlan = {
   requests: [
-    { kind: "google_account", personId: "P0042", name: "Jordan Lee" },
+    {
+      kind: "google_account",
+      personId: "P0042",
+      name: "Jordan Lee",
+      address: null,
+    },
+    {
+      kind: "google_account",
+      personId: "P0073",
+      name: "Alexa Mentor",
+      address: "alexa@rhr.example",
+    },
     {
       kind: "rhr_email",
       personId: "P0043",
@@ -147,8 +158,11 @@ describe("the onboarding dry run", () => {
   it("lists every request and every reason, by Person ID", () => {
     const text = report();
     assert.match(text, /dry run: nothing posted/);
-    assert.match(text, /Google accounts to create .*: 1\n {2}P0042/);
-    assert.match(text, /not a working Google account: 1 \(checked against 45/);
+    assert.match(
+      text,
+      /Google accounts to create \(Active mentors with no account yet\): 2\n {2}P0042: no RHR Email on the sheet yet\n {2}P0073: at the RHR Email on the sheet/
+    );
+    assert.match(text, /suspended or an alias: 1 \(checked against 45/);
     assert.match(text, /P0043: it is an alias of another account/);
     assert.match(
       text,
@@ -165,7 +179,7 @@ describe("the onboarding dry run", () => {
   it("never shows a name or an address", () => {
     const text = report();
     assert.doesNotMatch(text, /@/);
-    for (const name of ["Jordan", "Sam", "Alex", "Casey"]) {
+    for (const name of ["Jordan", "Sam", "Alex", "Casey", "Alexa"]) {
       assert.doesNotMatch(text, new RegExp(name));
     }
   });
@@ -186,6 +200,9 @@ describe("the onboarding dry run", () => {
       plan: { ...PLAN, requests: [], directoryChecked: false },
       directory: { error: "Google refused to list user accounts." },
     });
-    assert.match(text, /RHR Emails: NOT checked.*\n {2}Google refused to list/);
+    assert.match(
+      text,
+      /RHR Emails: NOT checked against Google, so accounts still to create at a filled-in address are not listed\. .*\n {2}Google refused to list/
+    );
   });
 });

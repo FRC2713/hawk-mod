@@ -350,16 +350,19 @@ may appear. The morning report carries only a count of what is still waiting.
 It is separate from `#bot-onboarding-notifications`, which announces rather
 than asks.
 
-**Google accounts (H).** When a mentor's row is Active and has no RHR Email,
-hawk-mod asks for an account: _Create a Google account for P0042 Jordan Lee,
-then type the address into their RHR Email on the lifecycle sheet._ It names
-the person and Person ID and no address. It does not wait for CORI: the
-account may exist before CORI is done, it just joins no group. The request is done
-when the RHR Email cell is filled in. A Super Admin creates the account —
-Google's Help Desk Admin role cannot create users. hawk-mod also checks each
-RHR Email on the sheet against Google's directory (the read-only users scope
-it already has) and flags one that is not a real account, since a typo there
-silently leaves the mentor out of every group.
+**Google accounts (H).** The address a mentor has agreed to goes on the sheet
+first, as their RHR Email — not everyone wants `firstname@` — and the account
+is created from it (corrected with Rachel, 2026-09-29, after the first dry run
+called such an address a problem). So when an Active mentor has no Google
+account, hawk-mod asks for one: _Create a Google account for P0073 Alexa …
+at alexa@redhawkrobotics.org, the RHR Email on the lifecycle sheet. If that
+address is a typo, fix the sheet instead._ With the RHR Email blank, it asks
+for the account and for the address to be typed in. It does not wait for
+CORI: the account may exist before CORI is done, it just joins no group. The
+request is done when Google has the account. A Super Admin creates it —
+Google's Help Desk Admin role cannot create users. An RHR Email that belongs
+to a suspended account, or is an alias, is its own request: the groups run
+compares addresses, so an alias would be re-added every hour.
 
 **Slack invites (H).** Slack Pro has no invite API, and open domain sign-up
 would let a mentor join before CORI. So no domain sign-up: hawk-mod posts

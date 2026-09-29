@@ -1,3 +1,4 @@
+import { welcomeOnJoin } from "./welcome.js";
 import type { App } from "@slack/bolt";
 import { APP_NAME } from "../brand.js";
 import {
@@ -160,7 +161,7 @@ export function registerEvents(app: App): void {
    * before they have sent anything. The next roster run writes the Slack User
    * ID back to the sheet.
    */
-  app.event("team_join", async ({ event }) => {
+  app.event("team_join", async ({ event, client }) => {
     const user = event.user as {
       id?: string;
       is_bot?: boolean;
@@ -204,6 +205,10 @@ export function registerEvents(app: App): void {
         detail: { state: status.state },
       });
     }
+    // An adult is asked to enroll the moment they arrive; a student never
+    // is (welcomeOnJoin checks). A later link, by a Slack ID typed on the
+    // sheet, is the hourly pass's.
+    await welcomeOnJoin(client, person);
   });
 
   app.event("tokens_revoked", async ({ event, body }) => {

@@ -22,6 +22,7 @@ import {
 import { log } from "../logger.js";
 import {
   ACK_ACTION,
+  ONBOARDING_ON_IT_ACTION,
   APPLY_ANYWAY_ACTION,
   END_MONITORING_ACTION,
   REMOVE_FROM_GROUPS_ACTION,
@@ -153,6 +154,43 @@ export function registerActions(app: App): void {
   }
 
   registerLifecycleActions(app);
+
+  // "I'm on it", on an onboarding request: says who has it, so two people do
+  // not both create one account. Acknowledges with no reason form — nothing
+  // is closed, and the run closes the request when the task is done.
+  app.action(ONBOARDING_ON_IT_ACTION, async ({ ack, body, client }) => {
+    await ack();
+    const payload = body as {
+      user: { id: string };
+      channel?: { id?: string };
+      actions?: { value?: string }[];
+    };
+    const findingId = Number(payload.actions?.[0]?.value);
+    if (!Number.isInteger(findingId)) return;
+    const caller = await administrator(client, payload.user.id);
+    if (!caller) {
+      if (payload.channel?.id) {
+        await client.chat.postEphemeral({
+          channel: payload.channel.id,
+          user: payload.user.id,
+          text: "Only Slack workspace Owners and Admins can take an onboarding request.",
+        });
+      }
+      return;
+    }
+    const finding = getFinding(findingId);
+    if (!finding) return;
+    if (finding.status !== "open") {
+      await refreshFinding(findingId);
+      return;
+    }
+    await closeFinding(
+      findingId,
+      caller.name,
+      `${caller.name} is on it.`,
+      "acknowledged"
+    );
+  });
 
   app.view(NOTE_MODAL, async ({ ack, body, view, client }) => {
     const caller = await administrator(client, body.user.id);

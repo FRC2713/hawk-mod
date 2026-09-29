@@ -1,3 +1,5 @@
+import { announceEnrollment } from "./welcome.js";
+import { botClient } from "./tokens.js";
 import { APP_NAME } from "../brand.js";
 import type {
   Installation,
@@ -135,6 +137,18 @@ export const installationStore: InstallationStore = {
         scopes: (installation.user.scopes ?? []).join(","),
       });
       log.info("adult enrolled", { user: installation.user.id, teamId });
+      // Told, not asked: enrolling has happened whether or not this posts.
+      try {
+        await announceEnrollment(
+          botClient(),
+          person ?? {
+            full_name: `Slack account ${installation.user.id}`,
+            person_id: null,
+          }
+        );
+      } catch (err) {
+        log.warn("could not announce an enrollment", { error: String(err) });
+      }
     }
   },
 

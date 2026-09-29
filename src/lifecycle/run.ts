@@ -27,6 +27,12 @@ import {
   type DirectoryAccount,
 } from "../domain/lifecycle/onboarding.js";
 import { formatOnboarding } from "../domain/lifecycle/onboardingReport.js";
+import {
+  ONBOARDING_DONE_NOTE,
+  onboardingFinding,
+  onboardingPrefixes,
+} from "../domain/lifecycle/onboardingFindings.js";
+import { sendWelcomes } from "../slack/welcome.js";
 import { onboardingChannel } from "../settings.js";
 import { describeValue } from "../slack/settingsAdmin.js";
 import {
@@ -458,18 +464,6 @@ export async function slackGroupsReport(opts: {
 }
 
 /**
- * Raises a finding whose text may change while it stays open — who differs
- * in the Slack groups, say — and redraws its alert in place when it does,
- * rather than posting again (decided 2026-09-28): only a finding that closed
- * and came back alerts anew.
- */
-async function raiseRedrawn(f: NewFinding): Promise<void> {
-  const before = findingByKey(f.dedupeKey);
-  const { id, alerted } = await raise(f);
-  if (!alerted && before?.summary !== f.summary) await refreshFinding(id);
-}
-
-/**
  * The hourly Slack groups check: keeps the one `slack_groups_differ` finding
  * (with **Apply**) up to date, raises one per copy nothing can be applied to
  * (a refusal carries **Apply anyway**), and closes what it no longer sees.
@@ -490,13 +484,13 @@ export async function slackGroupsCheck(slack: WebClient): Promise<string> {
   const differ = slackDifferFinding(decisions, names);
   if (differ) {
     seen.add(differ.dedupeKey);
-    await raiseRedrawn(differ);
+    await raise(differ);
   }
   for (const d of decisions) {
     if (d.kind !== "held") continue;
     const f = slackHeldFinding(d);
     seen.add(f.dedupeKey);
-    await raiseRedrawn(f);
+    await raise(f);
   }
   const closed = resolveMissingWithPrefix(
     [SLACK_DIFFER_PREFIX],
@@ -710,7 +704,7 @@ async function settleHeldMembers(
       slackNames: new Map((slack?.users ?? []).map((u) => [u.id, u.realName])),
     });
     seen.add(f.dedupeKey);
-    await raiseRedrawn(f);
+    await raise(f);
   }
   if (!slack) return;
   const closed = resolveMissingWithPrefix(
@@ -1126,6 +1120,18 @@ export async function lifecycleHourly(slack: WebClient): Promise<void> {
     } catch (err) {
       log.error("hourly slack groups check failed", { error: errorText(err) });
     }
+    try {
+      await onboardingCheck(slack);
+    } catch (err) {
+      log.error("hourly onboarding check failed", { error: errorText(err) });
+    }
+    // After the roster, which links newly arrived Slack accounts: the
+    // welcome goes to whoever the roster now knows is an adult in Slack.
+    try {
+      await sendWelcomes(slack);
+    } catch (err) {
+      log.error("hourly welcome messages failed", { error: errorText(err) });
+    }
   }
 }
 
@@ -1235,7 +1241,15 @@ export async function syncNow(opts: {
   } catch (err) {
     slack = `The Slack groups were not checked (${errorText(err)}).`;
   }
-  return `${roster}\n\n${slack}`;
+  // A sheet edit that fills in an RHR Email closes its request now, rather
+  // than leaving it open until the hour.
+  let onboarding: string;
+  try {
+    onboarding = await onboardingCheck(opts.slack);
+  } catch (err) {
+    onboarding = `Onboarding was not checked (${errorText(err)}).`;
+  }
+  return `${roster}\n\n${slack}\n\n${onboarding}`;
 }
 
 /**
@@ -1278,21 +1292,16 @@ export async function rosterSync(opts: {
   return `${roster}\n\n${ids}`;
 }
 
-/**
- * Step 6: the onboarding requests hawk-mod would post, read from the sheet,
- * Slack and Google now. Changes nothing and posts nothing. Google's user
- * accounts are read in a client of their own, with the one read-only users
- * scope, so a refusal says which setting is missing — and still shows
- * everything the sheet and Slack can say without them.
- */
-export async function onboardingReport(opts: {
-  slack: WebClient;
-}): Promise<string> {
+/** Everything an onboarding plan is made from, read fresh. */
+async function readOnboardingInputs(slack: WebClient) {
   const env = requireGoogle();
   const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
   const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
 
-  const users = (await fetchWorkspaceUsers(opts.slack)).filter((u) => !u.isBot);
+  const users = (await fetchWorkspaceUsers(slack)).filter((u) => !u.isBot);
+  // Google's user accounts in a client of their own, with the one read-only
+  // users scope, so a refusal says which setting is missing — and the rest
+  // of the plan still stands without them.
   let directory: DirectoryAccount[] | null = null;
   let directoryError: string | null = null;
   try {
@@ -1310,6 +1319,18 @@ export async function onboardingReport(opts: {
     directory,
     asOf
   );
+  return { asOf, plan, users, directory, directoryError };
+}
+
+/**
+ * Step 6: the onboarding requests hawk-mod would post, read from the sheet,
+ * Slack and Google now. Changes nothing and posts nothing.
+ */
+export async function onboardingReport(opts: {
+  slack: WebClient;
+}): Promise<string> {
+  const { asOf, plan, users, directory, directoryError } =
+    await readOnboardingInputs(opts.slack);
   const { channel, fallback } = onboardingChannel();
   return formatOnboarding({
     plan,
@@ -1323,4 +1344,35 @@ export async function onboardingReport(opts: {
       : "nowhere: neither onboarding-channel nor alert-channel is set",
     channelIsFallback: fallback,
   });
+}
+
+/**
+ * The hourly onboarding check: one request per person per task, posted once
+ * to the onboarding channel and redrawn in place if its words change; closed
+ * once the sheet or Slack shows it done. RHR Email requests are closed only
+ * by a run that could read Google. Returns a line for "sync now".
+ */
+export async function onboardingCheck(slack: WebClient): Promise<string> {
+  const { plan, directoryError } = await readOnboardingInputs(slack);
+  const seen = new Set<string>();
+  for (const request of plan.requests) {
+    const f = onboardingFinding(request);
+    seen.add(f.dedupeKey);
+    await raise(f);
+  }
+  const closed = resolveMissingWithPrefix(
+    onboardingPrefixes(plan.directoryChecked),
+    seen,
+    ONBOARDING_DONE_NOTE
+  );
+  for (const id of closed) await refreshFinding(id);
+  if (directoryError) {
+    log.error("onboarding: Google accounts could not be read", {
+      error: directoryError,
+    });
+  }
+  return (
+    `Onboarding: ${plan.requests.length} request(s) open, ${closed.length} done.` +
+    (directoryError ? " RHR Emails were not checked: Google refused." : "")
+  );
 }

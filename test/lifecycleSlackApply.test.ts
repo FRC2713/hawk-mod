@@ -92,6 +92,7 @@ function finding(kind: Finding["kind"], key: string): Finding {
     resolved_by: null,
     resolution_note: null,
     alert_ts: null,
+    alert_channel: null,
   };
 }
 
