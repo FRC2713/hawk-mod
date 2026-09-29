@@ -8,7 +8,8 @@ import {
   type GroupPlan,
 } from "../domain/rules/groupMembership.js";
 import { log } from "../logger.js";
-import { managedGroupHandles, settingValue } from "../settings.js";
+import { isSlackCopy } from "../domain/lifecycle/slackGroups.js";
+import { managedGroupHandles } from "../settings.js";
 import type { Actor } from "./authz.js";
 import { resolveGroup, setGroupMembership } from "./userGroups.js";
 
@@ -146,6 +147,18 @@ export async function applyGroupEdit(
       return {
         ok: false as const,
         reason: `No user group \`${req.groupRef}\`.`,
+      };
+    }
+
+    // Copies of the lifecycle sheet change only by Apply (step 5): a hand
+    // edit here would be undone, or held, by the next check anyway.
+    if (isSlackCopy(group.id)) {
+      return {
+        ok: false as const,
+        reason:
+          `@${group.handle} is copied from the lifecycle sheet. To change who ` +
+          `is in it, edit the sheet; the change is applied from the "Slack ` +
+          `groups differ" alert in the alert channel. Nothing was changed.`,
       };
     }
 

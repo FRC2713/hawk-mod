@@ -39,15 +39,11 @@ services:
       # full = store message text of monitored DMs; metadata = who/when only.
       LOG_MODE: ${LOG_MODE:-full}
 
-      # --- Roles --------------------------------------------------------
-      # Slack user groups that declare who is a student and who is an adult.
-      # Unset means the roster is maintained by CSV import instead. Anything
-      # config.ts reads has to be listed here: compose forwards only what it
-      # is told to, and a missing one silently reads as "feature off".
-      STUDENT_USERGROUP: ${STUDENT_USERGROUP:-}
-      ADULT_USERGROUP: ${ADULT_USERGROUP:-}
-      # Further group handles `/hawkmod group` may edit, comma separated. The
-      # two above are always editable; this bounds how far a bad plan reaches.
+      # --- User groups ---------------------------------------------------
+      # Group handles `/hawkmod group` may edit, comma separated; this bounds
+      # how far a bad plan reaches. Never the groups copied from the lifecycle
+      # sheet, which change only by Apply. Anything config.ts reads has to be
+      # listed here: compose forwards only what it is told to.
       MANAGED_USERGROUPS: ${MANAGED_USERGROUPS:-}
 
       # --- Schedules -------------------------------------------------------

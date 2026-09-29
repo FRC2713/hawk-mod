@@ -264,7 +264,7 @@ const VIEW_TEXT: Record<
   [REMOVE_FROM_GROUPS_ACTION]: {
     title: "Remove from groups",
     explain:
-      "Takes them out of the Google Groups this alert lists — and a departing student's parents out of grp-parents, unless a sibling still keeps them in. The sheet and the groups are read again first; anyone who belongs again by now is left alone. It does not end monitoring, and it cannot remove anyone from Slack.",
+      "Takes them out of the Google Groups and Slack user groups this alert lists — and a departing student's parents out of grp-parents, unless a sibling still keeps them in. Slack groups are changed as you, with your own group-editing permission. The sheet and the groups are read again first; anyone who belongs again by now is left alone. It does not end monitoring, and it does not deactivate anyone's Slack account.",
     placeholder: "Graduated in June.",
   },
   [APPLY_ANYWAY_ACTION]: {
@@ -432,6 +432,7 @@ async function applyLifecycleAction(
       key: finding.dedupe_key,
       actor: caller,
       reason: note,
+      teamId: meta.teamId,
     });
     if (outcome.done) {
       await closeFinding(finding.id, by, `Removed from groups: ${note}`);

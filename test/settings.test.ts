@@ -103,7 +103,10 @@ describe("report time parsing", () => {
 
 describe("the settable allowlist", () => {
   it("recognises only known keys", () => {
-    assert.equal(isSettingKey("student-group"), true);
+    assert.equal(isSettingKey("managed-groups"), true);
+    // Retired at lifecycle step 5: the copies are found by ID in code.
+    assert.equal(isSettingKey("student-group"), false);
+    assert.equal(isSettingKey("mentor-group"), false);
     assert.equal(isSettingKey("nonsense"), false);
   });
 

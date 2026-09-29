@@ -46,6 +46,11 @@ export const SLACK_GROUP_IDS: Record<
   "grp-ra": { id: "S0BRV857SC8", handle: "ra-adults" },
 };
 
+/** Whether a Slack user group ID is one of the copies. */
+export function isSlackCopy(usergroupId: string): boolean {
+  return SLACK_COPIES.some((c) => SLACK_GROUP_IDS[c].id === usergroupId);
+}
+
 /** A Slack account in a copy, and whose it is on the sheet, if anyone's. */
 export type SlackMember = { slackUserId: string; personId: string | null };
 
