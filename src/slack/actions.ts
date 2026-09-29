@@ -55,7 +55,11 @@ function noteView(findingId: number, status: Meta["status"], summary: string) {
     blocks: [
       {
         type: "section" as const,
-        text: { type: "mrkdwn" as const, text: `*#${findingId}* — ${summary}` },
+        text: {
+          type: "mrkdwn" as const,
+          text: `*#${findingId}* — ${summary}`,
+          verbatim: true,
+        },
       },
       {
         type: "context" as const,
@@ -290,6 +294,7 @@ function lifecycleView(meta: LifecycleMeta, summary: string) {
         text: {
           type: "mrkdwn" as const,
           text: `*#${meta.findingId}* — ${summary}`,
+          verbatim: true,
         },
       },
       {

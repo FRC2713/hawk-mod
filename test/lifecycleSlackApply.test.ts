@@ -120,7 +120,7 @@ describe("the one Slack groups differ finding", () => {
       names(people)
     );
     assert.equal(f?.dedupeKey, SLACK_DIFFER_KEY);
-    assert.match(f!.summary, /add P0021 Student P0021 to @students/);
+    assert.match(f!.summary, /\n• \*@students\* — add P0021 Student P0021\n/);
     assert.match(f!.summary, /Nobody leaving is removed/);
 
     assert.equal(
@@ -149,7 +149,7 @@ describe("the one Slack groups differ finding", () => {
     );
     assert.match(
       f!.summary,
-      /remove P0024 Student P0024 from @student-leads \(lead\/RA flag off\)/
+      /• \*@student-leads\* — remove P0024 Student P0024 \(lead\/RA flag off\)/
     );
   });
 
@@ -188,6 +188,28 @@ describe("the one Slack groups differ finding", () => {
         null
       );
     }
+  });
+});
+
+describe("the alert text", () => {
+  it("puts each group on its own line, between a heading and what Apply does", () => {
+    const people = [student("P0020"), student("P0021", true)];
+    const f = slackDifferFinding(decide(people, {}), names(people))!;
+    const lines = f.summary.split("\n");
+    assert.equal(lines[0], "Slack groups differ from the lifecycle sheet.");
+    assert.deepEqual(
+      lines.slice(1, -1).map((l) => l.split(" — ")[0]),
+      ["• *@students*", "• *@student-leads*"]
+    );
+    assert.match(lines.at(-1)!, /^Apply reads the sheet/);
+  });
+
+  it("is verbatim, so a group named in it is never turned into a mention", () => {
+    const { blocks } = findingBlocks(
+      finding("slack_groups_differ", SLACK_DIFFER_KEY)
+    );
+    const first = blocks[0] as { text: { verbatim?: boolean } };
+    assert.equal(first.text.verbatim, true);
   });
 });
 

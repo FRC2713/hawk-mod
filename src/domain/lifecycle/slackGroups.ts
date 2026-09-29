@@ -274,25 +274,29 @@ export function slackDifferFinding(
     m.personId
       ? `${m.personId}${names.get(m.personId) ? ` ${names.get(m.personId)}` : ""}`
       : m.slackUserId;
-  const parts = apply.flatMap((d) => [
-    ...(d.add.length
-      ? [`add ${d.add.map(who).join(", ")} to @${d.handle}`]
-      : []),
-    ...(d.remove.length
-      ? [
-          `remove ${d.remove.map(who).join(", ")} from @${d.handle} ` +
-            "(lead/RA flag off)",
-        ]
-      : []),
-  ]);
+  // One line per group: a list of sixteen names in one sentence is unreadable.
+  const lines = apply.map(
+    (d) =>
+      `• *@${d.handle}* — ` +
+      [
+        d.add.length ? `add ${d.add.map(who).join(", ")}` : "",
+        d.remove.length
+          ? `remove ${d.remove.map(who).join(", ")} (lead/RA flag off)`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("; ")
+  );
   return {
     kind: "slack_groups_differ",
     dedupeKey: SLACK_DIFFER_KEY,
     severity: "info",
-    summary:
-      `Slack groups differ from the lifecycle sheet: ${parts.join("; ")}. ` +
+    summary: [
+      "Slack groups differ from the lifecycle sheet.",
+      ...lines,
       "Apply reads the sheet and the groups again and makes what differs " +
-      "then, as you. Nobody leaving is removed.",
+        "then, as you. Nobody leaving is removed.",
+    ].join("\n"),
     detail: {
       copies: apply.map((d) => ({
         copy: d.copy,
