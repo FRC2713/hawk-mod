@@ -1,6 +1,7 @@
 import { App, type InstallURLOptions } from "@slack/bolt";
 import { APP_NAME, BRAND, ICON_SVG } from "../brand.js";
 import { config } from "../config.js";
+import { anyBotInstallation } from "../db/repo.js";
 import { healthHandler } from "../health.js";
 import { log } from "../logger.js";
 import { registerActions } from "./actions.js";
@@ -69,6 +70,26 @@ export function groupAuthorizeOptions(publicUrl: string): InstallURLOptions {
   };
 }
 
+/**
+ * The enrollment authorization (`/slack/install`) — Bolt's own, plus the
+ * installed workspace's `team` once there is one. On a phone, Slack otherwise
+ * asks which workspace to sign in to, and mentors got stuck there (#43); with
+ * `team`, a signed-out visitor lands on that workspace's sign-in instead.
+ * Before the first installation there is no team to name, and the link is
+ * exactly Bolt's.
+ */
+export function enrollOptions(
+  publicUrl: string,
+  teamId: string | undefined
+): InstallURLOptions {
+  return {
+    scopes: BOT_SCOPES,
+    userScopes: USER_SCOPES,
+    redirectUri: `${publicUrl}/slack/oauth_redirect`,
+    ...(teamId ? { teamId } : {}),
+  };
+}
+
 export function createApp(): App {
   const cfg = config();
 
@@ -93,9 +114,15 @@ export function createApp(): App {
     };
   };
 
-  // Assigned immediately after construction; the route handler below only runs
-  // once a request arrives, long after that.
+  // Assigned immediately after construction; the route handlers below only
+  // run once a request arrives, long after that.
   let self: App;
+
+  const installer = () => {
+    const found = (self as unknown as WithInstaller).receiver?.installer;
+    if (!found) throw new Error("no install provider on the receiver");
+    return found;
+  };
 
   /**
    * Sends an administrator to Slack to grant group-editing permission.
@@ -109,14 +136,12 @@ export function createApp(): App {
     res: import("http").ServerResponse
   ): Promise<void> => {
     try {
-      const installer = (self as unknown as WithInstaller).receiver?.installer;
-      if (!installer) throw new Error("no install provider on the receiver");
       // handleInstallPath, not generateInstallUrl: it also sets the state
       // cookie the callback checks, and redirects (directInstall). Calling
       // generateInstallUrl alone left both out, so every authorization came
       // back "expired" — and, with no redirect_uri, Slack sent it to the
       // app's first registered URL, which may be the web sign-in callback.
-      await installer.handleInstallPath(
+      await installer().handleInstallPath(
         req,
         res,
         undefined,
@@ -155,6 +180,22 @@ export function createApp(): App {
       redirectUriPath: "/slack/oauth_redirect",
       installPath: "/slack/install",
       directInstall: true,
+      installPathOptions: {
+        // Bolt builds this link's options once, at startup, and the team is
+        // known only after installation. So the hook answers the request
+        // itself with this request's options — the same call
+        // /slack/authorize-groups makes — and returns false so Bolt does not
+        // answer it a second time.
+        beforeRedirection: async (req, res) => {
+          await installer().handleInstallPath(
+            req,
+            res,
+            undefined,
+            enrollOptions(cfg.PUBLIC_URL, anyBotInstallation()?.teamId)
+          );
+          return false;
+        },
+      },
       callbackOptions: {
         success: (installation, _options, _req, res) => {
           const groupAdmin = installation.metadata === GROUP_ADMIN_METADATA;
