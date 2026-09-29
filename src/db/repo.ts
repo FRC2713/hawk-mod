@@ -736,6 +736,19 @@ export type ConversationRow = {
  * conduct the conversation's verdict can be about, so a conversation someone
  * has already dealt with is not re-alarmed for merely being re-read.
  */
+/** The Slack timestamps of a conversation's first and last recorded message. */
+export function conversationMessageSpan(
+  conversationId: string
+): { first: string; last: string } | null {
+  const row = db()
+    .prepare<[string], { first: string | null; last: string | null }>(
+      `SELECT MIN(ts) AS first, MAX(ts) AS last
+         FROM dm_messages WHERE conversation_id = ?`
+    )
+    .get(conversationId);
+  return row?.first && row.last ? { first: row.first, last: row.last } : null;
+}
+
 export function monitoredConversations(): {
   id: string;
   type: "im" | "mpim";

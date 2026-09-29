@@ -47,8 +47,16 @@ export type Person = {
   updated_at: string;
 };
 
-/** A Slack account with no roster row. Unknown people are never safe. */
-export type UnknownMember = { slackUserId: string };
+/**
+ * A Slack account with no roster row. Unknown people are never safe. The name
+ * and deactivated flag are Slack's, when Slack could be asked: an alert that
+ * says only "an account not on the roster" leaves nobody able to act on it.
+ */
+export type UnknownMember = {
+  slackUserId: string;
+  slackName?: string;
+  deactivated?: boolean;
+};
 
 export type Member = Person | UnknownMember;
 
@@ -77,7 +85,9 @@ export function requiresEnrollment(p: Person): boolean {
 }
 
 export function label(m: Member): string {
-  return isKnown(m) ? m.full_name : `unknown account ${m.slackUserId}`;
+  if (isKnown(m)) return m.full_name;
+  const who = m.slackName ?? `Slack account ${m.slackUserId}`;
+  return `${who} (not on the roster${m.deactivated ? ", deactivated" : ""})`;
 }
 
 export function slackIdOf(m: Member): string | null {

@@ -1,5 +1,6 @@
 import type { WebClient } from "@slack/web-api";
 import {
+  conversationMessageSpan,
   getConversation,
   monitoredConversations,
   peopleBySlackId,
@@ -8,16 +9,23 @@ import {
 } from "../db/repo.js";
 import { today, tsToIso, type IsoDate } from "../domain/dates.js";
 import { dedupeKey } from "../domain/findings.js";
-import type { Member } from "../domain/people.js";
+import type { Member, UnknownMember } from "../domain/people.js";
 import {
   classifyConversation,
+  messageSpan,
   type ConversationKind,
   type DmVerdict,
 } from "../domain/rules/dmPolicy.js";
 import { log } from "../logger.js";
 import { raise } from "../raise.js";
 import { nudgeAdults } from "../slack/guidance.js";
+import { botClient } from "../slack/tokens.js";
 import { remediateOneOnOnes } from "./remediation.js";
+
+/** A Slack message timestamp as the team's calendar day. */
+function tsToDay(ts: string): IsoDate {
+  return today(new Date(tsToIso(ts)));
+}
 
 /** Re-resolve membership at most this often; group DM membership is immutable
  * in Slack, but roster roles and screening dates are not. */
@@ -67,9 +75,45 @@ async function fetchParticipants(
   return { type: "mpim", participants };
 }
 
-function toMembers(slackIds: string[]): Member[] {
+/** How long Slack's name for an account off the roster is trusted. */
+const SLACK_NAME_MS = 24 * 60 * 60 * 1000;
+const slackNames = new Map<
+  string,
+  { member: UnknownMember; expires: number }
+>();
+
+/**
+ * An account off the roster, with Slack's name for it and whether it is
+ * deactivated, so the alert can say who. Cached, because this runs on every
+ * message; if Slack cannot be asked, the account is named by its ID alone.
+ */
+async function unknownMember(slackUserId: string): Promise<UnknownMember> {
+  const hit = slackNames.get(slackUserId);
+  if (hit && Date.now() < hit.expires) return hit.member;
+  let member: UnknownMember = { slackUserId };
+  try {
+    const { user } = await botClient().users.info({ user: slackUserId });
+    const name = user?.real_name || user?.profile?.real_name || user?.name;
+    member = {
+      slackUserId,
+      ...(name ? { slackName: name } : {}),
+      deactivated: Boolean(user?.deleted),
+    };
+  } catch (err) {
+    log.warn("could not name an account off the roster", {
+      slackUserId,
+      error: String(err),
+    });
+  }
+  slackNames.set(slackUserId, { member, expires: Date.now() + SLACK_NAME_MS });
+  return member;
+}
+
+async function toMembers(slackIds: string[]): Promise<Member[]> {
   const roster = peopleBySlackId();
-  return slackIds.map((id) => roster.get(id) ?? { slackUserId: id });
+  return Promise.all(
+    slackIds.map(async (id) => roster.get(id) ?? (await unknownMember(id)))
+  );
 }
 
 function isFresh(row: ConversationRow | undefined): row is ConversationRow {
@@ -111,7 +155,11 @@ export async function ensureConversation(
     participants = fetched.participants;
   }
 
-  const verdict = classifyConversation(type, toMembers(participants), today());
+  const verdict = classifyConversation(
+    type,
+    await toMembers(participants),
+    today()
+  );
   upsertConversation({
     id: conversationId,
     teamId,
@@ -158,12 +206,19 @@ export async function raiseDmViolation(
   const { id, type, verdict } = conversation;
   if (!verdict.violation) return;
 
+  // The whole recorded span, not this message's day: backfill walks history
+  // in any order, and the alert should read the same whichever came last.
+  const span = conversationMessageSpan(id);
+  const summary = span
+    ? `${verdict.summary} ${messageSpan(tsToDay(span.first), tsToDay(span.last))}`
+    : verdict.summary;
+
   const { alerted } = await raise(
     {
       kind: "adult_student_dm",
       dedupeKey: dedupeKey("adult_student_dm", id, verdict.violation),
       severity: verdict.severity,
-      summary: verdict.summary,
+      summary,
       subjectRef: id,
       detail: {
         type,
@@ -210,7 +265,7 @@ export async function reevaluateRecorded(
     const participants = JSON.parse(row.participants) as string[];
     const verdict = classifyConversation(
       row.type,
-      toMembers(participants),
+      await toMembers(participants),
       asOf
     );
     if (!verdict.violation) continue;
