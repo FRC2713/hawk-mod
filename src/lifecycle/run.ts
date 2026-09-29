@@ -85,6 +85,23 @@ import { refreshFinding } from "../slack/alerts.js";
 import { applyRosterChanges } from "./applyRoster.js";
 import { log } from "../logger.js";
 import { fetchWorkspaceUsers } from "../slack/roster.js";
+import {
+  decideSlackCopies,
+  planSlackCopies,
+  SLACK_COPIES,
+  SLACK_GROUP_IDS,
+  type FoundSlackGroup,
+  type SlackCopy,
+} from "../domain/lifecycle/slackGroups.js";
+import {
+  formatSlackCopies,
+  type ReadCopy,
+} from "../domain/lifecycle/slackGroupReport.js";
+import {
+  channelLabel,
+  groupMembers,
+  listUserGroups,
+} from "../slack/userGroups.js";
 
 /**
  * The lifecycle commands, once, for both doors: the CLI prints what these
@@ -331,6 +348,94 @@ async function readGroupInputs() {
     asOf: today(),
   });
   return { parsed, directory, plans, found, missing };
+}
+
+/**
+ * Everything a Slack copies plan is made from, read fresh with the bot token
+ * (`usergroups:read`): the sheet, the roster's Slack accounts, and each copy's
+ * group. A copy with no ID yet is looked up by its handle so a dry run shows
+ * real numbers, but it is never in `found`, so nothing can be applied to it.
+ */
+async function readSlackCopyInputs(slack: WebClient) {
+  const env = requireGoogle();
+  const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
+  const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
+
+  const users = await fetchWorkspaceUsers(slack);
+  const live = new Set(
+    users.filter((u) => !u.isDeleted && !u.isBot).map((u) => u.id)
+  );
+  const slackIds = new Map(
+    listPeople(false).flatMap((p) =>
+      p.person_id && p.slack_user_id && live.has(p.slack_user_id)
+        ? [[p.person_id, p.slack_user_id] as const]
+        : []
+    )
+  );
+
+  const workspace = await listUserGroups(slack);
+  const actual: Partial<Record<SlackCopy, string[]>> = {};
+  const found: Partial<Record<SlackCopy, FoundSlackGroup>> = {};
+  const read: Partial<Record<SlackCopy, ReadCopy>> = {};
+  const disabled = new Set<SlackCopy>();
+  for (const copy of SLACK_COPIES) {
+    const { id, handle } = SLACK_GROUP_IDS[copy];
+    const group = id
+      ? workspace.find((g) => g.id === id)
+      : workspace.find((g) => g.handle.toLowerCase() === handle);
+    if (!group) continue;
+    if (group.disabled) {
+      disabled.add(copy);
+      continue;
+    }
+    const members = await groupMembers(slack, group.id);
+    actual[copy] = members;
+    if (id) found[copy] = { id: group.id, handle: group.handle };
+    read[copy] = {
+      id: group.id,
+      handle: group.handle,
+      count: members.length,
+      channels: await Promise.all(
+        group.channels.map((c) => channelLabel(slack, c))
+      ),
+      byHandle: !id,
+    };
+  }
+
+  const plans = planSlackCopies({
+    people: parsed.people,
+    slackIds,
+    actual,
+    asOf: today(),
+  });
+  return { parsed, users, workspace, plans, found, read, disabled };
+}
+
+/**
+ * Step 5: the Slack user groups against the sheet. Read-only for now — Apply
+ * arrives with the `slack_groups_differ` finding (part 3). Uses only the bot
+ * token; nothing here needs an administrator's grant.
+ */
+export async function slackGroupsReport(opts: {
+  slack: WebClient;
+}): Promise<string> {
+  const { parsed, users, workspace, plans, found, read, disabled } =
+    await readSlackCopyInputs(opts.slack);
+  return formatSlackCopies({
+    plans,
+    decisions: decideSlackCopies({ plans, found }),
+    read,
+    disabled,
+    workspace,
+    names: new Map(parsed.people.map((p) => [p.personId, p.name])),
+    accounts: new Map(
+      users.map((u) => [
+        u.id,
+        u.isDeleted ? `${u.realName}, deactivated` : u.realName,
+      ])
+    ),
+    dryRun: true,
+  });
 }
 
 /** Who is applying: a person in Slack, or hawk-mod itself on the hour. */
