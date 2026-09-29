@@ -117,6 +117,11 @@ const lower = (s: string) => s.toLowerCase();
 /** The IDs of the groups the sheet computes; every other group is untracked. */
 const TRACKED = new Set(Object.values(GOOGLE_GROUP_IDS).filter(Boolean));
 
+/** Whether a group is one of the nine the sheet computes, by its ID. */
+export function isTrackedGroup(id: string): boolean {
+  return TRACKED.has(id);
+}
+
 type Addresses = { current: string[]; left: string[] };
 
 /**

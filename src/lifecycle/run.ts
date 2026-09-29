@@ -18,6 +18,7 @@ import {
   DIRECTORY_GROUP_MEMBER,
   DIRECTORY_GROUP_READONLY,
   DIRECTORY_USER_READONLY,
+  listDomainGroups,
   listDomainUsers,
   readGroup,
   removeMember,
@@ -27,6 +28,13 @@ import {
   type DirectoryAccount,
 } from "../domain/lifecycle/onboarding.js";
 import { formatOnboarding } from "../domain/lifecycle/onboardingReport.js";
+import {
+  isTrackedGroup,
+  planOffboarding,
+  type DomainGroup,
+  type OffboardingAccount,
+} from "../domain/lifecycle/offboarding.js";
+import { formatOffboarding } from "../domain/lifecycle/offboardingReport.js";
 import {
   ONBOARDING_DONE_NOTE,
   onboardingFinding,
@@ -1432,4 +1440,95 @@ export async function onboardingCheck(slack: WebClient): Promise<string> {
     `Onboarding: ${plan.requests.length} request(s) open, ${closed.length} done.` +
     (directoryError ? " RHR Emails were not checked: Google refused." : "")
   );
+}
+
+/**
+ * Everything an offboarding plan is made from, read fresh: the sheet, the
+ * roster (for rows gone from the sheet), Slack's accounts, and Google's
+ * accounts and every group in the Workspace — each Google read in a client
+ * of its own, so a refusal names the setting that is missing and the rest
+ * of the plan still stands.
+ */
+async function readOffboardingInputs(slack: WebClient) {
+  const env = requireGoogle();
+  const sheets = serviceAccountClient(env, [SHEETS_READONLY]);
+  const parsed = parseSheet(await readLifecycleSheet(sheets, env.sheetId));
+  const users = (await fetchWorkspaceUsers(slack)).filter((u) => !u.isBot);
+
+  let directory: OffboardingAccount[] | null = null;
+  let directoryError: string | null = null;
+  try {
+    directory = await listDomainUsers(
+      serviceAccountClient(env, [DIRECTORY_USER_READONLY], googleActor())
+    );
+  } catch (err) {
+    directoryError = errorText(err);
+  }
+  let groups: DomainGroup[] | null = null;
+  let groupsError: string | null = null;
+  try {
+    groups = await listDomainGroups(
+      serviceAccountClient(
+        env,
+        [DIRECTORY_GROUP_READONLY, DIRECTORY_GROUP_MEMBER],
+        googleActor()
+      )
+    );
+  } catch (err) {
+    groupsError = errorText(err);
+  }
+
+  const plan = planOffboarding({
+    people: parsed.people,
+    roster: listPeople(false).flatMap((p) =>
+      p.person_id
+        ? [
+            {
+              personId: p.person_id,
+              name: p.full_name,
+              email: p.email,
+              slackUserId: p.slack_user_id,
+            },
+          ]
+        : []
+    ),
+    slackAccounts: users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      deactivated: u.isDeleted,
+    })),
+    directory,
+    groups,
+  });
+  return { plan, users, directory, directoryError, groups, groupsError };
+}
+
+/**
+ * Step 7: what everyone leaving has left behind — Google accounts to
+ * suspend, Slack accounts to deactivate, and groups the sheet does not
+ * compute — read from the sheet, Slack and Google now. Changes nothing and
+ * posts nothing.
+ */
+export async function offboardingReport(opts: {
+  slack: WebClient;
+}): Promise<string> {
+  const { plan, users, directory, directoryError, groups, groupsError } =
+    await readOffboardingInputs(opts.slack);
+  return formatOffboarding({
+    plan,
+    asOf: today(),
+    slackAccounts: users.length,
+    directory: directory
+      ? {
+          count: directory.length,
+          admins: directory.filter((a) => a.admin).length,
+        }
+      : { error: directoryError ?? "unknown error" },
+    groups: groups
+      ? {
+          untracked: groups.filter((g) => !isTrackedGroup(g.id)),
+          total: groups.length,
+        }
+      : { error: groupsError ?? "unknown error" },
+  });
 }
