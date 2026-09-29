@@ -1,5 +1,6 @@
 import type { IsoDate } from "../dates.js";
 import { planGroupMembership } from "../rules/groupMembership.js";
+import { addressKey } from "./address.js";
 import {
   belongs,
   GROUPS,
@@ -30,8 +31,11 @@ import { groupAddress, type SheetPerson, type SheetRole } from "./sheet.js";
  * for "Apply anyway", because a sheet mistake must not empty a group. Held
  * removals are never applied here, so they never count toward that.
  *
- * Addresses only, compared lower-cased; output names Person IDs alongside
- * them so a report can print the IDs and leave the addresses out.
+ * Addresses only, compared as Gmail compares them (`addressKey`: lower-cased,
+ * and for Gmail without dots or a `+tag`); output names Person IDs alongside
+ * them so a report can print the IDs and leave the addresses out. An address
+ * in the output is always the spelling that is sent to Google: the sheet's
+ * for a join, the group's for anything already in it.
  */
 
 export type HeldReason =
@@ -160,7 +164,7 @@ export function planGoogleGroups(args: {
       p.student?.schoolEmail ?? null,
       p.mentor?.rhrEmail ?? null,
     ]) {
-      if (a && !owner.has(a.toLowerCase())) owner.set(a.toLowerCase(), p);
+      if (a && !owner.has(addressKey(a))) owner.set(addressKey(a), p);
     }
   }
 
@@ -168,42 +172,61 @@ export function planGoogleGroups(args: {
     const current = new Set(
       [...(args.actual[group] ?? [])].map((a) => a.toLowerCase())
     );
+    const currentKeys = new Set([...current].map(addressKey));
 
-    const want = new Map<string, string[]>();
+    // Keyed by addressKey; each entry keeps the sheet's own spelling to add.
+    const want = new Map<string, { address: string; personIds: string[] }>();
     if (group === "grp-parents") {
-      for (const [a, ids] of parents) want.set(a, ids);
+      // Two students may list one parent spelled two ways: one entry, both
+      // students, the first spelling.
+      for (const [a, ids] of parents) {
+        const k = addressKey(a);
+        const seen = want.get(k);
+        want.set(k, {
+          address: seen?.address ?? a.toLowerCase(),
+          personIds: [...(seen?.personIds ?? []), ...ids],
+        });
+      }
     } else {
       for (const p of intended[group]) {
         const a = groupAddress(p)?.toLowerCase();
-        if (a) want.set(a, [p.personId]);
+        if (a) want.set(addressKey(a), { address: a, personIds: [p.personId] });
       }
+    }
+    // Every student who lists a parent, by key.
+    const listedByKey = new Map<string, string[]>();
+    for (const [a, ids] of listedBy) {
+      const k = addressKey(a);
+      listedByKey.set(k, [...(listedByKey.get(k) ?? []), ...ids]);
     }
 
     const add: Member[] = [];
-    for (const [address, personIds] of want) {
-      if (!current.has(address)) add.push({ address, personIds });
+    for (const [key, member] of want) {
+      if (!currentKeys.has(key)) add.push(member);
     }
 
     const automatic: Member[] = [];
     const held: HeldMember[] = [];
     for (const address of current) {
-      if (want.has(address)) continue;
+      const key = addressKey(address);
+      if (want.has(key)) continue;
       if (group === "grp-parents") {
         held.push({
           address,
-          personIds: listedBy.get(address) ?? [],
+          personIds: listedByKey.get(key) ?? [],
           reason: "parent_not_listed",
         });
         continue;
       }
-      const p = owner.get(address);
+      const p = owner.get(key);
       if (!p) {
         held.push({ address, personIds: [], reason: "not_on_sheet" });
         continue;
       }
       if (belongs(group, p, asOf, false)) {
         // Still entitled to stay (grp-ra's lapsed screening), at this address.
-        if (address === groupAddress(p)?.toLowerCase()) continue;
+        const own = groupAddress(p);
+        if (own && key === addressKey(own)) continue;
         held.push({
           address,
           personIds: [p.personId],

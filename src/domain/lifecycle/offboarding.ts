@@ -1,3 +1,4 @@
+import { addressKey } from "./address.js";
 import { GOOGLE_GROUP_IDS, intendedParents } from "./groups.js";
 import type { DirectoryAccount, OnboardingSlackAccount } from "./onboarding.js";
 import { groupAddress, type SheetPerson, type SheetRole } from "./sheet.js";
@@ -200,10 +201,13 @@ export function planOffboarding(args: {
 }): OffboardingPlan {
   const { people, slackAccounts, directory, groups } = args;
 
-  const inUse = new Set<string>(intendedParents(people).keys());
+  // Compared as Gmail compares addresses (`addressKey`).
+  const inUse = new Set<string>(
+    [...intendedParents(people).keys()].map(addressKey)
+  );
   const inUseSlack = new Set<string>();
   for (const p of people) {
-    for (const a of addressesOf(p).current) inUse.add(a);
+    for (const a of addressesOf(p).current) inUse.add(addressKey(a));
     if (belongsInSlack(p)) {
       for (const id of [p.mentor?.slackUserId, p.student?.slackUserId]) {
         if (id) inUseSlack.add(id);
@@ -214,7 +218,8 @@ export function planOffboarding(args: {
   // lose: the same account under a stale Slack User ID, or a shared address.
   const slackable = slackAccounts.filter(
     (a) =>
-      !inUseSlack.has(a.id) && !(a.email !== null && inUse.has(lower(a.email)))
+      !inUseSlack.has(a.id) &&
+      !(a.email !== null && inUse.has(addressKey(a.email)))
   );
   const untracked = (groups ?? []).filter((g) => !TRACKED.has(g.id));
 
@@ -225,8 +230,9 @@ export function planOffboarding(args: {
     slackIds: readonly (string | null | undefined)[] | null
   ): Leaver | null => {
     const addresses = [...new Set(left.map(lower))].filter(
-      (a) => !inUse.has(a)
+      (a) => !inUse.has(addressKey(a))
     );
+    const keys = new Set(addresses.map(addressKey));
     const slack = slackIds
       ? liveSlackAccount(slackIds, addresses, slackable)
       : null;
@@ -241,7 +247,7 @@ export function planOffboarding(args: {
     const memberships: UntrackedMembership[] = [];
     for (const g of untracked) {
       for (const m of g.members) {
-        if (addresses.includes(lower(m.address))) {
+        if (keys.has(addressKey(m.address))) {
           memberships.push({
             groupId: g.id,
             groupName: g.name,
@@ -335,7 +341,7 @@ export function planUnaccounted(args: {
 }): Unaccounted {
   const known = new Set<string>();
   const add = (a: string | null | undefined) => {
-    if (a) known.add(lower(a));
+    if (a) known.add(addressKey(a));
   };
   for (const p of args.people) {
     add(p.mentor?.rhrEmail);
@@ -355,14 +361,14 @@ export function planUnaccounted(args: {
   const isKnown = (address: string) => {
     const account = accountOf.get(address);
     return account
-      ? addressesOf(account).some((x) => known.has(x))
-      : known.has(address);
+      ? addressesOf(account).some((x) => known.has(addressKey(x)))
+      : known.has(addressKey(address));
   };
 
   const accounts: UnaccountedAccount[] = [];
   let suspended = 0;
   for (const a of args.directory ?? []) {
-    if (addressesOf(a).some((x) => known.has(x))) continue;
+    if (addressesOf(a).some((x) => known.has(addressKey(x)))) continue;
     if (a.suspended) suspended++;
     else accounts.push({ account: lower(a.primaryEmail), admin: a.admin });
   }
