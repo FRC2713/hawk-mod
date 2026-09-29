@@ -87,12 +87,20 @@ import { log } from "../logger.js";
 import { fetchWorkspaceUsers } from "../slack/roster.js";
 import {
   decideSlackCopies,
+  membershipAfter,
   planSlackCopies,
   SLACK_COPIES,
+  SLACK_DIFFER_PREFIX,
   SLACK_GROUP_IDS,
+  slackCheckFailedFinding,
+  slackDifferFinding,
+  slackHeldFinding,
   type FoundSlackGroup,
   type SlackCopy,
+  type SlackMember,
 } from "../domain/lifecycle/slackGroups.js";
+import type { NewFinding } from "../domain/findings.js";
+import { withGroupEditor } from "../slack/groupAdmin.js";
 import {
   formatSlackCopies,
   type ReadCopy,
@@ -101,6 +109,7 @@ import {
   channelLabel,
   groupMembers,
   listUserGroups,
+  setGroupMembership,
 } from "../slack/userGroups.js";
 
 /**
@@ -408,7 +417,7 @@ async function readSlackCopyInputs(slack: WebClient) {
     actual,
     asOf: today(),
   });
-  return { parsed, users, workspace, plans, found, read, disabled };
+  return { parsed, users, workspace, plans, actual, found, read, disabled };
 }
 
 /**
@@ -436,6 +445,165 @@ export async function slackGroupsReport(opts: {
     ),
     dryRun: true,
   });
+}
+
+/**
+ * Raises a finding whose text may change while it stays open — who differs
+ * in the Slack groups, say — and redraws its alert in place when it does,
+ * rather than posting again (decided 2026-09-28): only a finding that closed
+ * and came back alerts anew.
+ */
+async function raiseRedrawn(f: NewFinding): Promise<void> {
+  const before = findingByKey(f.dedupeKey);
+  const { id, alerted } = await raise(f);
+  if (!alerted && before?.summary !== f.summary) await refreshFinding(id);
+}
+
+/**
+ * The hourly Slack groups check: keeps the one `slack_groups_differ` finding
+ * (with **Apply**) up to date, raises one per copy nothing can be applied to
+ * (a refusal carries **Apply anyway**), and closes what it no longer sees.
+ * Changes no group: every Slack group change is an administrator's click.
+ */
+export async function slackGroupsCheck(slack: WebClient): Promise<void> {
+  let inputs;
+  try {
+    inputs = await readSlackCopyInputs(slack);
+  } catch (err) {
+    await raise(slackCheckFailedFinding(errorText(err)));
+    throw err;
+  }
+  const { parsed, plans, found } = inputs;
+  const decisions = decideSlackCopies({ plans, found });
+  const names = new Map(parsed.people.map((p) => [p.personId, p.name]));
+  const seen = new Set<string>();
+  const differ = slackDifferFinding(decisions, names);
+  if (differ) {
+    seen.add(differ.dedupeKey);
+    await raiseRedrawn(differ);
+  }
+  for (const d of decisions) {
+    if (d.kind !== "held") continue;
+    const f = slackHeldFinding(d);
+    seen.add(f.dedupeKey);
+    await raiseRedrawn(f);
+  }
+  const closed = resolveMissingWithPrefix(
+    [SLACK_DIFFER_PREFIX],
+    seen,
+    "The Slack groups match the lifecycle sheet."
+  );
+  for (const id of closed) await refreshFinding(id);
+}
+
+/**
+ * **Apply** (every copy) or **Apply anyway** (one refused copy), as the
+ * administrator who clicked, with their own group-editing grant. Reads the
+ * sheet and the groups again inside the group-write lock and applies what
+ * differs *then*, not what the finding said. Adds and flag-off removals only:
+ * nobody held is removed, because the whole membership sent keeps them.
+ * Records the clicker in `group_changes`, then re-checks so the findings
+ * show what is left.
+ */
+export async function slackGroupsApply(opts: {
+  slack: WebClient;
+  teamId: string;
+  actor: GroupsActor;
+  reason: string | null;
+  /** Apply anyway: this one copy, despite its refusal. */
+  force?: SlackCopy;
+}): Promise<string> {
+  const outcome = await withGroupEditor(
+    opts.teamId,
+    opts.actor.slackUserId,
+    async (editor) => {
+      const { parsed, plans, actual, found } = await readSlackCopyInputs(
+        opts.slack
+      );
+      const decisions = decideSlackCopies({
+        plans,
+        found,
+        force: opts.force ? new Set([opts.force]) : undefined,
+      }).filter((d) => !opts.force || d.copy === opts.force);
+      const names = new Map(parsed.people.map((p) => [p.personId, p.name]));
+      const who = (m: SlackMember) =>
+        m.personId
+          ? `${m.personId} ${names.get(m.personId) ?? ""}`.trim()
+          : m.slackUserId;
+      const rosterIds = new Map(
+        listPeople(false).flatMap((p) =>
+          p.person_id ? [[p.person_id, p.id] as const] : []
+        )
+      );
+      const lines: string[] = [];
+      for (const d of decisions) {
+        if (d.kind === "held") {
+          lines.push(
+            `@${SLACK_GROUP_IDS[d.copy].handle}: not applied, ${d.message}.`
+          );
+          continue;
+        }
+        if (d.kind === "nothing") continue;
+        try {
+          await setGroupMembership(
+            editor,
+            d.groupId,
+            membershipAfter(actual[d.copy] ?? [], d)
+          );
+        } catch (err) {
+          lines.push(
+            `@${d.handle}: Slack refused the change (${errorText(err)}).`
+          );
+          continue;
+        }
+        const changes = [
+          ...d.add.map((m) => ({ action: "add" as const, m })),
+          ...d.remove.map((m) => ({ action: "remove" as const, m })),
+        ];
+        for (const { action, m } of changes) {
+          insertGroupChange({
+            usergroupId: d.groupId,
+            handle: d.handle,
+            action,
+            subject: m.slackUserId,
+            personId: m.personId ? (rosterIds.get(m.personId) ?? null) : null,
+            actor: opts.actor.slackUserId,
+            actorName: opts.actor.name,
+            reason: opts.reason,
+            source: opts.force ? "slack_apply_anyway" : "slack_apply",
+          });
+        }
+        lines.push(
+          `@${d.handle}: ` +
+            [
+              d.add.length ? `added ${d.add.map(who).join(", ")}` : "",
+              d.remove.length
+                ? `removed ${d.remove.map(who).join(", ")} (lead/RA flag off)`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("; ")
+        );
+      }
+      log.info("slack groups applied", {
+        by: opts.actor.name,
+        force: opts.force ?? null,
+        groups: decisions.filter((d) => d.kind === "apply").length,
+      });
+      return lines.length
+        ? lines.join("\n")
+        : "The Slack groups already match the lifecycle sheet; nothing to apply.";
+    }
+  );
+  if (!outcome.ok) return outcome.reason;
+  try {
+    await slackGroupsCheck(opts.slack);
+  } catch (err) {
+    log.error("slack groups check after apply failed", {
+      error: errorText(err),
+    });
+  }
+  return outcome.value;
 }
 
 /** Who is applying: a person in Slack, or hawk-mod itself on the hour. */
@@ -797,6 +965,11 @@ export async function lifecycleHourly(slack: WebClient): Promise<void> {
       await coriWarnings(slack);
     } catch (err) {
       log.error("hourly CORI warnings failed", { error: errorText(err) });
+    }
+    try {
+      await slackGroupsCheck(slack);
+    } catch (err) {
+      log.error("hourly slack groups check failed", { error: errorText(err) });
     }
   }
 }

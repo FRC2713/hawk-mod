@@ -312,6 +312,21 @@ lands in `group_changes`; every `grp-ra` change is announced, because
 roster and then the groups, each in its own try, and the groups do nothing
 until the first `/hawkmod lifecycle groups apply`.
 
+**Slack user groups copy the sheet, and every change is a click** (step 5).
+`@students`, `@mentors`, `@student-leads`, `@mentor-leads` and `@ra-adults`
+are computed by the same `intendedGroups` as their Google groups
+(`domain/lifecycle/slackGroups.ts`), found by permanent ID in
+`SLACK_GROUP_IDS`, never by handle. hawk-mod holds no standing token that can
+edit them: the hourly check keeps one `slack_groups_differ` finding whose
+**Apply** re-reads the sheet and the groups inside `groupAdmin.ts`'s lock and
+applies what differs then, with the clicker's own `/slack/authorize-groups`
+grant (`withGroupEditor`). The rule is the Google one: Apply adds, and removes
+only a lead or RA flag turned off; someone leaving, a CORI lapse, or an
+account the sheet does not know is held, and the membership Apply sends keeps
+them (`membershipAfter`) — `usergroups.users.update` replaces the whole list,
+so leaving someone out removes them. What the copies are _for_ is their
+default channels.
+
 **Two paths reach the same log.** Events (`src/slack/events.ts`) give real-time
 capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each adult's
 DM list to catch history predating enrollment and anything missed while the

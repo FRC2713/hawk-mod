@@ -128,7 +128,11 @@ describe("the Slack groups dry run", () => {
 
   it("reports copies Slack has no group for, and disabled ones", () => {
     const t = report({ read: {}, disabled: ["grp-mentors"] });
-    assert.match(t, /@students \(grp-students\): no ID yet .* skipped/);
+    assert.match(
+      t,
+      /@students \(grp-students\): Slack has no user group S0BQL3CLA3S/
+    );
+    assert.match(t, /User groups in Slack, to check/);
     assert.match(t, /@mentors \(grp-mentors\): disabled in Slack/);
     assert.match(t, /Would add: 0/);
   });

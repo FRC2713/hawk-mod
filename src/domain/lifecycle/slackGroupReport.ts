@@ -140,8 +140,10 @@ export function formatSlackCopies(args: {
     }
   }
 
-  if (plans.some((p) => !SLACK_GROUP_IDS[p.copy].id)) {
-    lines.push("", "User groups in Slack, to fill in SLACK_GROUP_IDS:");
+  // Whenever a copy has no ID, or its ID leads nowhere: the list is what
+  // fixing SLACK_GROUP_IDS is done from.
+  if (plans.some((p) => !SLACK_GROUP_IDS[p.copy].id || !read[p.copy])) {
+    lines.push("", "User groups in Slack, to check SLACK_GROUP_IDS against:");
     const sorted = [...args.workspace].sort((a, b) =>
       a.handle < b.handle ? -1 : 1
     );

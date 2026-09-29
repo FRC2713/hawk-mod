@@ -42,6 +42,11 @@ export const FINDING_KINDS = [
   "cori_lapsed",
   /** A mentor's CORI expires within 60 days. */
   "cori_expiring",
+  /**
+   * The Slack user group copies differ from the lifecycle sheet (Apply), one
+   * copy's plan was refused (Apply anyway), or a copy could not be applied to.
+   */
+  "slack_groups_differ",
 ] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];

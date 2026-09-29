@@ -57,6 +57,32 @@ function adminClient(teamId: string, slackUserId: string): WebClient | null {
   return token ? new WebClient(token) : null;
 }
 
+/**
+ * Runs `fn` with an administrator's own group-editing client, inside the same
+ * lock as every other group write, or says they must authorize first. For the
+ * lifecycle Slack copies (step 5), which re-read the sheet and the groups
+ * inside `fn` so what is applied is what differs at the click.
+ */
+export async function withGroupEditor<T>(
+  teamId: string,
+  slackUserId: string,
+  fn: (editor: WebClient) => Promise<T>
+): Promise<{ ok: true; value: T } | { ok: false; reason: string }> {
+  const client = adminClient(teamId, slackUserId);
+  if (!client) {
+    return {
+      ok: false,
+      reason:
+        `hawk-mod needs your permission to edit user groups on your behalf. ` +
+        `Authorize once here, then click again: ${authorizeUrl()}`,
+    };
+  }
+  return serialize(async () => ({
+    ok: true as const,
+    value: await fn(client),
+  }));
+}
+
 /** Where an administrator goes to grant group-editing permission. */
 export function authorizeUrl(): string {
   return `${config().PUBLIC_URL}/slack/authorize-groups`;

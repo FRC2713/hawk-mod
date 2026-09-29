@@ -1,4 +1,5 @@
 import type { IsoDate } from "../dates.js";
+import { dedupeKey, type NewFinding } from "../findings.js";
 import { belongs, intendedGroups, type PersonGroup } from "./groups.js";
 import { leaving, planRefusal, type LeavingReason } from "./groupPlan.js";
 import type { SheetPerson } from "./sheet.js";
@@ -38,11 +39,11 @@ export const SLACK_GROUP_IDS: Record<
   SlackCopy,
   { id: string; handle: string }
 > = {
-  "grp-students": { id: "", handle: "students" },
-  "grp-mentors": { id: "", handle: "mentors" },
-  "grp-student-leads": { id: "", handle: "student-leads" },
-  "grp-mentor-leads": { id: "", handle: "mentor-leads" },
-  "grp-ra": { id: "", handle: "ra-adults" },
+  "grp-students": { id: "S0BQL3CLA3S", handle: "students" },
+  "grp-mentors": { id: "S05P154MJP2", handle: "mentors" },
+  "grp-student-leads": { id: "S0C5K1YN4U8", handle: "student-leads" },
+  "grp-mentor-leads": { id: "S0C4SK8LDK3", handle: "mentor-leads" },
+  "grp-ra": { id: "S0BRV857SC8", handle: "ra-adults" },
 };
 
 /** A Slack account in a copy, and whose it is on the sheet, if anyone's. */
@@ -221,4 +222,122 @@ export function decideSlackCopies(args: {
       remove: plan.remove,
     };
   });
+}
+
+/**
+ * The membership to send to Slack for an applied decision: everyone there
+ * now, plus the adds, minus the flag-off removals. Held members are simply
+ * still there — `usergroups.users.update` replaces the whole list, so leaving
+ * them out would remove them.
+ */
+export function membershipAfter(
+  current: Iterable<string>,
+  d: Extract<SlackCopyDecision, { kind: "apply" }>
+): string[] {
+  const out = new Set(current);
+  for (const m of d.add) out.add(m.slackUserId);
+  for (const m of d.remove) out.delete(m.slackUserId);
+  return [...out].sort();
+}
+
+/** Every key the Slack copies own; a clean check closes what it no longer sees. */
+export const SLACK_DIFFER_PREFIX = "slack_groups_differ";
+
+/** The one finding that carries **Apply**. */
+export const SLACK_DIFFER_KEY = dedupeKey("slack_groups_differ");
+
+export function slackRefusedKey(copy: SlackCopy): string {
+  return dedupeKey("slack_groups_differ", "refused", copy);
+}
+
+/**
+ * The one "Slack groups differ" finding, from every copy Apply may change.
+ * Names people — the alert channel may, and the clicker needs to know who
+ * they are adding — and ends with what Apply does, since the text is an hour
+ * old by the time someone reads it. Null when nothing differs.
+ */
+export function slackDifferFinding(
+  decisions: readonly SlackCopyDecision[],
+  names: ReadonlyMap<string, string>
+): NewFinding | null {
+  const apply = decisions.filter(
+    (d): d is Extract<SlackCopyDecision, { kind: "apply" }> =>
+      d.kind === "apply"
+  );
+  if (!apply.length) return null;
+  const who = (m: SlackMember) =>
+    m.personId
+      ? `${m.personId}${names.get(m.personId) ? ` ${names.get(m.personId)}` : ""}`
+      : m.slackUserId;
+  const parts = apply.flatMap((d) => [
+    ...(d.add.length
+      ? [`add ${d.add.map(who).join(", ")} to @${d.handle}`]
+      : []),
+    ...(d.remove.length
+      ? [
+          `remove ${d.remove.map(who).join(", ")} from @${d.handle} ` +
+            "(lead/RA flag off)",
+        ]
+      : []),
+  ]);
+  return {
+    kind: "slack_groups_differ",
+    dedupeKey: SLACK_DIFFER_KEY,
+    severity: "info",
+    summary:
+      `Slack groups differ from the lifecycle sheet: ${parts.join("; ")}. ` +
+      "Apply reads the sheet and the groups again and makes what differs " +
+      "then, as you. Nobody leaving is removed.",
+    detail: {
+      copies: apply.map((d) => ({
+        copy: d.copy,
+        add: d.add.length,
+        remove: d.remove.length,
+      })),
+    },
+  };
+}
+
+/**
+ * A copy nothing is applied to. A refusal carries **Apply anyway**; a wrong
+ * or missing group is fixed in `SLACK_GROUP_IDS` or in Slack and offers
+ * nothing.
+ */
+export function slackHeldFinding(
+  d: Extract<SlackCopyDecision, { kind: "held" }>
+): NewFinding {
+  const { handle } = SLACK_GROUP_IDS[d.copy];
+  const fix =
+    d.why === "refused"
+      ? "Check the lifecycle sheet: if the change is right, an administrator " +
+        "can apply it anyway."
+      : "Check its ID in SLACK_GROUP_IDS, and that the group still exists " +
+        "and is enabled in Slack.";
+  return {
+    kind: "slack_groups_differ",
+    dedupeKey:
+      d.why === "refused"
+        ? slackRefusedKey(d.copy)
+        : dedupeKey("slack_groups_differ", d.why, d.copy),
+    severity: "warn",
+    summary: `Nothing will be applied to @${handle}: ${d.message}. ${fix}`,
+    subjectRef: d.copy,
+    detail: { copy: d.copy, why: d.why },
+  };
+}
+
+/**
+ * The hourly check could not read the sheet or Slack. Closed by the next
+ * check that runs cleanly. The message is the error's own.
+ */
+export function slackCheckFailedFinding(message: string): NewFinding {
+  return {
+    kind: "slack_groups_differ",
+    dedupeKey: dedupeKey("slack_groups_differ", "check_failed"),
+    severity: "warn",
+    summary:
+      `hawk-mod could not compare the Slack user groups with the lifecycle ` +
+      `sheet (${message}). Nothing was changed; the next hourly check tries again.`,
+    detail: { why: "check_failed" },
+  };
 }
