@@ -301,12 +301,21 @@ export function heldMemberFinding(
   }
 
   if (!s.personId) {
+    // A parent address no student lists at all is held in grp-parents, which
+    // `groups` leaves out (it names a person's own groups): name it here, or
+    // the alert reads "is in ." (as #142 did, 2026-09-29).
+    const where = [...new Set(s.entries.map((e) => e.group))].join(", ");
+    const parentOnly =
+      s.entries.length > 0 &&
+      s.entries.every((e) => e.reason === "parent_not_listed");
     return {
       ...base,
       kind: "group_member_held",
       summary:
         `An address the lifecycle sheet does not account for, ` +
-        `${maskAddress(s.address ?? "")}, is in ${groups}. Nothing was removed.`,
+        `${maskAddress(s.address ?? "")}, is in ${where}` +
+        (parentOnly ? ": no student lists it as a parent" : "") +
+        `. Nothing was removed.`,
     };
   }
 
