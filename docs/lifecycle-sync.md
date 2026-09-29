@@ -2,7 +2,7 @@
 
 Status: **steps 0–4 deployed.** The roster has come from the sheet since the
 first apply on 2026-09-28 (#25–#28), and the Google Groups since the same day
-(#32–#37); both run hourly. Step 5 (Slack user groups) is being built. The
+(#32–#37); both run hourly. Step 5 (Slack user groups) is being built: the planner and dry run are deployed (#38, #39); Apply is part 3. The
 scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
 below was rewritten on 2026-09-27, after a first step 3 design showed it had
 never been written down; it replaces the earlier "direction of truth" section.

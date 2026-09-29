@@ -32,6 +32,8 @@ export const END_MONITORING_ACTION = "hawkmod_end_monitoring";
 export const MAKE_ADULT_ACTION = "hawkmod_make_adult";
 export const APPLY_ANYWAY_ACTION = "hawkmod_groups_apply_anyway";
 export const REMOVE_FROM_GROUPS_ACTION = "hawkmod_remove_from_groups";
+export const SLACK_APPLY_ACTION = "hawkmod_slack_groups_apply";
+export const SLACK_APPLY_ANYWAY_ACTION = "hawkmod_slack_groups_apply_anyway";
 
 /**
  * The one change a lifecycle finding asks a person to make, if it asks one.
@@ -40,9 +42,27 @@ export const REMOVE_FROM_GROUPS_ACTION = "hawkmod_remove_from_groups";
  * they are leaving; Apply anyway the only override of a groups refusal. The user-group
  * sync's old `roster_drift` records a move already made, and offers nothing.
  */
-export function lifecycleAction(
-  f: Pick<Finding, "kind" | "dedupe_key">
-): { actionId: string; label: string } | null {
+export function lifecycleAction(f: Pick<Finding, "kind" | "dedupe_key">): {
+  actionId: string;
+  label: string;
+  /**
+   * An everyday change rather than one that takes something away: shown
+   * green, with no Acknowledge beside it — acknowledging would hide Apply
+   * while what it applies is still true — and its note is optional.
+   */
+  routine?: true;
+} | null {
+  // Every Slack group change is a click (step 5). Apply is the routine one;
+  // Apply anyway, for a refused copy, is the override.
+  if (f.kind === "slack_groups_differ") {
+    if (f.dedupe_key === "slack_groups_differ") {
+      return { actionId: SLACK_APPLY_ACTION, label: "Apply", routine: true };
+    }
+    if (f.dedupe_key.startsWith("slack_groups_differ:refused:")) {
+      return { actionId: SLACK_APPLY_ANYWAY_ACTION, label: "Apply anyway" };
+    }
+    return null;
+  }
   if (f.kind === "sheet_undeclared") {
     return { actionId: END_MONITORING_ACTION, label: "End monitoring" };
   }
@@ -100,7 +120,7 @@ export function findingBlocks(f: Finding): {
           ? {
               type: "button",
               action_id: lifecycle.actionId,
-              style: "danger",
+              style: lifecycle.routine ? "primary" : "danger",
               text: { type: "plain_text", text: lifecycle.label },
               value: String(f.id),
             }
@@ -111,12 +131,16 @@ export function findingBlocks(f: Finding): {
               text: { type: "plain_text", text: "Resolve" },
               value: String(f.id),
             },
-        {
-          type: "button",
-          action_id: ACK_ACTION,
-          text: { type: "plain_text", text: "Acknowledge" },
-          value: String(f.id),
-        },
+        ...(lifecycle?.routine
+          ? []
+          : [
+              {
+                type: "button",
+                action_id: ACK_ACTION,
+                text: { type: "plain_text", text: "Acknowledge" },
+                value: String(f.id),
+              },
+            ]),
       ],
     });
     blocks.push({
@@ -127,9 +151,11 @@ export function findingBlocks(f: Finding): {
           text:
             `finding #${f.id}` +
             (f.subject_ref ? ` · \`${f.subject_ref}\`` : "") +
-            (lifecycle
-              ? ` · ${lifecycle.label} asks for a reason and re-reads the lifecycle sheet first`
-              : " · both ask for a reason, which the quarterly audit reads"),
+            (lifecycle?.routine
+              ? ` · ${lifecycle.label} re-reads the lifecycle sheet first and changes Slack as you`
+              : lifecycle
+                ? ` · ${lifecycle.label} asks for a reason and re-reads the lifecycle sheet first`
+                : " · both ask for a reason, which the quarterly audit reads"),
         },
       ],
     });

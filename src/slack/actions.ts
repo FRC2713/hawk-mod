@@ -12,14 +12,21 @@ import {
   groupsApplyAnyway,
   groupsRemoveHeld,
   rosterFindingStillTrue,
+  slackGroupsApply,
 } from "../lifecycle/run.js";
 import { GROUPS, type GroupName } from "../domain/lifecycle/groups.js";
+import {
+  SLACK_COPIES,
+  type SlackCopy,
+} from "../domain/lifecycle/slackGroups.js";
 import { log } from "../logger.js";
 import {
   ACK_ACTION,
   APPLY_ANYWAY_ACTION,
   END_MONITORING_ACTION,
   REMOVE_FROM_GROUPS_ACTION,
+  SLACK_APPLY_ACTION,
+  SLACK_APPLY_ANYWAY_ACTION,
   lifecycleAction,
   MAKE_ADULT_ACTION,
   RESOLVE_ACTION,
@@ -195,9 +202,13 @@ type LifecycleMeta = {
     | typeof END_MONITORING_ACTION
     | typeof MAKE_ADULT_ACTION
     | typeof APPLY_ANYWAY_ACTION
-    | typeof REMOVE_FROM_GROUPS_ACTION;
+    | typeof REMOVE_FROM_GROUPS_ACTION
+    | typeof SLACK_APPLY_ACTION
+    | typeof SLACK_APPLY_ANYWAY_ACTION;
   /** Where the button was, so the outcome can be told to the clicker there. */
   channel: string | null;
+  /** The workspace, for the clicker's own group-editing grant. */
+  teamId: string | null;
 };
 
 const NOT_PERMITTED = {
@@ -217,8 +228,27 @@ const NOT_PERMITTED = {
 
 const VIEW_TEXT: Record<
   LifecycleMeta["action"],
-  { title: string; explain: string; placeholder: string }
+  {
+    title: string;
+    explain: string;
+    placeholder: string;
+    /** Routine changes take an optional note; the rest demand a reason. */
+    optional?: true;
+  }
 > = {
+  [SLACK_APPLY_ACTION]: {
+    title: "Apply",
+    explain:
+      "Changes the Slack user groups to match the lifecycle sheet, as you, with your own group-editing permission. The sheet and the groups are read again first, and what differs then is applied — not what this alert said. People added join the groups' default channels. Nobody who is leaving is removed.",
+    placeholder: "Optional: new students from the October intake.",
+    optional: true,
+  },
+  [SLACK_APPLY_ANYWAY_ACTION]: {
+    title: "Apply anyway",
+    explain:
+      "Applies this Slack group's changes even though they remove more than a quarter of it, or empty it. The sheet and the group are read again first, and what differs then is applied, as you. Nobody who is leaving is removed.",
+    placeholder: "The student leads changed at the start of the season.",
+  },
   [END_MONITORING_ACTION]: {
     title: "End monitoring",
     explain:
@@ -270,6 +300,7 @@ function lifecycleView(meta: LifecycleMeta, summary: string) {
         type: "input" as const,
         block_id: NOTE_BLOCK,
         label: { type: "plain_text" as const, text: "Why?" },
+        optional: Boolean(text.optional),
         element: {
           type: "plain_text_input" as const,
           action_id: "value",
@@ -293,6 +324,8 @@ function registerLifecycleActions(app: App): void {
     MAKE_ADULT_ACTION,
     APPLY_ANYWAY_ACTION,
     REMOVE_FROM_GROUPS_ACTION,
+    SLACK_APPLY_ACTION,
+    SLACK_APPLY_ANYWAY_ACTION,
   ] as const) {
     app.action(action, async ({ ack, body, client }) => {
       await ack();
@@ -300,6 +333,7 @@ function registerLifecycleActions(app: App): void {
         user: { id: string };
         trigger_id?: string;
         channel?: { id?: string };
+        team?: { id?: string } | null;
         actions?: { value?: string }[];
       };
       const findingId = Number(payload.actions?.[0]?.value);
@@ -325,7 +359,12 @@ function registerLifecycleActions(app: App): void {
       await client.views.open({
         trigger_id: payload.trigger_id,
         view: lifecycleView(
-          { findingId, action, channel: payload.channel?.id ?? null },
+          {
+            findingId,
+            action,
+            channel: payload.channel?.id ?? null,
+            teamId: payload.team?.id ?? null,
+          },
           finding.summary
         ),
       });
@@ -349,7 +388,7 @@ function registerLifecycleActions(app: App): void {
       values: Record<string, Record<string, { value?: string }>>;
     };
     const note = (state.values[NOTE_BLOCK]?.["value"]?.value ?? "").trim();
-    if (!note) {
+    if (!note && !VIEW_TEXT[meta.action].optional) {
       await ack({
         response_action: "errors",
         errors: { [NOTE_BLOCK]: "A reason is required." },
@@ -399,6 +438,36 @@ async function applyLifecycleAction(
     }
     log.info("removed from groups", { findingId: finding.id, by });
     return outcome.text;
+  }
+
+  if (
+    meta.action === SLACK_APPLY_ACTION ||
+    meta.action === SLACK_APPLY_ANYWAY_ACTION
+  ) {
+    if (!meta.teamId)
+      return "Slack did not say which workspace; nothing was changed.";
+    let force: SlackCopy | undefined;
+    if (meta.action === SLACK_APPLY_ANYWAY_ACTION) {
+      force = finding.subject_ref as SlackCopy;
+      if (!SLACK_COPIES.includes(force)) {
+        return `Finding #${finding.id} names no known group; nothing was changed.`;
+      }
+    }
+    const outcome = await slackGroupsApply({
+      slack: client,
+      teamId: meta.teamId,
+      actor: caller,
+      reason: note || null,
+      force,
+    });
+    // The re-check inside slackGroupsApply closes the findings whose groups
+    // now match, and redraws the rest; nothing to close here.
+    log.info("slack groups apply clicked", {
+      findingId: finding.id,
+      force: force ?? null,
+      by,
+    });
+    return outcome;
   }
 
   if (meta.action === APPLY_ANYWAY_ACTION) {
