@@ -212,8 +212,10 @@ export function findingBlocks(f: Finding): {
     },
   ];
   // Only on the posted request, in the onboarding channel: never in the
-  // summary, which `/hawkmod findings` prints wherever it is run.
-  const address = f.status === "open" ? inviteAddressLine(f) : null;
+  // summary, which `/hawkmod findings` prints wherever it is run. Kept until
+  // the request is resolved: "I'm on it" acknowledges it, and whoever
+  // clicked is the one who needs the address next (#60).
+  const address = f.status !== "resolved" ? inviteAddressLine(f) : null;
   if (address) {
     blocks.push({
       type: "section",

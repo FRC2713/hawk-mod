@@ -102,13 +102,28 @@ describe("onboarding requests as findings", () => {
     );
   });
 
-  it("puts the address only on the posted request, while it is open", () => {
+  it("puts the address only on the posted request, until it is resolved", () => {
     assert.equal(
       inviteAddressLine(asFinding(invite)),
       "Address to invite: `alex@school.example`"
     );
     const open = JSON.stringify(findingBlocks(asFinding(invite)).blocks);
     assert.match(open, /alex@school\.example/);
+    // "I'm on it" acknowledges the request: whoever clicked needs the
+    // address now (#60).
+    const onIt = JSON.stringify(
+      findingBlocks(
+        asFinding(invite, {
+          status: "acknowledged",
+          resolved_by: "Rachel Moore",
+          resolution_note: "Rachel Moore is on it.",
+        })
+      ).blocks
+    );
+    assert.match(onIt, /alex@school\.example/);
+    assert.match(onIt, /Acknowledged/);
+    assert.match(onIt, /Rachel Moore is on it\./);
+    assert.doesNotMatch(asFinding(invite).summary, /alex@school\.example/);
     const done = JSON.stringify(
       findingBlocks(asFinding(invite, { status: "resolved" })).blocks
     );
