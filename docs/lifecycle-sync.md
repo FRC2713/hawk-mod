@@ -1,11 +1,12 @@
 # Lifecycle sync
 
-Status: **steps 0–6 deployed.** The roster has come from the sheet since the
+Status: **steps 0–7 deployed.** The roster has come from the sheet since the
 first apply on 2026-09-28 (#25–#28), the Google Groups since the same day
 (#32–#37), and the Slack user groups since the first Apply on 2026-09-29
 (#38–#42); all three are checked hourly. Onboarding requests, the welcome and
-the safety net (step 6) have run hourly since 2026-09-29 (#45–#50). Step 7,
-offboarding, is being built (see step 7 below). The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
+the safety net (step 6) have run hourly since 2026-09-29 (#45–#50), and
+offboarding (step 7) since 2026-09-29 (#54–#57), tested end to end on
+2026-09-30. Step 8, the admin roles report, is next. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
 below was rewritten on 2026-09-27, after a first step 3 design showed it had
 never been written down; it replaces the earlier "direction of truth" section.
 
@@ -609,7 +610,8 @@ group` refusing copies, the leaving buttons reaching Slack, and the
      nothing. It replaces the Workflow Builder welcome, and "X enrolled"
      goes to `announcement-channel` when the enrollment actually happens.
 
-7. **Offboarding / reactivation (I).** Suspend / un-suspend on the leaving
+7. **Offboarding / reactivation (I).** _Done (#54–#57, tested
+   2026-09-30)._ Suspend / un-suspend on the leaving
    finding, and "Remove from groups" extended to every live group. _Verify:_
    nothing changes without the click; a non-admin click is refused; the
    removal covers groups the sheet does not compute.
@@ -619,8 +621,8 @@ group` refusing copies, the leaving buttons reaching Slack, and the
    reading every group in the Workspace, and whether an account holds an
    admin role, and a `/hawkmod lifecycle offboarding` dry run that posts
    nothing — no new Google setup (#55); (3) two more lists in that dry run,
-   below; (4) the alerts and buttons, which need `admin.directory.user`
-   delegated and **Users → Update → Suspend users** on `hawk-mod@`'s role;
+   below (#56); (4) the alerts and buttons, which need `admin.directory.user`
+   delegated and **Users → Update** on `hawk-mod@`'s role (#57);
    (5) docs, and whatever the first clicks show. The first clicks are a test,
    on a throwaway person and Google account Rachel adds to the sheet: Remove
    from groups has never been clicked in production. Decided with Rachel
@@ -654,9 +656,9 @@ group` refusing copies, the leaving buttons reaching Slack, and the
      Admin and custom roles included — so the alert asks a Super Admin to
      remove the role first.
 
-   Google setup Part 4 (the `admin.directory.user` scope, and Users →
-   Update → Suspend users on the role) was done 2026-09-29, before part 4
-   was deployed.
+   Google setup Part 4 (the `admin.directory.user` scope, and a privilege
+   to suspend on the role) was done 2026-09-29, before part 4 was
+   deployed — and widened at the test; see below.
 
    Decided after the first dry run (2026-09-29), which found nobody
    leaving and eight groups the sheet does not compute — `bonfire`,
@@ -685,6 +687,44 @@ group` refusing copies, the leaving buttons reaching Slack, and the
      Google account: join, leave, Remove from groups (its first real use),
      Suspend, come back, Restore, then clean up by hand. The Slack half is
      a reminder and is not part of the test.
+
+   Two fixes found reading the alerts during step 7, each its own pull
+   request: an address in grp-parents that no student lists read "is in ."
+   (#58); and **Gmail addresses are compared as Gmail compares them** —
+   without dots, `+tags` or `googlemail` (`domain/lifecycle/address.ts`,
+   #59). P0063's parent was on the sheet with a dot and in grp-parents
+   without one, so every hourly run "added" them again (Google answered
+   "already a member") and held the group's spelling as unknown. Other
+   domains are compared lower-cased and otherwise as written. The key is
+   only for comparing: Google is always sent the sheet's or the group's own
+   spelling.
+
+   **The test, 2026-09-30**, on P0074, a throwaway mentor row, and
+   `offboarding-test@`, a throwaway account:
+
+   - Joined grp-mentors and grp-all-team from the sheet, and grp-orders by
+     hand.
+   - Set Inactive: the three leaving alerts — End monitoring,
+     `offboarding_accounts` with Suspend, and `group_member_held` listing
+     grp-mentors, grp-all-team and grp-orders — read as intended.
+   - **Remove from groups, its first use in production**, removed all
+     three ("Google Groups: Applied: 0 added, 2 removed. Other groups:
+     removed from grp-orders."), confirmed in the Admin console.
+   - **Suspend was refused** with only Users → Update → Suspend users on
+     the role, and still refused with Organizational Units → Read added.
+     **Rachel decided to give `hawk-mod@` the full Users → Update**
+     (without Create or Delete), accepting that it can also reset a
+     non-admin's password; then Suspend worked, and the alert closed.
+   - Set Active again: the "suspended account" onboarding request came with
+     **Restore Google account**, and restored the account. P0074's Slack
+     invite request stayed away while the account was suspended — an invite
+     to an address that reaches nobody is held back until the RHR Email
+     works (step 6's rule) — and came back after Restore. The groups run
+     re-added them to grp-mentors and grp-all-team, and not to grp-orders,
+     which hawk-mod never adds to.
+   - The Slack half is untested: the test person was never put in Slack.
+
+   Built as planned, with one difference: the privilege above.
 
 8. **Delegated admin roles (G).** **Report only** (decided 2026-09-26). Only a
    Super Admin can grant Groups Admin or Help Desk Admin, and the access plan

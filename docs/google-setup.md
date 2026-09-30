@@ -246,7 +246,8 @@ the users scope alone, and posts nothing. If either step did not take, the
 
 ## Part 4 — suspend and restore accounts (step 7 onwards)
 
-Done for Red Hawk on 2026-09-29. Step 7 suspends the Google account of
+Done for Red Hawk on 2026-09-29, and widened on 2026-09-30 (step 2). Step
+7 suspends the Google account of
 someone leaving, and restores it if they come back — each only when an
 administrator clicks **Suspend Google account** or **Restore Google
 account**, and never deleting anything.
@@ -260,15 +261,29 @@ account**, and never deleting anything.
    Google has no narrower scope for suspending. On its own this one could
    also create and delete accounts; the role in step 2 is what stops that.
 
-2. **Users → Update → Suspend users on the role.** Admin console → **Account
-   → Admin roles → hawk-mod group membership → Privileges → Edit**: under
-   **Users**, open **Update** and tick **Suspend users** only — not Update
-   itself, which ticks everything under it (Reset password among them), and
-   not Create, Delete, Move, Rename, Force password change or the aliases.
+2. **Users → Update, and Organizational Units → Read, on the role.** Admin
+   console → **Account → Admin roles → hawk-mod group membership →
+   Privileges → Edit**:
+   - under **Users**, tick **Update** itself, which ticks everything under
+     it (Suspend users, Rename, Move, Reset password, Force password change,
+     the aliases). Leave **Create** and **Delete** unticked: hawk-mod never
+     creates or deletes an account, and without them it cannot;
+   - under **Organizational Units**, tick **Read** only.
 
-The role then reads: Groups → Read and Update; Users → Read, and Update →
-Suspend users. Nothing changes in Google Cloud or hawk_suite, and no
-redeploy is needed.
+   **"Suspend users" alone is not enough.** It was set up that way first,
+   and Google refused the first real click ("Not Authorized to access this
+   resource/api"); adding Organizational Units → Read, which Google's
+   role-to-privilege table lists beside it, did not help either. Only Users
+   → Update worked (2026-09-30). That also lets `hawk-mod@` reset a non-admin
+   user's password — hawk-mod's code never does, it only changes whether an
+   account is suspended, but anyone holding the service account key could.
+   Rachel accepted that trade for one-click suspension; the alternative was
+   a Suspend alert that asks a Super Admin to do it in the Admin console.
+
+The role then reads: Groups → Read and Update; Users → Read and Update (not
+Create, not Delete); Organizational Units → Read. Nothing changes in Google
+Cloud or hawk_suite, and no redeploy is needed. Allow a few minutes for a
+role change to reach Google's API.
 
 **Admin accounts cannot be suspended this way.** Google lets only a Super
 Admin change another admin's account — Help Desk Admin and custom roles
@@ -285,3 +300,7 @@ step 2: only a real suspension can. A click that Google refuses says which:
 - **"refused to let the service account change user accounts"** — step 1.
 - **"refused to suspend the account"** (or restore) — step 2, or the account
   holds an admin role of its own.
+
+Every suspension and restoration appears in the Admin console's **Reporting
+→ Audit and investigation → Admin log events** under `hawk-mod@`; hawk-mod's
+own `account_changes` table records the person who clicked and their reason.

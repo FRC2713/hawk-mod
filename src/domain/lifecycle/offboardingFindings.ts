@@ -60,7 +60,7 @@ export function offboardingAccountsFinding(
   const steps: string[] = [];
   if (l.google && !l.google.admin) {
     steps.push(
-      "Suspend Google account suspends it — it is never deleted, and can be " +
+      "Clicking Suspend Google account suspends it — it is never deleted, and can be " +
         "restored if they come back."
     );
   } else if (l.google) {

@@ -350,6 +350,30 @@ CORI is a `cori_lapsed` alert (Slack Pro cannot restrict them). New adults
 get one welcome DM on joining and one reminder a week later
 (`slack/welcome.ts`), and nothing after.
 
+**Offboarding suspends, removes and reminds — each on a click** (step 7,
+capability I). The pure planner (`domain/lifecycle/offboarding.ts`) decides
+leaving **per address**: an RHR Email is theirs while they are an Active
+Mentor, a School Email while an Active Student, a Personal Email
+(volunteers, alumni) while Active; any other address on their row is left
+behind, and an address anyone Active still uses (a parent's included) never
+is. A lapsed CORI is not leaving. The hourly `offboardingCheck` raises one
+`offboarding_accounts` alert per leaver with an account left — **Suspend
+Google account** (as `hawk-mod@`, never delete; recorded in
+`account_changes`) unless the account holds any admin role, which only a
+Super Admin can change, plus a line asking an admin to deactivate their
+Slack account (no API on Pro). **Restore Google account** is the button on
+step 6's "suspended account" request. Remove from groups reaches every group
+in the Workspace, not just the nine the sheet computes (`leaversInOtherGroups`
+in `lifecycle/run.ts`), owners and managers included. An address the sheet
+does not have in one of those other groups (`group_outsider`), and an active
+Google account no RHR Email reaches (`google_account_unknown`), are warnings,
+never removals. Every close waits for a successful read of what it depends
+on. Gmail addresses are compared as Gmail does (`addressKey`: no dots,
+`+tags` or `googlemail`) — only to compare; Google is always sent the
+sheet's or the group's own spelling. `hawk-mod@`'s role needs the full
+Users → Update to suspend; "Suspend users" alone is refused
+(`docs/google-setup.md`, Part 4).
+
 **Two paths reach the same log.** Events (`src/slack/events.ts`) give real-time
 capture; the hourly backfill (`src/monitor/backfill.ts`) re-walks each adult's
 DM list to catch history predating enrollment and anything missed while the

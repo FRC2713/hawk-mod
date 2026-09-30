@@ -65,7 +65,7 @@ describe("the accounts alert", () => {
       f.summary,
       "P0012 Pat Mentor is Inactive on the lifecycle sheet, and still has an " +
         "active Google account (pat@rhr.example) and a live Slack account. " +
-        "Suspend Google account suspends it — it is never deleted, and can be " +
+        "Clicking Suspend Google account suspends it — it is never deleted, and can be " +
         "restored if they come back. Slack Pro gives hawk-mod no way to " +
         "deactivate anyone: an admin deactivates their account in Slack's " +
         "Manage members page (<https://frc2713.slack.com/admin|frc2713.slack.com/admin>). " +
@@ -376,7 +376,7 @@ describe("suspending and restoring in Google", () => {
     const g = fakeGoogle([googleError(403, "Not Authorized")]);
     await assert.rejects(
       setSuspended(g.client, "pat@rhr.example", true),
-      /Users → Update → Suspend users.*only a Super Admin/s
+      /Users → Update \(docs.*only a Super Admin/s
     );
   });
 
