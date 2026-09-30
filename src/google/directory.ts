@@ -383,9 +383,11 @@ function explainUsers(err: unknown): Error {
  * Suspending and restoring an account, for step 7 — only ever after an
  * administrator's click, and never deleting one. Google has no narrower
  * scope for this than `admin.directory.user`, which could also create and
- * delete accounts; what narrows it is hawk-mod@'s role, which holds only
- * Users → Update → Suspend users (docs/google-setup.md, Part 4). Asked for in
- * a client of its own, only when a button is clicked.
+ * delete accounts; what narrows it is hawk-mod@'s role, which has Users →
+ * Read and Update but not Create or Delete (docs/google-setup.md, Part 4).
+ * Update's "Suspend users" alone was tried first and Google refused the call
+ * (2026-09-30). The code only ever changes `suspended`. Asked for in a client
+ * of its own, only when a button is clicked.
  */
 export const DIRECTORY_USER =
   "https://www.googleapis.com/auth/admin.directory.user";
@@ -413,7 +415,7 @@ export async function setSuspended(
 /**
  * Whether the delegation for suspending is in place: asks Google for a token
  * with `admin.directory.user` as hawk-mod@, and changes nothing. It cannot
- * show the role's Suspend users privilege — only a real suspension can — but
+ * show the role's Users → Update privilege — only a real suspension can — but
  * it catches the step that is easiest to miss.
  */
 export async function checkSuspendDelegation(client: JWT): Promise<void> {
@@ -440,7 +442,7 @@ function explainSuspend(err: unknown, suspending: boolean): Error {
     return new Error(
       `Google refused to ${suspending ? "suspend" : "restore"} the account. ` +
         'Check that hawk-mod@\'s "hawk-mod group membership" admin role has ' +
-        "Users → Update → Suspend users (docs/google-setup.md, Part 4). If " +
+        "Users → Update (docs/google-setup.md, Part 4). If " +
         "the account holds an admin role of its own, only a Super Admin can " +
         "change it." +
         google
