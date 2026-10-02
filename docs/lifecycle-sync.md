@@ -6,7 +6,8 @@ first apply on 2026-09-28 (#25–#28), the Google Groups since the same day
 (#38–#42); all three are checked hourly. Onboarding requests, the welcome and
 the safety net (step 6) have run hourly since 2026-09-29 (#45–#50), and
 offboarding (step 7) since 2026-09-29 (#54–#57), tested end to end on
-2026-09-30. Step 8, the admin roles report, is next. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
+2026-09-30. Step 8, Help Desk Admin through a group, was re-scoped on
+2026-10-02 and is next. The scope was settled with Rachel Moore on 2026-09-25 and 26. The big picture
 below was rewritten on 2026-09-27, after a first step 3 design showed it had
 never been written down; it replaces the earlier "direction of truth" section.
 
@@ -32,15 +33,15 @@ Decided 2026-09-27.
 
 ### Where each fact lives
 
-| Fact                                                               | Source of truth         | Who changes it                                       | What hawk-mod does                                                                                   |
-| ------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Who a person is: role, Active/Inactive, requirement dates, consent | **The sheet**           | `grp-ra`, and the Super Admins (Dan, Ty, Rachel)     | Reads it. Writes back only a Slack User ID                                                           |
-| Whether someone has a Slack account                                | **Slack**               | A human invites or deactivates (no API on Slack Pro) | Compares with the sheet; prompts a human                                                             |
-| Whether someone has a Google account                               | **Google**              | A human creates it                                   | Suspends or un-suspends, only after a click                                                          |
-| Delegated admin roles                                              | **Google**              | A Super Admin only                                   | Reports what differs from the sheet                                                                  |
-| Google Group and Slack user group membership                       | **Copies of the sheet** | hawk-mod                                             | Google: adds automatically, removes someone leaving after a click. Slack: every change after a click |
-| Who is monitored, and as what                                      | **hawk-mod's database** | hawk-mod adds; a person ends                         | Adds on its own; ends only after a click                                                             |
-| Messages, findings, history                                        | **hawk-mod's database** | hawk-mod                                             | Records                                                                                              |
+| Fact                                                               | Source of truth                   | Who changes it                                                 | What hawk-mod does                                                                                   |
+| ------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Who a person is: role, Active/Inactive, requirement dates, consent | **The sheet**                     | `grp-ra`, and the Super Admins (Dan, Ty, Rachel)               | Reads it. Writes back only a Slack User ID                                                           |
+| Whether someone has a Slack account                                | **Slack**                         | A human invites or deactivates (no API on Slack Pro)           | Compares with the sheet; prompts a human                                                             |
+| Whether someone has a Google account                               | **Google**                        | A human creates it                                             | Suspends or un-suspends, only after a click                                                          |
+| Delegated admin roles                                              | **The sheet**, carried by a group | `grp-ra` and the Super Admins (the sheet); a click (the group) | Keeps the role's group in line with the sheet, every change on a click; reports any other admin      |
+| Google Group and Slack user group membership                       | **Copies of the sheet**           | hawk-mod                                                       | Google: adds automatically, removes someone leaving after a click. Slack: every change after a click |
+| Who is monitored, and as what                                      | **hawk-mod's database**           | hawk-mod adds; a person ends                                   | Adds on its own; ends only after a click                                                             |
+| Messages, findings, history                                        | **hawk-mod's database**           | hawk-mod                                                       | Records                                                                                              |
 
 ### How data flows
 
@@ -224,7 +225,7 @@ name or form version is stored; the paper forms are the record.
 | D   | Keep computed Google Groups right     | join auto, leave on click | `grp-mentors`, `grp-students`, `grp-volunteers`, `grp-parents`, `grp-alumni`, `grp-mentor-leads`, `grp-student-leads`, `grp-all-team`, `grp-ra` |
 | E   | Copy chosen groups to Slack           | every change on click     | Slack user groups, via `slack/groupAdmin.ts`                                                                                                    |
 | F   | ~~Create Workspace accounts~~         | **out of scope**          | done by hand; H prompts for it                                                                                                                  |
-| G   | Delegated admin roles report          | **report only**           | Super Admin makes each change; hawk-mod lists what differs from `Mentor_Admin_Roles`                                                            |
+| G   | Help Desk Admin through a group       | every change on click     | a security group carrying Help Desk Admin, computed from `Mentor_Admin_Roles`; any other admin reported                                         |
 | H   | Onboarding prompts                    | prompt                    | `onboarding-channel` (`#bot-onboarding-requests`): Google accounts to create, Slack invites; a count in the morning report                      |
 | I   | Offboarding / reactivation prompts    | on click                  | end monitoring, Google suspension, Slack deactivation reminder                                                                                  |
 
@@ -396,8 +397,9 @@ that could be taken away, each gated on `administrator()` and recorded:
 - **Suspend Google account** (step 7).
 
 Plus reminders for what hawk-mod cannot do itself: an admin deactivates them
-in Slack (manual on Pro), and a Super Admin revokes any delegated admin role
-(G reports it). The buttons are independent — ending monitoring and removing
+in Slack (manual on Pro). From step 8, Help Desk Admin comes with a group,
+so **Remove from groups** takes it away too; any other admin role is reported
+for a Super Admin to remove. The buttons are independent — ending monitoring and removing
 access are different decisions. Inactive → Active raises the reverse:
 un-suspend, with a reminder to restore roles; monitoring and group membership
 resume on their own, because they only add.
@@ -447,7 +449,6 @@ scoped to:
 - Sheets (read, plus write for B)
 - Directory: groups and group members (D)
 - Directory: users (read, plus suspend for I)
-- Directory: role management, read-only (G)
 
 The service account must be added to the shared drive holding the sheet, as a
 writer. Groups that hold students or volunteers must allow external members.
@@ -726,12 +727,76 @@ group` refusing copies, the leaving buttons reaching Slack, and the
 
    Built as planned, with one difference: the privilege above.
 
-8. **Delegated admin roles (G).** **Report only** (decided 2026-09-26). Only a
-   Super Admin can grant Groups Admin or Help Desk Admin, and the access plan
-   keeps Super Admin to three named people — so `hawk-mod@` is never one.
-   hawk-mod posts the differences from `Mentor_Admin_Roles` as actions
-   ("grant Help Desk Admin to P0012") for a Super Admin to do by hand.
-   _Verify:_ the diff is pure and tested; nothing is ever granted.
+8. **Help Desk Admin through a group (G).** Re-scoped with Rachel on
+   2026-10-02; this replaces the 2026-09-26 "report only" plan, which turned
+   out to need something Google does not offer. Google lets only a Super
+   Admin see who holds which admin role, and its privilege list has nothing
+   a custom role could hold to change that — so `hawk-mod@` could never
+   have read the assignments it was to report on.
+
+   **What it is for.** Three Super Admins (Dan, Ty, Rachel) run Google, and
+   a few more people should be able to help with **password resets**. Three
+   things must hold:
+
+   - someone who is meant to have that power has it;
+   - someone who should no longer have it, does not;
+   - someone who leaves and comes back does not come back with a power
+     nobody meant to give them again.
+
+   Decided 2026-10-02:
+
+   - **Help Desk Admin is the only delegated role.** It resets the passwords
+     of non-admin accounts, which means it can sign in as any mentor, so it
+     is treated like access to the mentor groups. **Groups Admin is not
+     given out**: who is in which group is the sheet's job — hawk-mod edits
+     the nine computed groups as `hawk-mod@`, and the person clicking needs
+     no Google power at all — and the other groups are run by their own
+     owners and managers. `Groups Admin` leaves `Mentor_Admin_Roles`'s
+     dropdown and `ADMIN_ROLES`, and a row still naming it is a sheet
+     problem, reported by Person ID.
+   - **The role is carried by a group.** A Super Admin assigns Help Desk
+     Admin once, to a new **security group** (Google does not allow Super
+     Admin on a group, which is why the three stay as they are). Whoever is
+     in the group holds the role; whoever leaves it loses it. hawk-mod then
+     needs nothing it does not already have: it reads group membership
+     today, and never has to read Google's role assignments.
+   - **The group is computed from the sheet**: Active Mentors with a
+     `Help Desk Admin` row on `Mentor_Admin_Roles` and **CORI current**
+     (`mayHaveAccess`, the mentor groups' gate — not the full screening).
+   - **Every change is a click**, like the Slack copies (step 5): one
+     finding saying what differs, re-read at the click, so a person stands
+     between a sheet edit and admin power. Someone leaving is taken out by
+     their own **Remove from groups**, as from every other group. Coming
+     back, they rejoin only if their `Mentor_Admin_Roles` row is still
+     there, and only on that click.
+   - **Any other admin is reported.** An account Google flags as an admin
+     (`isAdmin` / `isDelegatedAdmin`, which `hawk-mod@` already reads) that
+     is not one of the Super Admins, not `hawk-mod@`, and not in the Help
+     Desk group holds a role nobody wrote down — one a Super Admin gave a
+     person directly. One warning per account. Each Super Admin is warned
+     about once and acknowledged, so a fourth is news, with no list of
+     names kept in code.
+   - **Slack administrators are a separate step**, after this one: putting
+     them on the sheet changes the sheet's schema, and the same three
+     questions apply to them.
+
+   To prove before anything depends on it — a privilege is only proven by
+   a real call (step 7's lesson):
+
+   - **Can `hawk-mod@` change the members of a group that carries an admin
+     role?** Google may keep that to Super Admins. If it does, the click
+     cannot work as `hawk-mod@`, and the finding asks a Super Admin to make
+     the change in the Admin console instead.
+   - **Does Google flag a member of the group as `isDelegatedAdmin`?** If
+     it does, step 7 already offers them no Suspend, and their leaving
+     alert's Remove from groups is what clears the way.
+   - **The security label cannot be taken off a group**, so the group is a
+     new one, never an existing group relabelled.
+
+   _Verify:_ the plan is pure and tested; nothing joins or leaves the group
+   without a click; Remove from groups takes the role away; a returning
+   person gets it back only by the click.
+
 9. **`/config` controls.** "Sync now" and the last run's result on the web
    page, alongside the Slack command.
 
@@ -928,13 +993,20 @@ leaving (Inactive, not a Mentor, CORI lapsed), takes someone out.
 
 ## Open
 
+- **Who may click the Help Desk group's change** (step 8). Every other
+  button is gated on `administrator()` — a Slack Workspace Owner or Admin —
+  so as things stand, any Slack admin could put someone into the group that
+  resets passwords. The narrower answer is to accept the click only from
+  someone whose RHR Email is a Google Super Admin, checked at the click.
+  Not decided yet; neither is the group's name.
+
 - **Who may create Google accounts.** Only a Super Admin, today: the prebuilt
   Help Desk Admin role can reset passwords and view users but cannot create
   them. The prebuilt role that can, User Management Admin, can also _delete_
   accounts, which this plan never does. If someone other than the Super
   Admins should create accounts, the narrower option is a custom role with
-  only the "create users" privilege, added to the access plan and to
-  `ADMIN_ROLES` so step 8 reports it.
+  only the "create users" privilege, added to the access plan; step 8
+  reports anyone holding it as an admin the sheet does not account for.
 
 - The account hawk-mod acts as in Google is `hawk-mod@redhawkrobotics.org`
   (created 2026-09-26, no admin roles). **Decided 2026-09-28:** a custom admin

@@ -153,12 +153,12 @@ A mentor joins Google Groups and is invited to Slack only once their CORI is cur
 
 ### `Mentor_Admin_Roles` (PK: `Person ID`, one row per delegated admin role held)
 
-| Column     | Notes                                                             |
-| ---------- | ----------------------------------------------------------------- |
-| Person ID  |                                                                   |
-| Admin Role | Dropdown (`Reference_Lists!B`): `Groups Admin`, `Help Desk Admin` |
+| Column     | Notes                                             |
+| ---------- | ------------------------------------------------- |
+| Person ID  |                                                   |
+| Admin Role | Dropdown (`Reference_Lists!B`): `Help Desk Admin` |
 
-Only add a row for someone who is actually granted a delegated admin role — most mentors don't get one. **Super Admin is intentionally not tracked here** — it's managed directly in Google Workspace, not via this sheet.
+Only add a row for someone who should hold a delegated admin role — most mentors don't get one. **Help Desk Admin is the only one** (decided 2026-10-02): it comes with membership of a security group, which hawk-mod keeps in line with this tab once an administrator clicks, for Active Mentors whose CORI is current. `Groups Admin` is no longer given out, because group membership comes from this sheet. **Super Admin is intentionally not tracked here** — it's managed directly in Google Workspace, not via this sheet.
 
 ### `Student_Details` (PK: `Person ID`, one row per student)
 
@@ -227,7 +227,7 @@ One column per dropdown, values top-to-bottom. This is the **only** place free-t
 | Column                       | Backs                                                  | Values                                                                                                                                                                                                   |
 | ---------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A — Roles                    | `People_Roles.Role`                                    | Mentor, Volunteer, Alumni, Student                                                                                                                                                                       |
-| B — Admin Roles              | `Mentor_Admin_Roles.Admin Role`                        | Groups Admin, Help Desk Admin                                                                                                                                                                            |
+| B — Admin Roles              | `Mentor_Admin_Roles.Admin Role`                        | Help Desk Admin                                                                                                                                                                                          |
 | C — Relationship             | `Emergency_Contacts.Relationship`                      | Parent/Guardian, Grandparent, Spouse, Sibling, Friend, Other                                                                                                                                             |
 | D — Active/Inactive          | `People.Active/Inactive`                               | Active, Inactive                                                                                                                                                                                         |
 | E — Y/N                      | Mentor Lead, RA, Student Lead columns                  | Y, N                                                                                                                                                                                                     |
@@ -257,7 +257,7 @@ One column per dropdown, values top-to-bottom. This is the **only** place free-t
 2. If genuinely new, generate the next `Person ID` and add a `People` row, including `Rookie Year`. Emergency contact info for mentors goes in `Emergency_Contacts`, not on the `People` row.
 3. Add a `People_Roles` row: `Role = Mentor`.
 4. Agree the mentor's `@redhawkrobotics.org` address with them (not everyone wants `firstname@`), and add a `Mentor_Details` row with it as `RHR Email`. hawk-mod then asks, in the onboarding channel, for a Super Admin to create the Google account at that address; the request closes once the account exists. If the address is not agreed yet, leave `RHR Email` blank and hawk-mod asks for both. Fill in each requirement date as it's completed (blank = not started yet): `YPT Expiry`, `Background Screening Expiry`, `CORI Expiry`, `Consent & Release Expiry`, `Data Privacy Expiry` (each copied from FIRST or the state, never calculated), and `Mentor Ready Completed` (the date the badge was earned). `RHR Media Release Completed` is the date the one-time form was done; set `Media Release Scope` from what they selected on that form. Set `Mentor Lead (Y/N)` and `RA (Y/N)` — both default to `N` unless told otherwise; `RA` is a manual judgment call, not derived from anything else. Leave `Slack User ID` blank — hawk-mod fills it in. The mentor joins Google Groups and is invited to Slack only once their CORI is current; hawk-mod posts the invite request then.
-5. Only add a `Mentor_Admin_Roles` row if they're granted a delegated admin role — most mentors don't get one.
+5. Only add a `Mentor_Admin_Roles` row if they should help with password resets (`Help Desk Admin`) — most mentors don't get one.
 
 ### New volunteer
 

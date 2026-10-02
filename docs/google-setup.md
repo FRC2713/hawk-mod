@@ -164,10 +164,12 @@ Done for Red Hawk on 2026-09-28. Four parts, in this order.
    - `https://www.googleapis.com/auth/admin.directory.user.readonly` (step 6)
      — check each RHR Email is a real account; `admin.directory.user` (step 7)
      to suspend or restore one after an admin approves it
-   - `https://www.googleapis.com/auth/admin.directory.rolemanagement.readonly`
-     (step 8) — to report who holds Groups Admin and Help Desk Admin.
-     Read-only: only a Super Admin can grant those roles, so hawk-mod reports
-     and a person acts
+
+   Step 8 adds no scope. It was to have added
+   `admin.directory.rolemanagement.readonly`, to report who holds which
+   admin role, but Google lets only a Super Admin read that; step 8 puts
+   Help Desk Admin on a group instead, which the group scopes already reach
+   (re-scoped 2026-10-02, `lifecycle-sync.md`).
 
 3. **An account to act as, with a narrow role.** hawk-mod acts as
    `hawk-mod@redhawkrobotics.org`, so every change it makes appears in the
