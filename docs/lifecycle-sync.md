@@ -33,15 +33,15 @@ Decided 2026-09-27.
 
 ### Where each fact lives
 
-| Fact                                                               | Source of truth                   | Who changes it                                                               | What hawk-mod does                                                                                   |
-| ------------------------------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Who a person is: role, Active/Inactive, requirement dates, consent | **The sheet**                     | `grp-ra`, and the Super Admins (Dan, Ty, Rachel)                             | Reads it. Writes back only a Slack User ID                                                           |
-| Whether someone has a Slack account                                | **Slack**                         | A human invites or deactivates (no API on Slack Pro)                         | Compares with the sheet; prompts a human                                                             |
-| Whether someone has a Google account                               | **Google**                        | A human creates it                                                           | Suspends or un-suspends, only after a click                                                          |
-| Delegated admin roles                                              | **The sheet**, carried by a group | `grp-ra` and the Super Admins (the sheet); a Super Admin's click (the group) | Keeps the role's group in line with the sheet, every change on a click; reports any other admin      |
-| Google Group and Slack user group membership                       | **Copies of the sheet**           | hawk-mod                                                                     | Google: adds automatically, removes someone leaving after a click. Slack: every change after a click |
-| Who is monitored, and as what                                      | **hawk-mod's database**           | hawk-mod adds; a person ends                                                 | Adds on its own; ends only after a click                                                             |
-| Messages, findings, history                                        | **hawk-mod's database**           | hawk-mod                                                                     | Records                                                                                              |
+| Fact                                                               | Source of truth                   | Who changes it                                                                        | What hawk-mod does                                                                                   |
+| ------------------------------------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Who a person is: role, Active/Inactive, requirement dates, consent | **The sheet**                     | `grp-ra`, and the Super Admins (Dan, Ty, Rachel)                                      | Reads it. Writes back only a Slack User ID                                                           |
+| Whether someone has a Slack account                                | **Slack**                         | A human invites or deactivates (no API on Slack Pro)                                  | Compares with the sheet; prompts a human                                                             |
+| Whether someone has a Google account                               | **Google**                        | A human creates it                                                                    | Suspends or un-suspends, only after a click                                                          |
+| Delegated admin roles                                              | **The sheet**, carried by a group | `grp-ra` and the Super Admins (the sheet); an RA's or Super Admin's click (the group) | Keeps the role's group in line with the sheet, every change on a click; reports any other admin      |
+| Google Group and Slack user group membership                       | **Copies of the sheet**           | hawk-mod                                                                              | Google: adds automatically, removes someone leaving after a click. Slack: every change after a click |
+| Who is monitored, and as what                                      | **hawk-mod's database**           | hawk-mod adds; a person ends                                                          | Adds on its own; ends only after a click                                                             |
+| Messages, findings, history                                        | **hawk-mod's database**           | hawk-mod                                                                              | Records                                                                                              |
 
 ### How data flows
 
@@ -765,15 +765,17 @@ group` refusing copies, the leaving buttons reaching Slack, and the
      (`mayHaveAccess`, the mentor groups' gate — not the full screening).
    - **The group is `grp-helpdesk`**, a new group found by its Directory
      ID like the other nine.
-   - **Every change is a Super Admin's click**, like the Slack copies (step
-     5): one finding saying what differs, re-read at the click, so a person
-     stands between a sheet edit and admin power. The click is accepted only
-     from someone whose own RHR Email is a Google Super Admin, checked
-     against Google at the click — not from every Slack admin, which is the
-     gate on every other button: the group resets passwords. Someone leaving is taken out by
-     their own **Remove from groups**, as from every other group. Coming
-     back, they rejoin only if their `Mentor_Admin_Roles` row is still
-     there, and only on that click.
+   - **Every change is a click**, like the Slack copies (step 5): one
+     finding saying what differs, re-read at the click, so a person stands
+     between a sheet edit and admin power. The click is accepted only from
+     an RA — someone the sheet puts in `grp-ra` — or a Google Super Admin,
+     each checked at the click, and only from a Slack admin, like every
+     button. Not from every Slack admin: the group resets passwords. RAs
+     already hold the whole sheet, which is more than this. No second
+     person is required, even for adding oneself (decided 2026-10-02).
+     Someone leaving is taken out by their own **Remove from groups**, as
+     from every other group. Coming back, they rejoin only if their
+     `Mentor_Admin_Roles` row is still there, and only on that click.
    - **Any other admin is reported.** An account Google flags as an admin
      (`isAdmin` / `isDelegatedAdmin`, which `hawk-mod@` already reads) that
      is not one of the Super Admins, not `hawk-mod@`, and not in the Help
@@ -781,9 +783,11 @@ group` refusing copies, the leaving buttons reaching Slack, and the
      person directly. One warning per account. Each Super Admin is warned
      about once and acknowledged, so a fourth is news, with no list of
      names kept in code.
-   - **Slack administrators are a separate step**, after this one: putting
-     them on the sheet changes the sheet's schema, and the same three
-     questions apply to them.
+   - **Slack administrators are a separate step**, after this one, and the
+     same three questions apply to them. Rachel expects Slack admins and
+     RAs to end up the same people, though nothing says so yet; if that
+     becomes the rule, that step needs no new sheet column — it reports any
+     Slack admin who is not an RA, and any RA who is not a Slack admin.
 
    To prove before anything depends on it — a privilege is only proven by
    a real call (step 7's lesson):
