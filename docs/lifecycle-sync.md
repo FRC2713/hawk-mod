@@ -794,8 +794,10 @@ group` refusing copies, the leaving buttons reaching Slack, and the
 
    - **Can `hawk-mod@` change the members of a group that carries an admin
      role?** Google may keep that to Super Admins. If it does, the click
-     cannot work as `hawk-mod@`, and the finding asks a Super Admin to make
-     the change in the Admin console instead.
+     cannot work as `hawk-mod@`, and only a Super Admin can make the change,
+     by hand in the Admin console or by hawk-mod acting as the Super Admin
+     who clicked — either way an RA could no longer apply it, so the rule
+     above would need revisiting.
    - **Does Google flag a member of the group as `isDelegatedAdmin`?** If
      it does, step 7 already offers them no Suspend, and their leaving
      alert's Remove from groups is what clears the way.
