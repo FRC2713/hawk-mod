@@ -33,15 +33,15 @@ Decided 2026-09-27.
 
 ### Where each fact lives
 
-| Fact                                                               | Source of truth                   | Who changes it                                                 | What hawk-mod does                                                                                   |
-| ------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Who a person is: role, Active/Inactive, requirement dates, consent | **The sheet**                     | `grp-ra`, and the Super Admins (Dan, Ty, Rachel)               | Reads it. Writes back only a Slack User ID                                                           |
-| Whether someone has a Slack account                                | **Slack**                         | A human invites or deactivates (no API on Slack Pro)           | Compares with the sheet; prompts a human                                                             |
-| Whether someone has a Google account                               | **Google**                        | A human creates it                                             | Suspends or un-suspends, only after a click                                                          |
-| Delegated admin roles                                              | **The sheet**, carried by a group | `grp-ra` and the Super Admins (the sheet); a click (the group) | Keeps the role's group in line with the sheet, every change on a click; reports any other admin      |
-| Google Group and Slack user group membership                       | **Copies of the sheet**           | hawk-mod                                                       | Google: adds automatically, removes someone leaving after a click. Slack: every change after a click |
-| Who is monitored, and as what                                      | **hawk-mod's database**           | hawk-mod adds; a person ends                                   | Adds on its own; ends only after a click                                                             |
-| Messages, findings, history                                        | **hawk-mod's database**           | hawk-mod                                                       | Records                                                                                              |
+| Fact                                                               | Source of truth                   | Who changes it                                                               | What hawk-mod does                                                                                   |
+| ------------------------------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Who a person is: role, Active/Inactive, requirement dates, consent | **The sheet**                     | `grp-ra`, and the Super Admins (Dan, Ty, Rachel)                             | Reads it. Writes back only a Slack User ID                                                           |
+| Whether someone has a Slack account                                | **Slack**                         | A human invites or deactivates (no API on Slack Pro)                         | Compares with the sheet; prompts a human                                                             |
+| Whether someone has a Google account                               | **Google**                        | A human creates it                                                           | Suspends or un-suspends, only after a click                                                          |
+| Delegated admin roles                                              | **The sheet**, carried by a group | `grp-ra` and the Super Admins (the sheet); a Super Admin's click (the group) | Keeps the role's group in line with the sheet, every change on a click; reports any other admin      |
+| Google Group and Slack user group membership                       | **Copies of the sheet**           | hawk-mod                                                                     | Google: adds automatically, removes someone leaving after a click. Slack: every change after a click |
+| Who is monitored, and as what                                      | **hawk-mod's database**           | hawk-mod adds; a person ends                                                 | Adds on its own; ends only after a click                                                             |
+| Messages, findings, history                                        | **hawk-mod's database**           | hawk-mod                                                                     | Records                                                                                              |
 
 ### How data flows
 
@@ -763,9 +763,14 @@ group` refusing copies, the leaving buttons reaching Slack, and the
    - **The group is computed from the sheet**: Active Mentors with a
      `Help Desk Admin` row on `Mentor_Admin_Roles` and **CORI current**
      (`mayHaveAccess`, the mentor groups' gate — not the full screening).
-   - **Every change is a click**, like the Slack copies (step 5): one
-     finding saying what differs, re-read at the click, so a person stands
-     between a sheet edit and admin power. Someone leaving is taken out by
+   - **The group is `grp-helpdesk`**, a new group found by its Directory
+     ID like the other nine.
+   - **Every change is a Super Admin's click**, like the Slack copies (step
+     5): one finding saying what differs, re-read at the click, so a person
+     stands between a sheet edit and admin power. The click is accepted only
+     from someone whose own RHR Email is a Google Super Admin, checked
+     against Google at the click — not from every Slack admin, which is the
+     gate on every other button: the group resets passwords. Someone leaving is taken out by
      their own **Remove from groups**, as from every other group. Coming
      back, they rejoin only if their `Mentor_Admin_Roles` row is still
      there, and only on that click.
@@ -992,13 +997,6 @@ removal question for each of them at once. Only the RA flag turned off, or
 leaving (Inactive, not a Mentor, CORI lapsed), takes someone out.
 
 ## Open
-
-- **Who may click the Help Desk group's change** (step 8). Every other
-  button is gated on `administrator()` — a Slack Workspace Owner or Admin —
-  so as things stand, any Slack admin could put someone into the group that
-  resets passwords. The narrower answer is to accept the click only from
-  someone whose RHR Email is a Google Super Admin, checked at the click.
-  Not decided yet; neither is the group's name.
 
 - **Who may create Google accounts.** Only a Super Admin, today: the prebuilt
   Help Desk Admin role can reset passwords and view users but cannot create
