@@ -40,6 +40,8 @@ type Spec = {
   personalEmail?: string;
   /** Emergency_Contacts rows: [Email, Relationship, Rank]. */
   contacts?: [string, string, string][];
+  /** Mentor_Admin_Roles rows: each one's Admin Role. */
+  adminRoles?: string[];
 };
 
 const CLEARED = {
@@ -83,6 +85,14 @@ function sheet(...specs: Spec[]): SheetData {
           "Person ID": s.id,
           "RHR Email": `${s.id.toLowerCase()}@redhawkrobotics.org`,
           ...s.mentor,
+        })
+      );
+    }
+    for (const role of s.adminRoles ?? []) {
+      data.Mentor_Admin_Roles.push(
+        row("Mentor_Admin_Roles", data.Mentor_Admin_Roles.length + 2, {
+          "Person ID": s.id,
+          "Admin Role": role,
         })
       );
     }
@@ -193,6 +203,33 @@ describe("lifecycle sheet parsing", () => {
     ).people;
     assert.equal(p!.mentor?.yptExpiry, "2027-08-01");
     assert.equal(p!.mentor?.screeningExpiry, "2029-03-01");
+  });
+
+  it("reads Help Desk Admin, and says Groups Admin is no longer given out", () => {
+    const { people, problems } = parseSheet(
+      sheet(
+        { ...mentor("P0010"), adminRoles: ["Help Desk Admin"] },
+        { ...mentor("P0011"), adminRoles: ["Groups Admin"] }
+      )
+    );
+    assert.deepEqual(
+      people.map((p) => [p.personId, p.adminRoles]),
+      [
+        ["P0010", ["Help Desk Admin"]],
+        ["P0011", []],
+      ]
+    );
+    assert.deepEqual(
+      problems.map((p) => [p.personId, p.tab, p.row, p.message]),
+      [
+        [
+          "P0011",
+          "Mentor_Admin_Roles",
+          3,
+          "Groups Admin is no longer given out; delete the row",
+        ],
+      ]
+    );
   });
 
   it("ignores the sample people and says so", () => {
