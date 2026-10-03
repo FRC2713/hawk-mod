@@ -16,8 +16,20 @@ export const SHEET_ROLES = [
 ] as const;
 export type SheetRole = (typeof SHEET_ROLES)[number];
 
-export const ADMIN_ROLES = ["Groups Admin", "Help Desk Admin"] as const;
+/**
+ * The delegated admin roles `Mentor_Admin_Roles` may name. Help Desk Admin is
+ * the only one given out, and it comes with membership of grp-helpdesk
+ * (step 8, decided 2026-10-02).
+ */
+export const ADMIN_ROLES = ["Help Desk Admin"] as const;
 export type AdminRole = (typeof ADMIN_ROLES)[number];
+
+/**
+ * Roles the tab used to offer. Groups Admin is not given out any more: who
+ * is in which group is the sheet's job, and hawk-mod edits the groups. A row
+ * still naming it is a problem that says so, rather than an unknown value.
+ */
+const RETIRED_ADMIN_ROLES: ReadonlySet<string> = new Set(["Groups Admin"]);
 
 /**
  * `unknown` is a blank or unrecognised Active/Inactive cell. It is kept
@@ -419,7 +431,14 @@ export function parseSheet(data: SheetData): ParsedSheet {
     const person = people.get(id)!;
     for (const row of rows) {
       const role = row["Admin Role"] as AdminRole;
-      if (!ADMIN_ROLES.includes(role)) {
+      if (RETIRED_ADMIN_ROLES.has(role)) {
+        problems.add(
+          "Mentor_Admin_Roles",
+          row._row,
+          id,
+          `${role} is no longer given out; delete the row`
+        );
+      } else if (!ADMIN_ROLES.includes(role)) {
         problems.add(
           "Mentor_Admin_Roles",
           row._row,
