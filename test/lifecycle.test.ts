@@ -328,6 +328,71 @@ describe("lifecycle sheet parsing", () => {
   });
 });
 
+describe("one person, one Person ID (#65)", () => {
+  const dup = <T extends { message: string }>(problems: T[]) =>
+    problems.filter((p) => /one person has one Person ID/.test(p.message));
+
+  it("reports two Person IDs with the same School Email, by Person ID and row", () => {
+    const { problems } = parseSheet(
+      sheet(
+        student("P0020", { "School Email": "kid@school.example" }),
+        student("P0021"),
+        student("P0042", { "School Email": "Kid@School.example" })
+      )
+    );
+    assert.deepEqual(dup(problems), [
+      {
+        tab: "Student_Details",
+        row: 2,
+        personId: "P0020",
+        message:
+          "School Email is also on P0042's Student_Details row 4; one person has one Person ID",
+      },
+    ]);
+  });
+
+  it("reports two Person IDs with the same RHR Email", () => {
+    const { problems } = parseSheet(
+      sheet(
+        mentor("P0010", { "RHR Email": "pat@redhawkrobotics.org" }),
+        mentor("P0011", { "RHR Email": "pat@redhawkrobotics.org" })
+      )
+    );
+    assert.equal(dup(problems).length, 1);
+    assert.equal(dup(problems)[0]!.personId, "P0010");
+  });
+
+  it("compares Gmail addresses as Gmail does", () => {
+    const { problems } = parseSheet(
+      sheet(
+        student("P0020", { "School Email": "first.last@gmail.com" }),
+        student("P0021", { "School Email": "firstlast+team@gmail.com" })
+      )
+    );
+    assert.equal(dup(problems).length, 1);
+  });
+
+  it("never names the address", () => {
+    const { problems } = parseSheet(
+      sheet(
+        student("P0020", { "School Email": "kid@school.example" }),
+        student("P0042", { "School Email": "kid@school.example" })
+      )
+    );
+    assert.ok(dup(problems).every((p) => !p.message.includes("kid@")));
+  });
+
+  it("leaves a shared Personal Email alone: siblings can share a family address", () => {
+    const { problems } = parseSheet(
+      sheet(
+        { ...student("P0020"), personalEmail: "family@gmail.com" },
+        { ...student("P0021"), personalEmail: "family@gmail.com" }
+      )
+    );
+    assert.deepEqual(problems, []);
+  });
+});
+
 describe("computed groups", () => {
   const people = parseSheet(
     sheet(

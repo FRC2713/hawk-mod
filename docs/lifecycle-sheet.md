@@ -35,7 +35,7 @@ The `_Instructions` tab inside the sheet is a living quick-reference for anyone 
 ## 2. Core data model
 
 - **`Person ID` is the only key.** Every tab except `Reference_Lists` and `_Instructions` links back to a human via `Person ID`. Format: `P####` — a 4-digit, zero-padded integer (e.g. `P0001`, `P0042`).
-- **One row per human, ever, in `People`.** Nobody gets a second `Person ID`. Before adding a new person, search `People` by name/email first.
+- **One row per human, ever, in `People`.** Nobody gets a second `Person ID`. Before adding a new person, search `People` by name/email first. hawk-mod lists two `Person ID`s that share a School Email or RHR Email as a sheet problem, by Person ID and row. That is how a second `Person ID` for the same person usually shows. (Personal Email is not compared, since siblings can share a family address.)
 - **Next Person ID** = `MAX(existing values in People!A2:A) + 1`. IDs are never reused or reassigned, even after someone is removed from the program.
 - **Roles are rows, not columns.** A person's role(s) — `Mentor` / `Volunteer` / `Alumni` / `Student` — live in `People_Roles` as one row per role held. A person can hold more than one role at once (e.g. a former Student who becomes an Alumni and later a Mentor keeps all three role rows). There is no separate "Mentors" tab — mentor-specific fields live in `Mentor_Details`, keyed by `Person ID`.
 - **Role-specific fields live in extension tabs**, keyed by `Person ID`: `Mentor_Details`, `Mentor_Admin_Roles`, `Student_Details`, `Student_Surveys`, `Student_Survey_Concepts`, `Alumni_Details`. Only add a row for someone who actually holds that role.
@@ -242,6 +242,8 @@ One column per dropdown, values top-to-bottom. This is the **only** place free-t
 ---
 
 ## 4. Workflows ("how to add a new...")
+
+**Importing from a form, CSV, export or list?** Follow the procedure in [`.claude/skills/import-people/`](../.claude/skills/import-people/SKILL.md). It wraps the steps below in safety checks: a named version first, a table approved before anything is written, new people pasted as Inactive, and hawk-mod's dry runs checked before they go Active. Its `mapping.md` records how each known intake format maps onto these tabs.
 
 ### New student (from an intake/roster form)
 
