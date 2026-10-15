@@ -243,7 +243,7 @@ One column per dropdown, values top-to-bottom. This is the **only** place free-t
 
 ## 4. Workflows ("how to add a new...")
 
-**Importing from a form, CSV, export or list?** Follow the procedure in [`.claude/skills/import-people/`](../.claude/skills/import-people/SKILL.md). It wraps the steps below in safety checks: a named version first, a table approved before anything is written, new people pasted as Inactive, and hawk-mod's dry runs checked before they go Active. Its `mapping.md` records how each known intake format maps onto these tabs.
+**Importing from a form, CSV, export or list, or filling in missing information for people already on the sheet?** Follow the procedure in [`.claude/skills/import-people/`](../.claude/skills/import-people/SKILL.md). It wraps the steps below in safety checks: a named version first, and a table approved before anything is written. New people are pasted as Inactive, and hawk-mod's dry runs are checked before they go Active. Cells are filled only where they are blank, after checking the row's Person ID. Changes to columns hawk-mod reads are pasted just after the hourly run and checked before the next one. Its `mapping.md` records how each known intake format maps onto these tabs.
 
 ### New student (from an intake/roster form)
 
