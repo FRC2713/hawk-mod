@@ -36,15 +36,19 @@ which rows each kind of person gets. This skill is the safety wrapper around
 ## The rules that hold at every step
 
 - **The operator writes, by pasting. The agent prepares and checks.** The agent
-  reads the sheet through the Google Drive connector and has no write access to
-  it.
+  reads the sheet from a full `.xlsx` download (gate 1) and has no write access
+  to it. The Google Drive connector's `read_file_content` returns only each
+  tab's header and first 10 rows, so it can't stand in for a full read.
 - **Every date is copied from a record.** Expiry and completion dates come from
-  FIRST's or the state's own system, typed in by a person. A "yes", a TRUE, or
-  "done as of [date]" on a form becomes a **blank** cell plus a line on the
-  _dates to get_ list. The earlier manual conversion turned "yes" answers into
-  forward-dated expiries. That is the mistake this rule exists for: hawk-mod
-  trusts a mentor's CORI date to grant access, and all three screening dates
-  to count them as a screened adult.
+  FIRST's or the state's own system, typed in by a person. A "yes", a TRUE, a
+  "done as of [date]", or the date a check was done becomes a **blank** cell
+  plus a line on the _dates to get_ list. The one exception is CORI: the
+  sheet's rule (`docs/lifecycle-sheet.md` §2) turns the date a CORI check was
+  done into its expiry, 1 September after the third school year. Show each one
+  as a derived value with its working. The earlier manual conversion turned
+  "yes" answers into forward-dated expiries. That is the mistake this rule
+  exists for: hawk-mod trusts a mentor's CORI date to grant access, and all
+  three screening dates to count them as a screened adult.
 - **Students are reached by School Email only.** A student's personal address
   goes in `People: Personal Email`, which hawk-mod uses for matching only. An
   address that belongs to a guardian goes on the guardian's
@@ -53,13 +57,17 @@ which rows each kind of person gets. This skill is the safety wrapper around
   "Student with no School Email" as a sheet problem, which is the prompt for
   the operator to find the address and add it by hand. Until then the student
   joins no group and gets no Slack invite.
-- **Personal data stays in chat.** Everything read from the sheet or from a
-  source (names, addresses, phone numbers, answers) appears only in this
-  conversation. Files, commits, issues, PRs and memory get structure only. The
-  repo is public.
+- **Personal data stays in chat and the scratchpad.** Everything read from the
+  sheet or from a source (names, addresses, phone numbers, answers) appears
+  only in this conversation and in temporary files in the session scratchpad,
+  each download copied into its own new folder there. Delete them when the
+  import is done. Files in the repo, commits, issues, PRs and memory get
+  structure only. The repo is public.
 - **A fill only ever writes into a blank cell.** A cell that already holds a
   value keeps it. Where the source disagrees with that value, list it as a
-  _difference_ for the operator.
+  _difference_. If the operator decides the existing value is a mistake, the
+  correction becomes a write of its own. It goes in the pass its column
+  belongs to, and its check confirms the old value before the paste.
 - **Anything uncertain is set aside and listed, not guessed.** That covers a
   possible duplicate, an unclear role, a dropdown value missing from
   `Reference_Lists`, a misaligned source row, and a person outside the grade
@@ -75,38 +83,49 @@ which rows each kind of person gets. This skill is the safety wrapper around
    Name current version, `before import YYYY-MM-DD`. Restoring it later undoes
    the import in one step, but it also discards anyone else's edits made since
    then. Say so if a restore ever comes up.
-2. Ask the operator to run `/hawkmod lifecycle plan` in Slack and paste the
-   output. Record the people count, the role counts, and **every** sheet
-   problem line. That list is the baseline.
-3. Read the sheet with the Drive connector. Compare its tab names and headers
-   with `docs/lifecycle-sheet.md` §3 and with `SHEET_TABS` in
-   `src/domain/lifecycle/schema.ts`. If anything differs, stop and ask.
-4. Ask the operator for two things the Drive read cannot be trusted to give
-   (it may come back incomplete for a large sheet):
-   - **The highest Person ID in `People`.** If it doesn't match the highest one
-     in your read, your read is incomplete. Stop and say so.
-   - **Row 1 and the first empty row of each tab the import will touch.** To
-     find the first empty row: click a cell in column A, press Cmd+↓ to jump to
-     the last filled row, and add one. Row 1 gives the **live** column order,
-     which can differ from the docs.
+2. **Check what is deployed.** If a merged change to hawk-mod hasn't been
+   deployed yet (compare the last Deploy run with `main`), ask the operator to
+   deploy first, so the baseline and the checks after it run on the same code.
+3. Ask the operator to run two dry runs in Slack and paste the replies:
+   - `/hawkmod lifecycle plan`: record the people count, the role counts, the
+     group sizes, and **every** sheet problem line.
+   - `/hawkmod lifecycle groups`: record every join and hold **already
+     pending**, so that gate 4 can tell this import's joins from older ones.
 
-   For a fill, the row number of each existing row comes from your read. It is
-   checked against column A at paste time (gate 3), so the read doesn't have to
-   be trusted for it.
+   Together they are the baseline.
 
-Done when: a named version exists, the baseline is recorded, the headers
-match, the read is complete, and you have the live header order for every tab
-you will touch, plus the first empty row of each tab you will add or append
-to.
+4. **Read the whole sheet.** Ask the operator to download it (File → Download
+   → Microsoft Excel (.xlsx)) with no edits since step 3. Copy the file into a
+   new, empty folder in the scratchpad, and read it with
+   [`read_xlsx.py`](read_xlsx.py), which needs only the Python standard
+   library. Check that:
+   - **the read is complete:** `People` has exactly the plan's people count of
+     data rows, with no Person ID twice;
+   - **the tab names and headers** match `docs/lifecycle-sheet.md` §3 and
+     `SHEET_TABS`. If anything differs, stop and ask.
+
+   From the read, take each tab's **live** column order (row 1, which can
+   differ from the docs), its first empty row, and the row number of every
+   existing row a fill will touch. The row numbers are checked against
+   column A again at paste time.
+
+Done when: a named version exists, the code is deployed, the baseline is
+recorded, and the read is complete with matching headers.
 
 ## Gate 2: map, match, and get the table approved
 
 1. **Identify the source format** from [`mapping.md`](mapping.md). Each format
    there says how to recognise it. If none matches, stop: write the mapping
-   for the new format with the operator first, as structure only.
-2. **Bound the batch.** At most 25 people per import. A bigger source goes in
+   for the new format with the operator first, as structure only. Columns the
+   mapping doesn't know (a team may add its own to a responses sheet) are set
+   aside until the operator says what they hold.
+2. **Follow the conventions already on the sheet.** When earlier rows came from
+   the same format, compare them with their source responses (grade → year,
+   skill synonyms, how notes were worded) and do the same. Report any place
+   where the earlier rows disagree with `mapping.md`.
+3. **Bound the batch.** At most 25 people per import. A bigger source goes in
    several imports, each through every gate.
-3. **Match every incoming person** against the read. Search `People` by every
+4. **Match every incoming person** against the read. Search `People` by every
    name form (legal, preferred, last name alone) and by every email the source
    gives. Compare each one against Personal Email, School Email, RHR Email
    **and** `Emergency_Contacts.Email`: a parent who is now a mentor is already
@@ -115,31 +134,37 @@ to.
    - An exact match on email, or on name and email, is **existing**: use that
      Person ID.
    - No match on anything is **new**: mint the next Person ID, counting up from
-     the highest one the operator confirmed. IDs are never reused.
+     the highest one in the read. IDs are never reused.
    - A partial match (same name with a different email, or a similar name with
      a shared address) is **set aside** for the operator to decide.
-4. **For an existing person, append the rows they are missing and fill the
+5. **For an existing person, append the rows they are missing and fill the
    blank cells the source answers.** Mark each one live or quiet. Where the
    source disagrees with a cell that already has a value, list the difference.
-5. **Check every dropdown value** against `Reference_Lists` in the read, and
-   use it verbatim. A value that isn't listed goes on the _values to add_ list,
-   and its cell stays blank.
-6. **Show the approved-table draft in chat**, with:
+6. **Check every dropdown value** against the full `Reference_Lists` tab in
+   the read, and use it verbatim. A value that isn't listed goes on the
+   _values to add_ list, and its cell stays blank.
+7. **Show the approved-table draft in chat**, with:
    - **Per new person:** the Person ID, and every row on every tab, with every
      value, in live column order.
    - **Per existing person:** the Person ID, each appended row, and each filled
      cell with its tab, row number and column. Mark every one live or quiet.
+   - **Names to confirm:** every name of three or more words, with the split
+     proposed. No rule splits every name correctly, so the operator confirms
+     each one.
    - **Set aside:** each person or field left out, and why.
    - **Expected sheet problems:** each one the import will add, such as
      "Student with no School Email", by Person ID.
    - **Dates to get:** the person, the column, and what the source said.
    - **Values to add** to `Reference_Lists`.
-   - **Differences** on existing people.
+   - **Differences** on existing people, numbered so the operator can answer
+     each by its number.
    - **Already in Slack or a group:** anyone the source suggests already has an
      account at their School or RHR address (Format D, for example). See
      gate 4.
    - **Derived values:** any value computed rather than copied (a graduation
      year from a grade), each shown with its working.
+   - **What gate 4 will show:** the expected changes in group sizes, roster
+     updates and the "no parent email" list.
 
 Done when the operator replies in chat approving the table. A partial approval
 narrows the table. It does not stretch to rows that weren't approved.
@@ -152,8 +177,8 @@ in it.
 1. **Adds.** These are staged, as below.
 2. **Quiet appends and fills.** No automation reads them, so paste them any
    time.
-3. **Live appends and fills.** Paste these just after a :20 run, and finish
-   gate 4's checks for them before the next one.
+3. **Live appends and fills, and approved corrections.** Paste these just
+   after a :20 run, and finish gate 4's checks for them before the next one.
 
 ### Adds: staged as Inactive
 
@@ -166,45 +191,47 @@ Appends and fills for existing people can't be staged that way. They are
 already Active, and setting them to Inactive would make offboarding treat them
 as leaving. That is why the live ones get the :20 window instead.
 
+### Every block goes on the clipboard
+
+Write each approved block to a tab-separated file in the scratchpad. Hand it
+over with `pbcopy < block.tsv`, then check `pbpaste | cmp - block.tsv`. Text
+copied out of a chat code block can turn tabs into spaces, which puts a whole
+row into one cell. Fall back to a fenced code block only where `pbcopy` isn't
+available. One block at a time: the operator replies after each paste, and
+only then does the next block go on the clipboard.
+
+For each block, tell the operator:
+
+1. the **check**: a cell to look at in the Name Box (the cell-address box left
+   of the formula bar), and what it must show. If it shows anything else,
+   stop. Your read is stale or wrong, so take a new download before going on;
+2. the **start cell** to type into the Name Box;
+3. to paste with **Cmd+Shift+V** (paste values only, which keeps the column's
+   formatting and dropdown validation), and to report any validation warning.
+   If one appears, stop that tab and work out why before going on.
+
 ### Adds and appends: one block per tab, at the bottom
 
-Prepare one paste block per tab, covering the whole batch, in this order:
-`People`, `People_Roles`, then `Student_Details` or `Mentor_Details`, then
-`Emergency_Contacts`, then `People_Skills`. For each block give:
+One block per tab, covering the whole batch, in this order: `People`,
+`People_Roles`, then `Student_Details` or `Mentor_Details`, then
+`Emergency_Contacts`, then `People_Skills`. Columns go in the live header
+order, with no header line, and dates as `YYYY-MM-DD`. The check is the last
+filled row's Person ID, with the row below it empty. The start cell is
+`Tab!A<first empty row>`.
 
-- the **start cell**, as `Tab!A<first empty row>`;
-- a fenced code block of **tab-separated** values, one line per row, columns in
-  the live header order, with no header line. A blank cell is an empty field
-  between tabs, and dates are `YYYY-MM-DD`.
-
-The operator then, for each block:
-
-1. clicks the Name Box (the cell-address box left of the formula bar), types
-   the start cell, and presses Enter;
-2. pastes with **Cmd+Shift+V** (paste values only, which keeps the column's
-   formatting and dropdown validation);
-3. tells you if Sheets showed a validation warning or rejected anything. If it
-   did, stop that tab and work out why before going on.
-
-### Fills: one row at a time, with a Person ID check
+### Fills: blank rectangles, checked at both ends
 
 Writing into the middle of a tab is the riskiest paste there is: a wrong row
-overwrites someone else's data. So for each existing person, on each tab,
-give:
+overwrites someone else's data. So a fill block is a **rectangle in which
+every cell is blank in the gate 1 read**. A cell inside it that stays blank is
+pasted as an empty field, which leaves it blank. Build the largest such
+rectangles over consecutive rows, and keep each one within a single pass:
+a quiet rectangle must not reach into a live column. The check is the Person
+ID in column A on the rectangle's **first and last** rows. The start cell is
+its top-left corner, with column letters taken from the live row 1.
 
-- the **check cell**, `Tab!A<row>`, and the Person ID it must show;
-- each **span** to fill: its start cell, `Tab!<column letter><row>`, and a
-  one-line tab-separated block covering **only blank cells** that sit next to
-  each other. A gap of filled cells between two blank ones means a second
-  span. Take the column letters from the live row 1.
-
-The operator then, for each row:
-
-1. types the check cell into the Name Box and presses Enter, and confirms
-   that column A shows that Person ID. If it doesn't, stop. Your read is
-   stale or wrong, so re-read before going on.
-2. for each span, types the start cell into the Name Box, presses Enter, and
-   pastes with **Cmd+Shift+V**.
+A correction is a one-cell block. Its check is that cell's old value as well as
+the row's Person ID.
 
 **When `Emergency_Contacts` lists a contact who is already on the sheet**
 (the same email under another Person ID, such as a sibling's parent), copy
@@ -218,30 +245,33 @@ start cells you gave, and should be checked by Person ID before deleting. A
 fill can be undone by clearing the cells pasted, since they were blank before.
 Or restore the named version.
 
-Done when every approved block is pasted, with no validation complaints.
+Done when every approved block in the pass is pasted, with no validation
+complaints.
 
-## Gate 4: verify, then go live
+## Gate 4: verify each pass
+
+**Every pass ends on a fresh download, compared with the previous read across
+the whole workbook, cell by cell.** Each cell the pass was meant to write holds
+exactly the approved value, and was blank before (or held the confirmed old
+value, for a correction). **Every other cell in every tab is unchanged.** A
+whole-workbook comparison also catches a paste that landed on the wrong tab or
+the wrong row, and the earlier conversion's one real error, a few columns of
+dates shifted sideways. Then ask for the dry runs below. Each of them is a dry
+run as typed. Never ask for `apply` or `sync` here: those act.
 
 ### Adds, while the new people are Inactive
 
-1. **Re-read the sheet** and compare every new row **by column name, never by
-   position**, with the approved table. The earlier conversion's one real
-   error was a few columns of dates shifted sideways, caught this way. Also
-   check that the last pre-import row of each tab still holds the same Person
-   ID it did in gate 1, so nothing was overwritten.
-2. Ask the operator to run these and paste the output. Each of them is a dry
-   run as typed. Never ask for `apply` or `sync` here: those act.
-   - `/hawkmod lifecycle plan`: `People` and `Inactive` each rose by exactly
-     the number of new people, `Active` is unchanged, and the sheet problems
-     are the baseline plus the expected ones from the approved table. Any
-     other new problem is a failure.
-   - `/hawkmod lifecycle roster`, `groups`, `slack-groups` and `onboarding`:
-     none of them mentions a new person.
-   - `/hawkmod lifecycle offboarding`: none of them appears. A new person
-     listed here already has a Slack account or a group membership at their
-     address, and hawk-mod reads Inactive as someone leaving. Before the next
-     :20 run, either finish verifying and flip them to Active, or have the
-     operator delete their rows.
+- `/hawkmod lifecycle plan`: `People` and `Inactive` each rose by exactly
+  the number of new people, `Active` is unchanged, and the sheet problems
+  are the baseline plus the expected ones from the approved table. Any
+  other new problem is a failure.
+- `/hawkmod lifecycle roster`, `groups`, `slack-groups` and `onboarding`:
+  none of them mentions a new person.
+- `/hawkmod lifecycle offboarding`: none of them appears. A new person
+  listed here already has a Slack account or a group membership at their
+  address, and hawk-mod reads Inactive as someone leaving. Before the next
+  :20 run, either finish verifying and flip them to Active, or have the
+  operator delete their rows.
 
 ### Adds, after the flip
 
@@ -253,35 +283,40 @@ again:
   to its baseline.
 - `roster`: exactly one create per new Student or Mentor, no updates, nothing
   else.
-- `groups` and `slack-groups`: only the joins the approved table implies.
-  Students join by School Email, guardians join `grp-parents`, and mentors join
-  only once their CORI is current, which a fresh import usually leaves blank.
-  **This is the check on every guardian address.**
+- `groups` and `slack-groups`: only the joins the approved table implies, on
+  top of the joins already pending in the baseline. Students join by School
+  Email, guardians join `grp-parents`, and mentors join only once their CORI
+  is current, which a fresh import usually leaves blank. **This is the check
+  on every guardian address.**
 - `onboarding`: only the requests the approved table implies.
 
 The hourly run at :20 then applies it.
 
-### Appends and fills
+### Quiet pass
 
-1. **Re-read every touched row.** Each filled cell holds the approved value.
-   **Every other cell in the row equals the gate 1 read**, so nothing was
-   overwritten. Each appended row matches the approved table, compared by
-   column name.
-2. **After the quiet pass**, `/hawkmod lifecycle plan` is unchanged: the same
-   counts and the same sheet problems. Anything that moved means a write
-   landed in a column hawk-mod reads.
-3. **After the live pass**, and before the next :20 run:
-   - `plan`: the same counts. The sheet problems are the baseline, minus any
-     the fill resolves ("Student with no School Email" once it's filled), plus
-     the expected ones.
-   - `roster`: no creates. Only the updates the fills imply, since the roster
-     copies names, identity emails and dates.
-   - `groups` and `slack-groups`: only the joins the approved table implies.
-     A filled School Email adds that student, and an appended guardian joins
-     `grp-parents`. **This is the check on every guardian address.**
-   - `onboarding`: only the requests the approved table implies, such as a
-     Slack invite for a student whose School Email was just filled.
-   - `offboarding`: none of them appears.
+`/hawkmod lifecycle plan` is unchanged: the same counts and the same sheet
+problems. Anything that moved means a write landed in a column hawk-mod
+reads.
+
+### Live pass, before the next :20 run
+
+- `plan`: the same people and role counts. Group sizes move only as the
+  approved table said they would (each appended guardian adds one to
+  `grp-parents`). The sheet problems are the baseline, minus any the pass
+  resolves ("Student with no School Email" once it's filled), plus the
+  expected ones.
+- `roster`: no creates. Only the updates the pass implies. The roster's name
+  is the Preferred First Name (the Legal First Name when that's blank) plus
+  the Legal Last Name, so filling a legal first name under an existing
+  preferred one changes nothing there.
+- `groups` and `slack-groups`: only the joins the approved table implies, on
+  top of the joins already pending in the baseline. A filled School Email
+  adds that student, and an appended guardian joins `grp-parents`. **This is
+  the check on every guardian address.** A pending join that was in the
+  baseline is not this import's, but put it on the follow-up list.
+- `onboarding`: only the requests the approved table implies, such as a
+  Slack invite for a student whose School Email was just filled.
+- `offboarding`: none of them appears.
 
 **If anything is unexpected, at any stage:** before the next :20 run, the
 operator sets the new people back to Inactive, clears the filled cells, deletes
@@ -291,6 +326,12 @@ Done when every check above passes and the operator has confirmed the flip.
 
 ## After the import
 
-Report in chat: how many people were added, how many rows appended and cells
-filled, what was set aside, the dates to get, and the values to add. If the mapping was wrong or a
-format was new, update [`mapping.md`](mapping.md) with structure only, in a PR.
+1. **Report in chat:** how many people were added, how many rows appended and
+   cells filled, what was set aside, the dates to get, the values to add, and a
+   numbered **follow-up list** of everything left for a person (a missing
+   phone number, a pending join from the baseline).
+2. **Delete the scratchpad copies** (the downloads, the JSON and the block
+   files), and remind the operator to delete the downloads from their own
+   Downloads folder.
+3. If the mapping was wrong or a format was new, update
+   [`mapping.md`](mapping.md) with structure only, in a PR.

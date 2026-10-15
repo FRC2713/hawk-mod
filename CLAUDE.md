@@ -384,7 +384,9 @@ double-counting — both adults in a group DM also deliver the same event twice.
 (`rules/screening.ts`). Three items block: Youth Protection Training
 (`training_expires_on`, annual), Background Screening (`screening_expires_on`,
 3 years — it was 4, FRC2713/hawk-mod#17) and CORI + fingerprints
-(`cori_expires_on`, 3 years, state law). Consent & Release, Data Privacy and
+(`cori_expires_on`, 3 years, state law, counted in school years: the team enters
+1 September after the third, so `latestCoriExpiry` lets a summer check's date
+run up to two months past three years without reading as a typo). Consent & Release, Data Privacy and
 Mentor Ready are reported and **never block** — gating on them would flag
 adults who have done everything the safety rules actually ask. FIRST expires
 its annual items on **1 August**, not a year after completion, so any

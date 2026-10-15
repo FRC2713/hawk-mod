@@ -23,9 +23,30 @@ export const SCREENING_VALID_YEARS = 3;
 /**
  * CORI and national fingerprint checks every three years for volunteers with
  * direct and unmonitored contact with students — M.G.L. c. 71 §38R and
- * 603 CMR 51.00. State law, independent of anything FIRST asks for.
+ * 603 CMR 51.00. State law, independent of anything FIRST asks for. The team
+ * counts them in school years: a check covers the school year it was done in
+ * (July to June) and the next two, and its expiry is entered as 1 September
+ * after the third, about the first day of school (lifecycle-sheet.md §2).
  */
 export const CORI_VALID_YEARS = 3;
+
+/** When a CORI check's coverage ends: about the first day of school. */
+export const CORI_EXPIRES = "09-01";
+
+/**
+ * The latest CORI expiry that can be real on `asOf`: three years out, or —
+ * for a check done over the summer, which counts toward the coming school
+ * year — the 1 September at the end of that year's third school year, up to
+ * two months further. Never earlier than three years, so nothing that was
+ * current before this rule reads as a typo now.
+ */
+export function latestCoriExpiry(asOf: IsoDate): IsoDate {
+  const year = Number(asOf.slice(0, 4));
+  const schoolYear = asOf.slice(5) >= "07-01" ? year : year - 1;
+  const sept = `${schoolYear + CORI_VALID_YEARS}-${CORI_EXPIRES}`;
+  const plain = addYears(asOf, CORI_VALID_YEARS);
+  return sept > plain ? sept : plain;
+}
 
 /** FIRST's season rollover, when its annual items expire. */
 export const ROLLOVER = "08-01";
@@ -79,7 +100,7 @@ function blocking(p: RequirementDates): Requirement[] {
     {
       item: "CORI + fingerprints",
       expiresOn: p.cori_expires_on,
-      latest: (asOf) => addYears(asOf, CORI_VALID_YEARS),
+      latest: latestCoriExpiry,
     },
   ];
 }
@@ -196,9 +217,7 @@ export function mayHaveAccess(
   asOf: IsoDate
 ): boolean {
   const e = p.cori_expires_on;
-  return (
-    e !== null && notExpired(e, asOf) && e <= addYears(asOf, CORI_VALID_YEARS)
-  );
+  return e !== null && notExpired(e, asOf) && e <= latestCoriExpiry(asOf);
 }
 
 /**
@@ -221,8 +240,8 @@ export function screeningEntryErrors(
     ],
     [
       "cori_expires_on",
-      `${CORI_VALID_YEARS} years`,
-      addYears(asOf, CORI_VALID_YEARS),
+      `${CORI_VALID_YEARS} school years`,
+      latestCoriExpiry(asOf),
     ],
     ["consent_release_expires_on", "a year", latestAnnualExpiry(asOf)],
     ["data_privacy_expires_on", "a year", latestAnnualExpiry(asOf)],

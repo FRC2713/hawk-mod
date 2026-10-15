@@ -54,8 +54,9 @@ The `_Instructions` tab inside the sheet is a living quick-reference for anyone 
   - Blank = not on file / not started yet.
   - The one exception: `Melrose Media Release Expiry` on `Student_Details`, where the literal text `N/A` means the form does not apply to that student (they're not in the Melrose school district).
   - FIRST's annual items (Youth Protection Training, Consent & Release, Data Privacy for Mentors) all expire on **August 1**, the FIRST season rollover — not exactly one year after completion. The expiry date is always copied verbatim from what FIRST's system shows; it is never calculated in-sheet.
-  - Background Screening and CORI expire every **3 years**; that date is likewise always copied from the state/vendor record, never calculated.
-- **Dates are never invented or calculated by whoever/whatever is editing the sheet.** Every date comes from FIRST's or the state's records (or the relevant form), entered by a human. New/blank date cells are left blank, not backfilled with a guess.
+  - Background Screening expires every **3 years**; that date is likewise always copied from the vendor record.
+  - **CORI counts in school years.** A CORI check covers the school year it was done in (July 1 to June 30) and the next two, and its `CORI Expiry` is **September 1** after the third, about the first day of school. Work it out from the date the check was done: a check in September 2023 or in May 2024 (both school year 2023-24) expires `2026-09-01`; a check over the summer of 2026 counts toward 2026-27 and expires `2029-09-01`. This is the same for mentors (`Mentor_Details`) and contacts (`Emergency_Contacts`).
+- **The sheet stores the expiry date, and that is what everything triggers on.** Enter the date a requirement stops being valid, not the date it was done, so that nothing has to work out an expiry later. Every date comes from FIRST's or the state's records (or the relevant form), entered by a human; the CORI rule above is the one way an expiry is worked out, and it is worked out when it is entered. A "yes" or a checkbox is not a date: new/blank date cells are left blank, not backfilled with a guess.
 - **Slack User ID columns** (on `Mentor_Details` and `Student_Details`) are normally filled in **by hawk-mod** once the person joins Slack — `/hawkmod lifecycle slack-ids apply` in Slack. hawk-mod only fills a blank cell, and only on an exact match between the Slack account's email and the RHR Email (mentors) or School Email (students). Typing one in by hand is allowed when needed, typically when someone's Slack email is not that address; hawk-mod trusts a typed ID unless it is not a live Slack account or appears on two rows.
 - **hawk-mod reads this sheet by exact tab name and column header text.** Column _order_ does not matter, but renaming, adding, or removing a tab or header without first updating hawk-mod will break the sync with an error.
 
@@ -115,16 +116,16 @@ A person can have multiple rows (multiple roles). Roles are additive/historical 
 
 ### `Emergency_Contacts` (PK: `Person ID`, one row per contact — applies to every human, any role)
 
-| Column             | Notes                                                                                                    |
-| ------------------ | -------------------------------------------------------------------------------------------------------- |
-| Person ID          | Whose contact this is                                                                                    |
-| Contact First Name |                                                                                                          |
-| Contact Last Name  |                                                                                                          |
-| Cell Phone         |                                                                                                          |
-| Email              |                                                                                                          |
-| Relationship       | Dropdown (`Reference_Lists!C`): `Parent/Guardian`, `Grandparent`, `Spouse`, `Sibling`, `Friend`, `Other` |
-| Rank               | Integer; `1` = primary contact (called first). `99` = on file but not to be contacted.                   |
-| CORI Expiry        | Date. Any contact, though mostly parents. Copied from the state record, never calculated.                |
+| Column             | Notes                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Person ID          | Whose contact this is                                                                                       |
+| Contact First Name |                                                                                                             |
+| Contact Last Name  |                                                                                                             |
+| Cell Phone         |                                                                                                             |
+| Email              |                                                                                                             |
+| Relationship       | Dropdown (`Reference_Lists!C`): `Parent/Guardian`, `Grandparent`, `Spouse`, `Sibling`, `Friend`, `Other`    |
+| Rank               | Integer; `1` = primary contact (called first). `99` = on file but not to be contacted.                      |
+| CORI Expiry        | Date. Any contact, though mostly parents. September 1 after the third school year of the check (Section 2). |
 
 For a **student**, a `Parent/Guardian` contact whose `Rank` is not `99` is on `grp-parents` while the student is Active. hawk-mod reads only `Person ID`, `Email`, `Relationship`, `Rank` and `CORI Expiry` here — never a contact's name or phone.
 
@@ -143,7 +144,7 @@ Current header order:
 | Mentor Ready Completed      | Date     | One-time badge/certification — completion date, not an expiry. Column was renamed from "Mentor Ready Expiry"; old expiry-style values were cleared when it became a completion-date column. |
 | YPT Expiry                  | Date     | Youth Protection Training; annual, expires Aug 1. (Column was renamed from "YPP Expiry" — same underlying certification.)                                                                   |
 | Background Screening Expiry | Date     | Every 3 years                                                                                                                                                                               |
-| CORI Expiry                 | Date     | Every 3 years                                                                                                                                                                               |
+| CORI Expiry                 | Date     | September 1 after the third school year of the check (Section 2)                                                                                                                            |
 | Data Privacy Expiry         | Date     | Annual (FIRST's Data Privacy for Mentors); expires Aug 1                                                                                                                                    |
 | RHR Media Release Completed | Date     | One-time form — completion date                                                                                                                                                             |
 | Media Release Scope         | Dropdown | `Reference_Lists!F`: `No recognizable image of me`, `Any image as long as I am not named`, `Any image containing me (unrestricted)`                                                         |
@@ -261,7 +262,7 @@ One column per dropdown, values top-to-bottom. This is the **only** place free-t
 1. Check `People` first — a returning alum or former student becoming a mentor should get a new _role_ row, not a new `Person ID`.
 2. If genuinely new, generate the next `Person ID` and add a `People` row, including `Rookie Year`. Emergency contact info for mentors goes in `Emergency_Contacts`, not on the `People` row.
 3. Add a `People_Roles` row: `Role = Mentor`.
-4. Agree the mentor's `@redhawkrobotics.org` address with them (not everyone wants `firstname@`), and add a `Mentor_Details` row with it as `RHR Email`. hawk-mod then asks, in the onboarding channel, for a Super Admin to create the Google account at that address; the request closes once the account exists. If the address is not agreed yet, leave `RHR Email` blank and hawk-mod asks for both. Fill in each requirement date as it's completed (blank = not started yet): `YPT Expiry`, `Background Screening Expiry`, `CORI Expiry`, `Consent & Release Expiry`, `Data Privacy Expiry` (each copied from FIRST or the state, never calculated), and `Mentor Ready Completed` (the date the badge was earned). `RHR Media Release Completed` is the date the one-time form was done; set `Media Release Scope` from what they selected on that form. Set `Mentor Lead (Y/N)` and `RA (Y/N)` — both default to `N` unless told otherwise; `RA` is a manual judgment call, not derived from anything else. Leave `Slack User ID` blank — hawk-mod fills it in. The mentor joins Google Groups and is invited to Slack only once their CORI is current; hawk-mod posts the invite request then.
+4. Agree the mentor's `@redhawkrobotics.org` address with them (not everyone wants `firstname@`), and add a `Mentor_Details` row with it as `RHR Email`. hawk-mod then asks, in the onboarding channel, for a Super Admin to create the Google account at that address; the request closes once the account exists. If the address is not agreed yet, leave `RHR Email` blank and hawk-mod asks for both. Fill in each requirement date as it's completed (blank = not started yet): `YPT Expiry`, `Background Screening Expiry`, `CORI Expiry`, `Consent & Release Expiry`, `Data Privacy Expiry` (each copied from FIRST or the state, except `CORI Expiry`, which follows the school-year rule in Section 2), and `Mentor Ready Completed` (the date the badge was earned). `RHR Media Release Completed` is the date the one-time form was done; set `Media Release Scope` from what they selected on that form. Set `Mentor Lead (Y/N)` and `RA (Y/N)` — both default to `N` unless told otherwise; `RA` is a manual judgment call, not derived from anything else. Leave `Slack User ID` blank — hawk-mod fills it in. The mentor joins Google Groups and is invited to Slack only once their CORI is current; hawk-mod posts the invite request then.
 5. Only add a `Mentor_Admin_Roles` row if they're granted a delegated admin role — most mentors don't get one.
 
 ### New volunteer

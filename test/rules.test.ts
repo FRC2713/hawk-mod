@@ -6,6 +6,8 @@ import { consentStatus, mayHoldAccount } from "../src/domain/rules/consent.js";
 import {
   isScreenedAdult,
   latestAnnualExpiry,
+  latestCoriExpiry,
+  mayHaveAccess,
   screeningEntryErrors,
   screeningStatus,
 } from "../src/domain/rules/screening.js";
@@ -160,6 +162,30 @@ describe("screening", () => {
     assert.equal(screeningStatus(p, AS_OF).current, false);
   });
 
+  /**
+   * CORI covers the school year of the check (July to June) and the next two,
+   * and expires on 1 September after the third. A check done over the summer
+   * counts toward the coming year, so its expiry can be up to two months past
+   * three years out — and must not read as a typo.
+   */
+  it("allows a summer CORI check's 1 September expiry", () => {
+    assert.equal(latestCoriExpiry("2026-07-01"), "2029-09-01");
+    assert.equal(latestCoriExpiry("2026-08-19"), "2029-09-01");
+    assert.equal(latestCoriExpiry("2026-09-26"), "2029-09-26");
+    assert.equal(latestCoriExpiry("2027-06-30"), "2030-06-30");
+    assert.equal(
+      mayHaveAccess({ cori_expires_on: "2029-09-01" }, "2026-07-15"),
+      true
+    );
+    assert.equal(
+      mayHaveAccess({ cori_expires_on: "2029-09-02" }, "2026-07-15"),
+      false
+    );
+    const p = screened();
+    p.cori_expires_on = "2029-09-01";
+    assert.equal(screeningStatus(p, "2026-07-15").current, true);
+  });
+
   it("finds the rollover on the right side of 1 August", () => {
     assert.equal(latestAnnualExpiry("2026-07-31"), "2027-08-01");
     assert.equal(latestAnnualExpiry("2026-08-01"), "2028-08-01");
@@ -216,6 +242,17 @@ describe("recording screening dates", () => {
       "screening_expires_on",
       "training_expires_on",
     ]);
+  });
+
+  it("accepts the 1 September expiry of a CORI check done over the summer", () => {
+    assert.deepEqual(
+      screeningEntryErrors({ cori_expires_on: "2029-09-01" }, "2026-07-15"),
+      {}
+    );
+    assert.ok(
+      screeningEntryErrors({ cori_expires_on: "2029-09-02" }, "2026-07-15")
+        .cori_expires_on
+    );
   });
 
   it("refuses a Mentor Ready completion in the future", () => {
