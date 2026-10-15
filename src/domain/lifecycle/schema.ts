@@ -48,10 +48,22 @@ export const SHEET_TABS = {
     "Slack Consent Expiry",
   ],
   // For grp-parents: a student's Parent/Guardian contacts, unless ranked 99
-  // ("on file, not to be contacted"). These four and never a contact's name
+  // ("on file, not to be contacted"). These columns and never a contact's name
   // or phone (docs/lifecycle-sync.md, "Groups"). The tab covers every person,
   // so the parse keeps only Parent/Guardian rows.
-  Emergency_Contacts: ["Person ID", "Email", "Relationship", "Rank"],
+  //
+  // CORI Expiry: whether a contact is CORI-checked — mostly parents, but any
+  // contact may be — recorded so it is on file before anything uses it
+  // (#63). Read on every row, and changes nothing yet. A contact listed under
+  // several people has a cell under each; see `SheetContact` in sheet.ts for
+  // when those disagree.
+  Emergency_Contacts: [
+    "Person ID",
+    "Email",
+    "Relationship",
+    "Rank",
+    "CORI Expiry",
+  ],
 } as const satisfies Record<string, readonly string[]>;
 
 export type SheetTab = keyof typeof SHEET_TABS;

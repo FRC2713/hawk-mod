@@ -38,8 +38,8 @@ type Spec = {
   mentor?: Partial<Record<Header<"Mentor_Details">, string>>;
   student?: Partial<Record<Header<"Student_Details">, string>>;
   personalEmail?: string;
-  /** Emergency_Contacts rows: [Email, Relationship, Rank]. */
-  contacts?: [string, string, string][];
+  /** Emergency_Contacts rows: [Email, Relationship, Rank, CORI Expiry?]. */
+  contacts?: [string, string, string, string?][];
 };
 
 const CLEARED = {
@@ -86,13 +86,14 @@ function sheet(...specs: Spec[]): SheetData {
         })
       );
     }
-    for (const [Email, Relationship, Rank] of s.contacts ?? []) {
+    for (const [Email, Relationship, Rank, cori] of s.contacts ?? []) {
       data.Emergency_Contacts.push(
         row("Emergency_Contacts", data.Emergency_Contacts.length + 2, {
           "Person ID": s.id,
           Email,
           Relationship,
           Rank,
+          "CORI Expiry": cori ?? "",
         })
       );
     }
@@ -376,7 +377,7 @@ describe("computed groups", () => {
       "P0021",
       "P0040",
     ]);
-    const plan = planLifecycle({ people, problems: [] }, AS_OF);
+    const plan = planLifecycle({ people, contacts: [], problems: [] }, AS_OF);
     assert.deepEqual(
       plan.notCleared.map((m) => m.personId),
       ["P0011", "P0012"]
@@ -388,7 +389,7 @@ describe("computed groups", () => {
       sheet(mentor("P0010", { "YPT Expiry": AS_OF }))
     );
     assert.deepEqual(
-      planLifecycle({ people, problems: [] }, AS_OF).notCleared,
+      planLifecycle({ people, contacts: [], problems: [] }, AS_OF).notCleared,
       []
     );
   });
@@ -497,9 +498,10 @@ describe("computed groups", () => {
     for (const members of Object.values(intended)) {
       assert.deepEqual(addresses(members), []);
     }
-    assert.deepEqual(planLifecycle({ people, problems: [] }, AS_OF).noAddress, [
-      "P0013",
-    ]);
+    assert.deepEqual(
+      planLifecycle({ people, contacts: [], problems: [] }, AS_OF).noAddress,
+      ["P0013"]
+    );
   });
 
   it("adds volunteers and alumni by their personal email", () => {
@@ -651,6 +653,175 @@ describe("grp-parents", () => {
   it("reports an Active student with no parent email", () => {
     const parsed = parseSheet(sheet(student("P0020")));
     assert.deepEqual(planLifecycle(parsed, AS_OF).noParentEmail, ["P0020"]);
+  });
+});
+
+describe("a contact's CORI (#63): recorded, used for nothing yet", () => {
+  const P = "Parent/Guardian";
+
+  it("attaches the expiry to the parent", () => {
+    const parsed = parseSheet(
+      sheet({
+        ...student("P0020"),
+        contacts: [
+          ["mom@home.example", P, "1", "2028-01-01"],
+          ["dad@home.example", P, "2"],
+        ],
+      })
+    );
+    assert.deepEqual(
+      parsed.contacts.map((p) => [p.email, p.coriExpiry]),
+      [
+        ["mom@home.example", "2028-01-01"],
+        ["dad@home.example", null],
+      ]
+    );
+    assert.deepEqual(parsed.problems, []);
+  });
+
+  it("reads one parent of siblings once, when their rows agree", () => {
+    const parsed = parseSheet(
+      sheet(
+        {
+          ...student("P0020"),
+          contacts: [["h.smith@gmail.com", P, "1", "2028-01-01"]],
+        },
+        {
+          ...student("P0021"),
+          contacts: [["hsmith@gmail.com", P, "1", "2028-01-01"]],
+        }
+      )
+    );
+    assert.equal(parsed.contacts.length, 1);
+    assert.equal(parsed.contacts[0]!.coriExpiry, "2028-01-01");
+    assert.deepEqual(parsed.problems, []);
+  });
+
+  it("treats siblings' rows that disagree as not current, and says where", () => {
+    for (const second of ["2027-06-01", ""]) {
+      const parsed = parseSheet(
+        sheet(
+          {
+            ...student("P0020"),
+            contacts: [["mom@home.example", P, "1", "2028-01-01"]],
+          },
+          {
+            ...student("P0021"),
+            contacts: [["mom@home.example", P, "1", second]],
+          }
+        )
+      );
+      assert.equal(parsed.contacts[0]!.coriExpiry, null);
+      const problem = parsed.problems.find(
+        (x) => x.tab === "Emergency_Contacts"
+      );
+      assert.match(problem!.message, /differs.*P0020 row 2, P0021 row 3/);
+      const text = JSON.stringify(parsed.problems);
+      assert.ok(!text.includes("mom@home.example"));
+      assert.ok(!text.includes("2028-01-01"));
+    }
+  });
+
+  it("reports a malformed date once, never the value", () => {
+    const parsed = parseSheet(
+      sheet(
+        {
+          ...student("P0020"),
+          contacts: [["mom@home.example", P, "1", "Jan 2028"]],
+        },
+        {
+          ...student("P0021"),
+          contacts: [["mom@home.example", P, "1", "2028-01-01"]],
+        }
+      )
+    );
+    assert.equal(parsed.contacts[0]!.coriExpiry, null);
+    assert.deepEqual(
+      parsed.problems.map((x) => x.message),
+      ["CORI Expiry is not a YYYY-MM-DD date"]
+    );
+    assert.ok(!JSON.stringify(parsed.problems).includes("Jan 2028"));
+  });
+
+  it("is read for every contact: a mentor's parent, rank 99, a spouse", () => {
+    const parsed = parseSheet(
+      sheet(
+        {
+          ...student("P0020"),
+          contacts: [["nocontact@home.example", P, "99", "2028-01-01"]],
+        },
+        {
+          ...mentor("P0010"),
+          contacts: [
+            ["mentors.mom@home.example", P, "1", "2028-02-01"],
+            ["spouse@home.example", "Spouse", "1", "2028-03-01"],
+          ],
+        }
+      )
+    );
+    assert.deepEqual(
+      parsed.contacts.map((c) => [c.email, c.coriExpiry]),
+      [
+        ["nocontact@home.example", "2028-01-01"],
+        ["mentors.mom@home.example", "2028-02-01"],
+        ["spouse@home.example", "2028-03-01"],
+      ]
+    );
+    assert.deepEqual(parsed.problems, []);
+    // grp-parents is unchanged: none of these is a student's contactable parent.
+    assert.deepEqual([...intendedParents(parsed.people).keys()], []);
+  });
+
+  it("checks one contact across relationships: a mentor's spouse who is a parent", () => {
+    const parsed = parseSheet(
+      sheet(
+        {
+          ...mentor("P0010"),
+          contacts: [["sam@home.example", "Spouse", "1", "2028-01-01"]],
+        },
+        { ...student("P0020"), contacts: [["sam@home.example", P, "1"]] }
+      )
+    );
+    assert.equal(parsed.contacts[0]!.coriExpiry, null);
+    assert.match(
+      parsed.problems.map((x) => x.message).join("\n"),
+      /differs.*P0010 row 2, P0020 row 3/
+    );
+  });
+
+  it("reports a CORI Expiry with no Email to say whose it is", () => {
+    const parsed = parseSheet(
+      sheet({
+        ...mentor("P0010"),
+        contacts: [["", "Spouse", "1", "2028-01-01"]],
+      })
+    );
+    assert.deepEqual(parsed.contacts, []);
+    assert.deepEqual(
+      parsed.problems.map((x) => x.message),
+      ["CORI Expiry but no Email"]
+    );
+  });
+
+  it("changes no group", () => {
+    const contacts: Spec["contacts"] = [["mom@home.example", P, "1"]];
+    const without = parseSheet(
+      sheet({ ...mentor("P0010") }, { ...student("P0020"), contacts })
+    );
+    const withCori = parseSheet(
+      sheet(
+        { ...mentor("P0010") },
+        {
+          ...student("P0020"),
+          contacts: [["mom@home.example", P, "1", "2028-01-01"]],
+        }
+      )
+    );
+    assert.deepEqual(withCori.people, without.people);
+    assert.deepEqual(
+      intendedGroups(withCori.people, AS_OF),
+      intendedGroups(without.people, AS_OF)
+    );
   });
 });
 

@@ -1,4 +1,5 @@
 import type { IsoDate } from "../dates.js";
+import { addressKey } from "./address.js";
 import type { Header, SheetData, SheetRow, SheetTab } from "./schema.js";
 
 /**
@@ -94,8 +95,36 @@ export type SheetProblem = {
   message: string;
 };
 
+/**
+ * An emergency contact, with the CORI expiry the sheet records for them
+ * (#63). Contacts are not people here: one is an address on
+ * `Emergency_Contacts`, and the same contact can be listed under several
+ * people — a parent of siblings, a mentor's spouse who is also a student's
+ * parent — with a `CORI Expiry` cell under each. Rows are matched by
+ * `addressKey`, as the groups compare them. Every relationship and rank is
+ * read alike: CORI is mostly parents', but anyone listed may have it.
+ *
+ * Read, and used for nothing yet: what a contact's CORI is for is a decision
+ * still to make, so nothing may change who joins a group, who counts as a
+ * screened adult, or what alerts fire because of it.
+ */
+export type SheetContact = {
+  /** As the first row listing them spells it, lower-cased. */
+  email: string;
+  /**
+   * Null when blank or malformed, and when the contact's rows disagree —
+   * including one blank where another has a date. Which cell is right is for
+   * a person to say, and a guess must never be the later date.
+   */
+  coriExpiry: IsoDate | null;
+  /** Every row listing them, so a report can point at the cells. */
+  rows: { personId: string; row: number }[];
+};
+
 export type ParsedSheet = {
   people: SheetPerson[];
+  /** Every Emergency_Contacts row with an email, one entry per contact. */
+  contacts: SheetContact[];
   problems: SheetProblem[];
 };
 
@@ -236,6 +265,10 @@ function keyed<T extends SheetTab>(
   }
   return byId;
 }
+
+/** One contact row's CORI Expiry cell, kept apart from a missing one. */
+type CoriCell =
+  { kind: "blank" } | { kind: "malformed" } | { kind: "date"; date: IsoDate };
 
 function isBlank(row: object): boolean {
   return Object.entries(row).every(([k, v]) => k === "_row" || v === "");
@@ -432,13 +465,16 @@ export function parseSheet(data: SheetData): ParsedSheet {
     }
   }
 
-  // Only Parent/Guardian rows are read at all: the tab covers every person's
-  // contacts — spouses, friends — and nothing else here needs them.
+  // Every contact is read for CORI; only Parent/Guardian rows for
+  // grp-parents — the tab covers every person's contacts, spouses and
+  // friends included.
+  const contactRows = new Map<
+    string,
+    { email: string; personId: string; row: number; cori: CoriCell }[]
+  >();
   for (const [id, rows] of keyed(
     "Emergency_Contacts",
-    data.Emergency_Contacts.filter(
-      (r) => !isBlank(r) && r.Relationship === PARENT_RELATIONSHIP
-    ),
+    data.Emergency_Contacts.filter((r) => !isBlank(r)),
     known,
     problems,
     { unique: false }
@@ -446,19 +482,70 @@ export function parseSheet(data: SheetData): ParsedSheet {
     const tab = "Emergency_Contacts";
     const person = people.get(id)!;
     for (const r of rows) {
+      const address = email(r.Email, "Email", tab, r, id, problems);
       const rank = r.Rank;
-      if (rank === DO_NOT_CONTACT_RANK) continue;
-      // A garbled rank might have meant 99, and a mailing list is contact, so
-      // it is left out and reported. A blank one says nothing either way.
-      if (rank !== "" && !/^\d+$/.test(rank)) {
-        problems.add(tab, r._row, id, "Rank is not a number");
+      if (
+        r.Relationship === PARENT_RELATIONSHIP &&
+        rank !== DO_NOT_CONTACT_RANK
+      ) {
+        // A garbled rank might have meant 99, and a mailing list is contact,
+        // so it is left out and reported. A blank one says nothing either way.
+        if (rank !== "" && !/^\d+$/.test(rank)) {
+          problems.add(tab, r._row, id, "Rank is not a number");
+        } else if (address && !person.parentEmails.includes(address)) {
+          person.parentEmails.push(address);
+        }
+      }
+
+      const raw = r["CORI Expiry"];
+      const d = date(raw, "CORI Expiry", tab, r, id, problems);
+      if (!address) {
+        // A malformed Email is already reported; a missing one is reported
+        // here, since without it the date belongs to nobody.
+        if (raw !== "" && r.Email === "") {
+          problems.add(tab, r._row, id, "CORI Expiry but no Email");
+        }
         continue;
       }
-      const address = email(r.Email, "Email", tab, r, id, problems);
-      if (address && !person.parentEmails.includes(address)) {
-        person.parentEmails.push(address);
+      const cori: CoriCell =
+        raw === ""
+          ? { kind: "blank" }
+          : d
+            ? { kind: "date", date: d }
+            : { kind: "malformed" };
+      const key = addressKey(address);
+      contactRows.set(key, [
+        ...(contactRows.get(key) ?? []),
+        { email: address, personId: id, row: r._row, cori },
+      ]);
+    }
+  }
+
+  const contacts: SheetContact[] = [];
+  for (const rows of contactRows.values()) {
+    const where = rows.map((x) => ({ personId: x.personId, row: x.row }));
+    const dates = new Set(
+      rows.map((x) => (x.cori.kind === "date" ? x.cori.date : ""))
+    );
+    let coriExpiry: IsoDate | null = null;
+    // A malformed cell is already a problem of its own, and makes the contact
+    // not current; saying the rows also disagree would say it twice.
+    if (!rows.some((x) => x.cori.kind === "malformed")) {
+      if (dates.size === 1) {
+        coriExpiry = [...dates][0] || null;
+      } else {
+        const first = rows[0]!;
+        problems.add(
+          "Emergency_Contacts",
+          first.row,
+          first.personId,
+          "CORI Expiry differs between the rows listing this contact (" +
+            where.map((w) => `${w.personId} row ${w.row}`).join(", ") +
+            "); make them match"
+        );
       }
     }
+    contacts.push({ email: rows[0]!.email, coriExpiry, rows: where });
   }
 
   // Cross-tab consistency: a role and its details row travel together.
@@ -527,7 +614,7 @@ export function parseSheet(data: SheetData): ParsedSheet {
     }
   }
 
-  return { people: [...people.values()], problems: problems.list };
+  return { people: [...people.values()], contacts, problems: problems.list };
 }
 
 /**
