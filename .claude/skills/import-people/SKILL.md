@@ -42,7 +42,10 @@ which rows each kind of person gets. This skill is the safety wrapper around
 - **Every date is copied from a record.** Expiry and completion dates come from
   FIRST's or the state's own system, typed in by a person. A "yes", a TRUE, a
   "done as of [date]", or the date a check was done becomes a **blank** cell
-  plus a line on the _dates to get_ list. The earlier manual conversion turned
+  plus a line on the _dates to get_ list. The one exception is CORI: the
+  sheet's rule (`docs/lifecycle-sheet.md` §2) turns the date a CORI check was
+  done into its expiry, 1 September after the third school year. Show each one
+  as a derived value with its working. The earlier manual conversion turned
   "yes" answers into forward-dated expiries. That is the mistake this rule
   exists for: hawk-mod trusts a mentor's CORI date to grant access, and all
   three screening dates to count them as a screened adult.
