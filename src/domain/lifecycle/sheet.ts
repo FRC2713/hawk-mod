@@ -548,6 +548,54 @@ export function parseSheet(data: SheetData): ParsedSheet {
     contacts.push({ email: rows[0]!.email, coriExpiry, rows: where });
   }
 
+  // One person, one Person ID. A second Person ID for someone already on the
+  // sheet is the likeliest import mistake (#65), and it shows as one School
+  // or RHR Email on two people. Personal Email is left out: siblings can
+  // share a family address, and that is not a duplicate. Which row is the
+  // real person is for a person to say, so this only reports.
+  type Holder = {
+    personId: string;
+    tab: SheetTab;
+    row: number;
+    column: string;
+  };
+  const holders = new Map<string, Holder[]>();
+  const hold = (address: string | null | undefined, h: Holder) => {
+    if (!address) return;
+    const key = addressKey(address);
+    holders.set(key, [...(holders.get(key) ?? []), h]);
+  };
+  for (const p of people.values()) {
+    if (p.mentor) {
+      hold(p.mentor.rhrEmail, {
+        personId: p.personId,
+        tab: "Mentor_Details",
+        row: p.mentor.row,
+        column: "RHR Email",
+      });
+    }
+    if (p.student) {
+      hold(p.student.schoolEmail, {
+        personId: p.personId,
+        tab: "Student_Details",
+        row: p.student.row,
+        column: "School Email",
+      });
+    }
+  }
+  for (const [first, ...rest] of holders.values()) {
+    const others = rest.filter((h) => h.personId !== first!.personId);
+    if (!others.length) continue;
+    problems.add(
+      first!.tab,
+      first!.row,
+      first!.personId,
+      `${first!.column} is also on ` +
+        others.map((h) => `${h.personId}'s ${h.tab} row ${h.row}`).join(", ") +
+        "; one person has one Person ID"
+    );
+  }
+
   // Cross-tab consistency: a role and its details row travel together.
   for (const p of people.values()) {
     const isMentor = p.roles.includes("Mentor");
