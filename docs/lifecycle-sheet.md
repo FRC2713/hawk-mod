@@ -124,8 +124,11 @@ A person can have multiple rows (multiple roles). Roles are additive/historical 
 | Email              |                                                                                                          |
 | Relationship       | Dropdown (`Reference_Lists!C`): `Parent/Guardian`, `Grandparent`, `Spouse`, `Sibling`, `Friend`, `Other` |
 | Rank               | Integer; `1` = primary contact (called first). `99` = on file but not to be contacted.                   |
+| CORI Expiry        | Date. Any contact, though mostly parents. Copied from the state record, never calculated.                |
 
-For a **student**, a `Parent/Guardian` contact whose `Rank` is not `99` is on `grp-parents` while the student is Active. hawk-mod reads only `Person ID`, `Email`, `Relationship` and `Rank` here — never a contact's name or phone.
+For a **student**, a `Parent/Guardian` contact whose `Rank` is not `99` is on `grp-parents` while the student is Active. hawk-mod reads only `Person ID`, `Email`, `Relationship`, `Rank` and `CORI Expiry` here — never a contact's name or phone.
+
+`CORI Expiry` records that a contact is CORI-checked — mostly parents, but a spouse or a mentor's parent may be CORI-covered without being on the sheet as a volunteer. **It is recorded only: hawk-mod uses it for nothing yet** — not groups, not the two-adult rule, not alerts. The same contact can have a row under several people (a parent of siblings; a mentor's spouse who is also a student's parent), and so a `CORI Expiry` under each: **when you enter or update a contact's CORI, find every row with that contact's email and set the same date on all of them.** Rows that disagree (a blank on one of them counts) are listed as a sheet problem by Person ID and row, and the contact is read as not current until they match. A `CORI Expiry` on a row with no `Email` is a sheet problem too, since the email is how hawk-mod tells contacts apart.
 
 ### `Mentor_Details` (PK: `Person ID`, one row per mentor)
 
@@ -247,7 +250,7 @@ One column per dropdown, values top-to-bottom. This is the **only** place free-t
 3. Add one row to `People` with contact/demographic info and `Rookie Year` (their first season on the team). Set `Active/Inactive = Active` and `Status Changed Date = today`.
 4. Add one row to `People_Roles`: `Role = Student`.
 5. Add one row to `Student_Details` with the school/demographic fields from the form. `Student Lead (Y/N)` defaults to `N` unless told otherwise. Leave form-status columns blank until each form is actually returned, then enter its expiry date (annual forms) or completion date (`FIRST Account Completed`). Enter `N/A` in `Melrose Media Release Expiry` if the student isn't in Melrose schools. Set `Media Release Scope` from what the family selected. If a parent's employer is named as a possible sponsor, record it in `Parent Employer (Potential Sponsor)`; otherwise leave blank.
-6. Add one row to `Emergency_Contacts` per caregiver on the form (at least one), with `Relationship` and `Rank` (`Rank 1` = primary contact, called first).
+6. Add one row to `Emergency_Contacts` per caregiver on the form (at least one), with `Relationship` and `Rank` (`Rank 1` = primary contact, called first). If the caregiver is already listed under someone else (a sibling, say) and has a `CORI Expiry` there, copy the same date onto the new row.
 7. Leave `Student_Surveys` / `Student_Survey_Concepts` blank at intake — populated later, per survey cycle.
 8. Don't add rows to any `Mentor_*` tab, or to `Alumni_Details`, for a new student.
 

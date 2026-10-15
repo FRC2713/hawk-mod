@@ -270,9 +270,10 @@ parent still listed for an Active younger sibling is still in the computed
 set and stays; a parent no Active student lists drops out. A student with no
 parent email is reported by Person ID, like any other missing address.
 
-hawk-mod adds exactly four `Emergency_Contacts` columns to its allowlist —
-`Person ID`, `Email`, `Relationship`, `Rank` — and never a contact's name or
-phone. Parents have no Slack, are not on the roster, and are not in
+hawk-mod adds exactly five `Emergency_Contacts` columns to its allowlist —
+`Person ID`, `Email`, `Relationship`, `Rank`, and a contact's `CORI Expiry`
+(#63, recorded but used for nothing yet) — and never a
+contact's name or phone. Parents have no Slack, are not on the roster, and are not in
 `grp-all-team`. Their addresses are personal, which is right for adults (the
 access plan has `grp-parents` allow external members); nothing here ever puts
 a _student's_ personal address in a group.
