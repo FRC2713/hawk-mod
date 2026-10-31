@@ -456,3 +456,13 @@ Building locally on macOS can trip the "access data from other apps" prompt;
   content-blind rules never need. Slack retention is set to keep everything, so
   an investigation that genuinely needs the file gets it from Slack. Do not add
   file download.
+
+## Release contract
+
+Read `docs/release-pipeline.md` when changing image publication or deployment
+configuration. Publishing calls reusable CI, smoke-tests fresh and prior-release
+databases, then publishes the tested image by digest and proposes a suite PR.
+Keep `.hawk/app.json` synchronized with environment, health and storage changes.
+`node scripts/deploy-check.mjs` validates the built image configuration without
+opening SQLite or starting external clients. Production promotion belongs in
+hawk_suite and retains a separate approval.

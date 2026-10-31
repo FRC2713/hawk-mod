@@ -5,6 +5,8 @@ import { anyBotInstallation, listUserInstallations } from "./db/repo.js";
 type Health = {
   status: "ok" | "error";
   installed: boolean;
+  revision?: string;
+  schemaVersion?: string;
   enrolledAdults: number;
   error?: string;
 };
@@ -24,6 +26,13 @@ export function healthHandler(_req: unknown, res: ServerResponse): void {
     db().prepare("SELECT 1").get();
     body = {
       status: "ok",
+      revision: process.env.APP_REVISION ?? "development",
+      schemaVersion:
+        db()
+          .prepare<[], { name: string }>(
+            "SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1"
+          )
+          .get()?.name ?? "empty",
       installed: anyBotInstallation() !== undefined,
       enrolledAdults: listUserInstallations().length,
     };
