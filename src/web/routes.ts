@@ -27,15 +27,11 @@ import {
   verifyToken,
   type Session,
 } from "./session.js";
-import {
-  SUITE_COOKIE,
-  suitePublicKey,
-  verifySuiteToken,
-} from "./suiteSession.js";
+import { readSuiteHeaders } from "./suiteSession.js";
 
 /**
  * The browser-facing routes: a landing page anyone may read, and a
- * configuration page accepting local Slack sign-in or a verified suite session.
+ * configuration page accepting local Slack sign-in or a trusted gateway identity.
  *
  * The sign-in is OpenID Connect against the same Slack app — no new
  * credentials, no password, no user table. Slack says who is asking; whether
@@ -83,19 +79,12 @@ async function requireAdministrator(
 ): Promise<Actor | null> {
   const cfg = config();
   const cookies = parseCookies(req.headers.cookie);
-  const suiteToken = cookies.get(SUITE_COOKIE);
-  const suite =
-    suiteToken && cfg.HAWK_SUITE_ISSUER && cfg.HAWK_SUITE_PUBLIC_KEY
-      ? verifySuiteToken(
-          suiteToken,
-          {
-            issuer: cfg.HAWK_SUITE_ISSUER,
-            audience: cfg.HAWK_SUITE_AUDIENCE,
-            key: suitePublicKey(cfg.HAWK_SUITE_PUBLIC_KEY),
-          },
-          Date.now()
-        )
-      : undefined;
+  const suite = cfg.HAWK_SUITE_TRUST_PROXY
+    ? readSuiteHeaders(
+        req.headersDistinct ?? req.headers,
+        cfg.HAWK_SUITE_TEAM_ID!
+      )
+    : undefined;
   const token = cookies.get(SESSION_COOKIE);
   const own = token
     ? verifyToken<Session>(
@@ -108,8 +97,8 @@ async function requireAdministrator(
   if (!suite && !own) {
     redirect(
       res,
-      cfg.HAWK_SUITE_ISSUER
-        ? new URL("auth/", cfg.HAWK_SUITE_ISSUER).href
+      cfg.HAWK_SUITE_TRUST_PROXY
+        ? new URL("auth/", cfg.HAWK_SUITE_ISSUER!).href
         : "/auth/slack"
     );
     return null;
@@ -417,11 +406,16 @@ export const webRoutes: CustomRoute[] = [
     handler: (req, res) => {
       setSessionCookie(res, null);
       const cfg = config();
-      const hasSuiteCookie = parseCookies(req.headers.cookie).has(SUITE_COOKIE);
+      const fromSuite =
+        cfg.HAWK_SUITE_TRUST_PROXY &&
+        readSuiteHeaders(
+          req.headersDistinct ?? req.headers,
+          cfg.HAWK_SUITE_TEAM_ID!
+        );
       redirect(
         res,
-        hasSuiteCookie && cfg.HAWK_SUITE_ISSUER
-          ? new URL("auth/logout", cfg.HAWK_SUITE_ISSUER).href
+        fromSuite && cfg.HAWK_SUITE_ISSUER
+          ? new URL("auth/logout", cfg.HAWK_SUITE_ISSUER!).href
           : "/"
       );
     },
