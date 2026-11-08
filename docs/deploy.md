@@ -164,18 +164,29 @@ where `~/.docker-plain` contains `{"auths":{},"features":{"hooks":"false"}}`
 and a `cli-plugins/docker-buildx` symlink into `/Applications/Docker.app`. This
 changes nothing about Docker Desktop itself. CI builds the real image anyway.
 
-## Suite session
+## Trusted suite identity
 
-When deployed behind hawk_suite, set `HAWK_SUITE_ISSUER` to the gateway issuer
-`https://apps.<domain>/` and `HAWK_SUITE_PUBLIC_KEY` to its RSA public key, as PEM
-or base64 of PEM. `HAWK_SUITE_AUDIENCE` defaults to `hawk-suite`. Both issuer
-and key must be set together; an invalid key refuses startup and deploy-check.
-Leave both empty for standalone Slack sign-in.
+Set `HAWK_SUITE_TRUST_PROXY=true`, `HAWK_SUITE_TEAM_ID` to the gateway's Slack
+workspace ID, and `HAWK_SUITE_ISSUER` to `https://apps.<domain>/` for portal and
+logout links. Proxy trust defaults to false. These are deployment configuration,
+never editable workspace settings. The former `HAWK_SUITE_PUBLIC_KEY` and
+`HAWK_SUITE_AUDIENCE` settings are no longer accepted by the image contract.
 
-`/config` verifies `AUTHP_ACCESS_TOKEN` before using its Slack identity, requires
-the installed workspace, and still calls the existing administrator check on
-every GET and POST. Suite membership alone grants no administrative access.
-Students remain refused. Identity headers are never accepted. Sign out clears
-the local cookie and opens the gateway logout when a suite cookie is present.
-Settings POSTs require an Origin matching `PUBLIC_URL`, including when signed
-in through the suite, since sibling subdomains share the gateway cookie.
+Enable only behind Hawk Suite's Caddy gateway with no published backend ports
+and a separate app network shared only with Caddy. Caddy removes incoming
+identity headers before authorization and inserts verified values afterward.
+The host and proxy are trusted. Direct clients on this network can impersonate
+users; never attach untrusted containers or expose the backend directly.
+
+The adapter requires `X-Token-Subject`, `X-Hawk-Slack-Team`, `X-Hawk-Slack-User`,
+and `X-Token-User-Roles`. The team must match the configured workspace, the
+subject must equal `slack:<team>:<user>`, and roles must contain the exact
+space-separated `suite/member` role. Duplicate or malformed identity fields
+are refused. Name and email headers are optional display data, never permissions.
+The app no longer verifies `AUTHP_ACCESS_TOKEN`; Caddy owns session verification
+and expiry. Gateway roles never substitute for app authorization.
+
+The installed workspace must also match. The existing app-specific administrator
+check still runs on GET and POST. Local Slack sign-in remains available when
+proxy trust is off. Suite logout ends the gateway session; local app cookies
+remain separate. Settings writes retain their Origin checks.

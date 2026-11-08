@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { suitePublicKey } from "./web/suiteSession.js";
 
 const schema = z.object({
   SLACK_SIGNING_SECRET: z.string().min(1),
@@ -29,38 +28,40 @@ const schema = z.object({
   // QUARTERLY_CRON, which let the two drift apart.
   REPORT_TIME: z.string().optional(),
   // Optional gateway identity verification; never editable as workspace settings.
+  // Trust only an isolated Hawk Suite gateway, never arbitrary direct requests.
+  HAWK_SUITE_TRUST_PROXY: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  HAWK_SUITE_TEAM_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v || undefined)
+    .pipe(
+      z
+        .string()
+        .regex(/^T[A-Z0-9]+$/)
+        .optional()
+    ),
   HAWK_SUITE_ISSUER: z
     .string()
     .trim()
     .optional()
     .transform((v) => v || undefined)
     .pipe(z.string().url().optional()),
-  HAWK_SUITE_PUBLIC_KEY: z
-    .string()
-    .trim()
-    .optional()
-    .transform((v) => v || undefined),
-  HAWK_SUITE_AUDIENCE: z.string().min(1).default("hawk-suite"),
 });
 
 const envSchema = schema.superRefine((value, ctx) => {
-  if (!value.HAWK_SUITE_ISSUER !== !value.HAWK_SUITE_PUBLIC_KEY) {
+  if (
+    value.HAWK_SUITE_TRUST_PROXY &&
+    (!value.HAWK_SUITE_ISSUER || !value.HAWK_SUITE_TEAM_ID)
+  ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["HAWK_SUITE_PUBLIC_KEY"],
+      path: ["HAWK_SUITE_TRUST_PROXY"],
       message:
-        "Set both HAWK_SUITE_ISSUER and HAWK_SUITE_PUBLIC_KEY, or neither",
-    });
-    return;
-  }
-  if (!value.HAWK_SUITE_PUBLIC_KEY) return;
-  try {
-    suitePublicKey(value.HAWK_SUITE_PUBLIC_KEY);
-  } catch {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["HAWK_SUITE_PUBLIC_KEY"],
-      message: "not an RSA public key (PEM, or base64 of one)",
+        "Trusted proxy mode requires HAWK_SUITE_ISSUER and HAWK_SUITE_TEAM_ID",
     });
   }
 });

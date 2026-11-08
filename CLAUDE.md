@@ -264,8 +264,8 @@ the 1:1 still happened.
 
 **The browser gets two pages, and the second is the same door as Slack.**
 `src/web/` serves a landing page at `/` and a configuration page at `/config`
-(this is what mod.redhawkrobotics.org shows). `/config` signs people in with
-Slack — OpenID Connect against the same app, identity only, no stored token —
+(this is what mod.redhawkrobotics.org shows). `/config` accepts trusted Hawk Suite headers when explicitly enabled,
+or signs people in with Slack — OpenID Connect against the same app, identity only, no stored token —
 and then asks `administrator()` exactly as the slash command does, on every
 request, so the cookie only says _who_ and losing Slack admin locks the page
 within a minute. Writes go through `slack/settingsAdmin.ts`, the one
@@ -466,3 +466,11 @@ Keep `.hawk/app.json` synchronized with environment, health and storage changes.
 `node scripts/deploy-check.mjs` validates the built image configuration without
 opening SQLite or starting external clients. Production promotion belongs in
 hawk_suite and retains a separate approval.
+
+## Trusted gateway identity
+
+`web/suiteSession.ts` parses Hawk Suite #42's identity headers only when
+`HAWK_SUITE_TRUST_PROXY` is true. See `docs/deploy.md` for the isolated network
+requirement. Subject, workspace, user and `suite/member` must agree; duplicate
+identity headers fail closed. `administrator()` still decides access on every
+config GET and POST and refuses students. Local Slack sign-in remains available.

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +12,6 @@ import { webRoutes } from "../src/web/routes.js";
 import { SESSION_PURPOSE, signToken } from "../src/web/session.js";
 
 const directory = mkdtempSync(join(tmpdir(), "hawk-mod-suite-"));
-const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const issuer = "https://apps.suite.test/";
 const secret = "test-state-secret-0123456789";
 Object.assign(process.env, {
@@ -25,9 +23,8 @@ Object.assign(process.env, {
   SLACK_STATE_SECRET: secret,
   PUBLIC_URL: "https://mod.suite.test",
   HAWK_SUITE_ISSUER: issuer,
-  HAWK_SUITE_PUBLIC_KEY: pair.publicKey
-    .export({ type: "spki", format: "pem" })
-    .toString(),
+  HAWK_SUITE_TRUST_PROXY: "true",
+  HAWK_SUITE_TEAM_ID: "TTEAM",
 });
 let isAdmin = true;
 let slackFails = false;
@@ -84,30 +81,28 @@ after(async () => {
   mock.restoreAll();
   rmSync(directory, { recursive: true, force: true });
 });
-function suite(claims: Record<string, unknown> = {}): string {
-  const head = Buffer.from(JSON.stringify({ alg: "RS256" })).toString(
-    "base64url"
-  );
-  const body = Buffer.from(
-    JSON.stringify({
-      sub: "slack:TTEAM:UADMIN",
-      iss: issuer,
-      aud: "hawk-suite",
-      roles: ["suite/member"],
-      exp: Date.now() / 1000 + 900,
-      ...claims,
-    })
-  ).toString("base64url");
-  return `AUTHP_ACCESS_TOKEN=${head}.${body}.${sign("sha256", Buffer.from(`${head}.${body}`), pair.privateKey).toString("base64url")}`;
+function suite(overrides: Record<string, string> = {}): Record<string, string> {
+  return {
+    "x-token-subject": "slack:TTEAM:UADMIN",
+    "x-hawk-slack-team": "TTEAM",
+    "x-hawk-slack-user": "UADMIN",
+    "x-token-user-roles": "suite/member",
+    ...overrides,
+  };
 }
-function own(teamId = "TTEAM"): string {
-  return `hawkmod_session=${signToken(SESSION_PURPOSE, { slackUserId: "UADMIN", teamId, expiresAt: Date.now() + 60_000 }, secret)}`;
+function own(teamId = "TTEAM"): Record<string, string> {
+  return {
+    cookie: `hawkmod_session=${signToken(SESSION_PURPOSE, { slackUserId: "UADMIN", teamId, expiresAt: Date.now() + 60_000 }, secret)}`,
+  };
 }
-function request(cookie: string, extra: RequestInit = {}): Promise<Response> {
+function request(
+  headers: Record<string, string>,
+  extra: RequestInit = {}
+): Promise<Response> {
   return fetch(`${base}/config`, {
     redirect: "manual",
     ...extra,
-    headers: { cookie, ...extra.headers },
+    headers: { ...headers, ...extra.headers },
   });
 }
 it("opens config with the verified suite identity and live admin check", async () => {
@@ -127,21 +122,35 @@ it("fails closed when Slack cannot authorize the suite identity", async () => {
 });
 it("refuses a foreign workspace before consulting Slack", async () => {
   assert.equal(
-    (await request(suite({ sub: "slack:TOTHER:UADMIN" }))).status,
-    403
+    (
+      await request(
+        suite({
+          "x-token-subject": "slack:TOTHER:UADMIN",
+          "x-hawk-slack-team": "TOTHER",
+        })
+      )
+    ).status,
+    303
   );
   assert.equal((await request(own("TOTHER"))).status, 403);
   assert.equal(calls, 0);
 });
-it("keeps local sessions usable when a foreign suite cookie is present", async () => {
+it("keeps local sessions usable when a foreign suite identity is present", async () => {
   assert.equal(
-    (await request(`${suite({ sub: "slack:TOTHER:UADMIN" })}; ${own()}`))
-      .status,
+    (
+      await request({
+        ...suite({
+          "x-token-subject": "slack:TOTHER:UADMIN",
+          "x-hawk-slack-team": "TOTHER",
+        }),
+        ...own(),
+      })
+    ).status,
     200
   );
 });
-it("ignores identity headers and redirects invalid suite tokens to the portal", async () => {
-  const res = await request(suite({ exp: 1 }), {
+it("ignores identity headers and redirects invalid suite identity to the portal", async () => {
+  const res = await request(suite({ "x-token-user-roles": "admin" }), {
     headers: { "x-hawk-identity": "slack:TTEAM:UADMIN" },
   });
   assert.equal(res.status, 303);
@@ -185,7 +194,7 @@ it("allows an authenticated settings POST with the matching Origin", async () =>
 it("clears the local session and sends suite sign-out to the gateway", async () => {
   const res = await fetch(`${base}/auth/signout`, {
     redirect: "manual",
-    headers: { cookie: suite() },
+    headers: suite(),
   });
   assert.equal(res.headers.get("location"), `${issuer}auth/logout`);
   assert.match(res.headers.get("set-cookie")!, /hawkmod_session=;.*Max-Age=0/);
