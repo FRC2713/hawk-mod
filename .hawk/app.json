@@ -25,7 +25,10 @@
     "SWEEP_CRON",
     "BACKFILL_CRON",
     "GOOGLE_SERVICE_ACCOUNT_KEY_BASE64",
-    "LIFECYCLE_SHEET_ID"
+    "LIFECYCLE_SHEET_ID",
+    "HAWK_SUITE_ISSUER",
+    "HAWK_SUITE_PUBLIC_KEY",
+    "HAWK_SUITE_AUDIENCE"
   ],
   "migrations": "on-start",
   "rollback": "requires-schema-review"

@@ -27,10 +27,15 @@ import {
   verifyToken,
   type Session,
 } from "./session.js";
+import {
+  SUITE_COOKIE,
+  suitePublicKey,
+  verifySuiteToken,
+} from "./suiteSession.js";
 
 /**
  * The browser-facing routes: a landing page anyone may read, and a
- * configuration page behind Sign in with Slack.
+ * configuration page accepting local Slack sign-in or a verified suite session.
  *
  * The sign-in is OpenID Connect against the same Slack app — no new
  * credentials, no password, no user table. Slack says who is asking; whether
@@ -44,7 +49,10 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 function html(res: ServerResponse, code: number, body: string): void {
-  res.writeHead(code, { "content-type": "text/html; charset=utf-8" });
+  res.writeHead(code, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+  });
   res.end(body);
 }
 
@@ -73,23 +81,67 @@ async function requireAdministrator(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<Actor | null> {
-  const token = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
-  const session = token
+  const cfg = config();
+  const cookies = parseCookies(req.headers.cookie);
+  const suiteToken = cookies.get(SUITE_COOKIE);
+  const suite =
+    suiteToken && cfg.HAWK_SUITE_ISSUER && cfg.HAWK_SUITE_PUBLIC_KEY
+      ? verifySuiteToken(
+          suiteToken,
+          {
+            issuer: cfg.HAWK_SUITE_ISSUER,
+            audience: cfg.HAWK_SUITE_AUDIENCE,
+            key: suitePublicKey(cfg.HAWK_SUITE_PUBLIC_KEY),
+          },
+          Date.now()
+        )
+      : undefined;
+  const token = cookies.get(SESSION_COOKIE);
+  const own = token
     ? verifyToken<Session>(
         SESSION_PURPOSE,
         token,
-        config().SLACK_STATE_SECRET,
+        cfg.SLACK_STATE_SECRET,
         Date.now()
       )
     : null;
-  if (!session) {
-    redirect(res, "/auth/slack");
+  if (!suite && !own) {
+    redirect(
+      res,
+      cfg.HAWK_SUITE_ISSUER
+        ? new URL("auth/", cfg.HAWK_SUITE_ISSUER).href
+        : "/auth/slack"
+    );
+    return null;
+  }
+  const installedTeam = anyBotInstallation()?.teamId;
+  if (!installedTeam) {
+    html(res, 503, messagePage("Not installed yet", `<p>${APPROVAL_HINT}</p>`));
+    return null;
+  }
+  // Prefer a matching suite identity. A foreign cookie must not mask a valid
+  // local session, and neither kind may authenticate another workspace.
+  const slackUserId =
+    suite?.teamId === installedTeam
+      ? suite.userId
+      : own?.teamId === installedTeam
+        ? own.slackUserId
+        : undefined;
+  if (!slackUserId) {
+    html(
+      res,
+      403,
+      messagePage(
+        "Wrong workspace",
+        "<p>Sign in with the installed Slack workspace.</p>"
+      )
+    );
     return null;
   }
 
   let actor: Actor | null;
   try {
-    actor = await administrator(botClient(), session.slackUserId);
+    actor = await administrator(botClient(), slackUserId);
   } catch (err) {
     // botClient() throws until the app is installed somewhere; there is
     // nothing to configure yet either way.
@@ -173,11 +225,10 @@ async function handleConfigPost(
   res: ServerResponse,
   actor: Actor
 ): Promise<void> {
-  // The cookie is SameSite=Lax, which modern browsers do not send on a
-  // cross-site POST; the origin check catches the stragglers. Both matter:
-  // this form changes who is monitored.
+  // Sibling suite subdomains are same-site and share a gateway cookie. Require
+  // this exact origin before accepting a settings write.
   const origin = req.headers.origin;
-  if (origin && origin !== new URL(config().PUBLIC_URL).origin) {
+  if (origin !== new URL(config().PUBLIC_URL).origin) {
     html(res, 403, messagePage("Refused", "<p>Cross-site request.</p>"));
     return;
   }
@@ -363,9 +414,16 @@ export const webRoutes: CustomRoute[] = [
   {
     path: "/auth/signout",
     method: ["GET"],
-    handler: (_req, res) => {
+    handler: (req, res) => {
       setSessionCookie(res, null);
-      redirect(res, "/");
+      const cfg = config();
+      const hasSuiteCookie = parseCookies(req.headers.cookie).has(SUITE_COOKIE);
+      redirect(
+        res,
+        hasSuiteCookie && cfg.HAWK_SUITE_ISSUER
+          ? new URL("auth/logout", cfg.HAWK_SUITE_ISSUER).href
+          : "/"
+      );
     },
   },
 ];

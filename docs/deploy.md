@@ -163,3 +163,19 @@ DOCKER_CONFIG=~/.docker-plain DOCKER_HOST=unix:///var/run/docker.sock docker bui
 where `~/.docker-plain` contains `{"auths":{},"features":{"hooks":"false"}}`
 and a `cli-plugins/docker-buildx` symlink into `/Applications/Docker.app`. This
 changes nothing about Docker Desktop itself. CI builds the real image anyway.
+
+## Suite session
+
+When deployed behind hawk_suite, set `HAWK_SUITE_ISSUER` to the gateway issuer
+`https://apps.<domain>/` and `HAWK_SUITE_PUBLIC_KEY` to its RSA public key, as PEM
+or base64 of PEM. `HAWK_SUITE_AUDIENCE` defaults to `hawk-suite`. Both issuer
+and key must be set together; an invalid key refuses startup and deploy-check.
+Leave both empty for standalone Slack sign-in.
+
+`/config` verifies `AUTHP_ACCESS_TOKEN` before using its Slack identity, requires
+the installed workspace, and still calls the existing administrator check on
+every GET and POST. Suite membership alone grants no administrative access.
+Students remain refused. Identity headers are never accepted. Sign out clears
+the local cookie and opens the gateway logout when a suite cookie is present.
+Settings POSTs require an Origin matching `PUBLIC_URL`, including when signed
+in through the suite, since sibling subdomains share the gateway cookie.

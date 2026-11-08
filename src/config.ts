@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { suitePublicKey } from "./web/suiteSession.js";
 
 const schema = z.object({
   SLACK_SIGNING_SECRET: z.string().min(1),
@@ -27,6 +28,41 @@ const schema = z.object({
   // daily digest and the quarterly reminder). Replaces DIGEST_CRON and
   // QUARTERLY_CRON, which let the two drift apart.
   REPORT_TIME: z.string().optional(),
+  // Optional gateway identity verification; never editable as workspace settings.
+  HAWK_SUITE_ISSUER: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v || undefined)
+    .pipe(z.string().url().optional()),
+  HAWK_SUITE_PUBLIC_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v || undefined),
+  HAWK_SUITE_AUDIENCE: z.string().min(1).default("hawk-suite"),
+});
+
+const envSchema = schema.superRefine((value, ctx) => {
+  if (!value.HAWK_SUITE_ISSUER !== !value.HAWK_SUITE_PUBLIC_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["HAWK_SUITE_PUBLIC_KEY"],
+      message:
+        "Set both HAWK_SUITE_ISSUER and HAWK_SUITE_PUBLIC_KEY, or neither",
+    });
+    return;
+  }
+  if (!value.HAWK_SUITE_PUBLIC_KEY) return;
+  try {
+    suitePublicKey(value.HAWK_SUITE_PUBLIC_KEY);
+  } catch {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["HAWK_SUITE_PUBLIC_KEY"],
+      message: "not an RSA public key (PEM, or base64 of one)",
+    });
+  }
 });
 
 export type Config = z.infer<typeof schema>;
@@ -39,7 +75,7 @@ let cached: Config | null = null;
  */
 export function config(): Config {
   if (cached) return cached;
-  const parsed = schema.safeParse(process.env);
+  const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `  ${i.path.join(".")}: ${i.message}`)
