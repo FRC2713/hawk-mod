@@ -616,7 +616,13 @@ export function parseSheet(data: SheetData): ParsedSheet {
         "Mentor_Details row but no Mentor role"
       );
     }
-    if (isMentor && p.mentor && !p.mentor.rhrEmail) {
+    // A missing address matters once someone is to be reached: onboarding,
+    // groups and invites all skip an Inactive row, so a prospective mentor
+    // (on the sheet before CORI) or a student not yet started is not a
+    // problem for having none. An unknown status still is — it may be Active,
+    // and it is reported on its own above.
+    const reachable = p.status !== "inactive";
+    if (reachable && isMentor && p.mentor && !p.mentor.rhrEmail) {
       problems.add("Mentor_Details", 0, p.personId, "Mentor with no RHR Email");
     }
     if (isStudent && !p.student) {
@@ -635,7 +641,7 @@ export function parseSheet(data: SheetData): ParsedSheet {
         "Student_Details row but no Student role"
       );
     }
-    if (isStudent && p.student && !p.student.schoolEmail) {
+    if (reachable && isStudent && p.student && !p.student.schoolEmail) {
       problems.add(
         "Student_Details",
         0,
