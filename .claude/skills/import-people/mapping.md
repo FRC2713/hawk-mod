@@ -117,7 +117,9 @@ sheet the live form writes to: open the form, go to its Responses tab and
 choose View in Sheets. A copy edited by hand was once imported by mistake,
 and two guardian addresses on the sheet came from it rather than from what
 the families typed. A response whose timestamp is not a real date, or a
-newest response older than the form's newest, means you have a copy.
+newest response older than the form's newest, means you have a copy. Tab
+names do not tell them apart: the team renames and copies tabs in both, so a
+tab that was in only one of them last week can be in either this week.
 
 The first conversion left Pronouns, Food Allergies / Requirements and Shirt
 Size blank for every student, so a backfill can fill them (all quiet).
@@ -170,8 +172,9 @@ Size blank for every student, so a backfill can fill them (all quiet).
 
 ### Other tabs in the responses workbook
 
-The team keeps working tabs beside `Form Responses 1`. Read every tab's name
-and header before matching. Only `Form Responses 1` is a source.
+The team keeps working tabs beside `Form Responses 1`, and renames them. Read
+every tab's name and header before matching, and recognise each by what it
+holds, not by its name. Only `Form Responses 1` is a source.
 
 - **`Not participating/archived`:** responses the team moved out of
   `Form Responses 1`, each with a note in column A, then the response shifted
@@ -180,14 +183,17 @@ and header before matching. Only `Form Responses 1` is a source.
   sets anyone Inactive: that stays the operator's call, made by hand. A
   response moved back from it can stay shifted: the misaligned-rows rule
   applies.
-- **`FRC Form tracking`:** a name column, an email column and 0/1 tracking
-  columns (`Slack form`, `Parental Consent`, `NERD?`, `banquet`, `rookie?`,
+- **The tracking tab** (seen as `DNI Form` and as `FRC Form tracking`): a
+  name column, often an email column, and 0/1 tracking columns
+  (`Slack form`, `Parental Consent`, `NERD?`, `banquet`, `rookie?`,
   `Kit Tour signup`, `Invited to Basecamp`, `FIRST Signup`, `FIRST Consent`,
   `Worlds Interest Form`, `Media Release status DENY`), one row per
-  high-school respondent. Never a source. A `1` says a form came back or a
-  step was done, never when, so it is not a date. Where one matches a sheet
-  date column (`Slack form` and Slack Consent Expiry, `FIRST Consent` and
-  FIRST Consent Form Expiry), a `1` puts that column on _dates to get_.
+  high-school respondent. Never a source. The same 0/1 columns can also
+  appear in `Form Responses 1` after `Summer Learning`. Either way, a `1`
+  says a form came back or a step was done, never when, so it is not a date.
+  Where one matches a sheet date column (`Slack form` and Slack Consent
+  Expiry, `FIRST Consent` and FIRST Consent Form Expiry), a `1` puts that
+  column on _dates to get_.
 - **`FRC Only Sorted formula based`:** first name, last name and email, built
   by formula from the responses. Never a source.
 - **`Stats`:** counts. Never a source. A row in `Form Responses 1` holding
