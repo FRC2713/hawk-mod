@@ -271,6 +271,45 @@ describe("lifecycle sheet parsing", () => {
     assert.ok(problems.some((p) => p.message === "both Student and Mentor"));
   });
 
+  it("reports a missing RHR or School Email only for someone not Inactive", () => {
+    const messages = (status: string) =>
+      parseSheet(
+        sheet(
+          { ...mentor("P0010", { "RHR Email": "" }), status },
+          { ...student("P0011", { "School Email": "" }), status }
+        )
+      ).problems.map((p) => [p.personId, p.message]);
+
+    // Active: they are to be reached, and cannot be.
+    assert.deepEqual(messages("Active"), [
+      ["P0010", "Mentor with no RHR Email"],
+      ["P0011", "Student with no School Email"],
+    ]);
+    // Inactive: a prospective mentor before CORI, or a student not yet
+    // started. Nothing reaches them, so nothing is missing yet.
+    assert.deepEqual(messages("Inactive"), []);
+    // Unknown may be Active, so the address is still asked for.
+    assert.deepEqual(
+      messages("").filter(
+        ([, m]) => m !== "Active/Inactive is blank or unknown"
+      ),
+      [
+        ["P0010", "Mentor with no RHR Email"],
+        ["P0011", "Student with no School Email"],
+      ]
+    );
+  });
+
+  it("still reports an Inactive row's other sheet mistakes", () => {
+    const { problems } = parseSheet(
+      sheet({ id: "P0010", status: "Inactive", roles: ["Mentor"] })
+    );
+    assert.deepEqual(
+      problems.map((p) => p.message),
+      ["Mentor with no Mentor_Details row"]
+    );
+  });
+
   it("never puts a cell's value in a problem", () => {
     const secret = "someone@private.example";
     const { problems } = parseSheet(
