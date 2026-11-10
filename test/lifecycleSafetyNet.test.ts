@@ -7,6 +7,7 @@ import {
   mentorsInSlackWithoutCori,
 } from "../src/domain/lifecycle/heldMembers.js";
 import { formatOnboarding } from "../src/domain/lifecycle/onboardingReport.js";
+import { personLabels } from "../src/domain/lifecycle/labels.js";
 import type { SheetPerson } from "../src/domain/lifecycle/sheet.js";
 import { unknownAccountSummary } from "../src/domain/people.js";
 import {
@@ -31,6 +32,7 @@ function person(
   return {
     personId,
     name: `Mentor ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "active",
     roles: ["Mentor"],
@@ -165,6 +167,9 @@ describe("the onboarding dry run", () => {
   it("lists the mentors in Slack without CORI current", () => {
     const text = formatOnboarding({
       plan: { requests: [], notReady: [], directoryChecked: true },
+      labels: personLabels([
+        { personId: "P0001", shortName: "Robin M.", roles: ["Mentor"] },
+      ]),
       asOf: AS_OF,
       slackAccounts: 10,
       directory: { count: 5 },
@@ -174,7 +179,7 @@ describe("the onboarding dry run", () => {
     });
     assert.match(
       text,
-      /Mentors in Slack without CORI current \(each a cori_lapsed alert in the alert channel\): 2\n {2}P0001, P0002/
+      /Mentors in Slack without CORI current \(each a cori_lapsed alert in the alert channel\): 2\n {2}P0001 Robin M\. \(Mentor\), P0002\n/
     );
   });
 });

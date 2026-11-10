@@ -1,4 +1,5 @@
 import type { IsoDate } from "../dates.js";
+import { labelOf, type PersonLabels } from "./labels.js";
 import type {
   NotReady,
   OnboardingPlan,
@@ -7,10 +8,11 @@ import type {
 } from "./onboarding.js";
 
 /**
- * The onboarding dry run, as `/hawkmod lifecycle onboarding` posts it. Person
- * IDs and reasons only, never a name or an address: it can be run in any
- * channel, and most of the people in it are minors. The requests themselves,
- * with the address to invite, go only to the onboarding channel.
+ * The onboarding dry run, as `/hawkmod lifecycle onboarding` replies with it:
+ * each person by Person ID, short name and role (`labels.ts`), and why. It is
+ * an ephemeral reply to the administrator who ran it, wherever they ran it.
+ * Never an address: most of the people in it are minors. The requests
+ * themselves, with the address to invite, go only to the onboarding channel.
  */
 
 const PROBLEM: Record<AccountProblem["kind"], string> = {
@@ -19,12 +21,14 @@ const PROBLEM: Record<AccountProblem["kind"], string> = {
     "it is an alias of another account; use that account's primary address",
 };
 
-function ids(requests: OnboardingRequest[]): string {
-  return requests.map((r) => r.personId).join(", ");
+function ids(requests: OnboardingRequest[], labels: PersonLabels): string {
+  return requests.map((r) => labelOf(labels, r.personId)).join(", ");
 }
 
 export function formatOnboarding(opts: {
   plan: OnboardingPlan;
+  /** Person ID → label, from the sheet (`personLabels`). */
+  labels: PersonLabels;
   asOf: IsoDate;
   slackAccounts: number;
   /** How many Google accounts were read, or why they could not be. */
@@ -36,7 +40,8 @@ export function formatOnboarding(opts: {
   /** Active mentors in Slack without CORI current: each a `cori_lapsed` alert. */
   slackWithoutCori?: readonly string[];
 }): string {
-  const { plan } = opts;
+  const { plan, labels } = opts;
+  const who = (personId: string) => labelOf(labels, personId);
   const of = <K extends OnboardingRequest["kind"]>(kind: K) =>
     plan.requests.filter(
       (r): r is Extract<OnboardingRequest, { kind: K }> => r.kind === kind
@@ -53,7 +58,7 @@ export function formatOnboarding(opts: {
   ];
   for (const r of google) {
     lines.push(
-      `  ${r.personId}: ${r.address ? "at the RHR Email on the sheet" : "no RHR Email on the sheet yet"}`
+      `  ${who(r.personId)}: ${r.address ? "at the RHR Email on the sheet" : "no RHR Email on the sheet yet"}`
     );
   }
 
@@ -71,25 +76,25 @@ export function formatOnboarding(opts: {
         ` (checked against ${opts.directory.count} Google accounts)`
     );
     for (const r of rhr)
-      lines.push(`  ${r.personId}: ${PROBLEM[r.problem.kind]}`);
+      lines.push(`  ${who(r.personId)}: ${PROBLEM[r.problem.kind]}`);
   }
 
   lines.push("", `Slack invites: ${invites.length}`);
   for (const role of ["mentor", "student"] as const) {
     const these = invites.filter((r) => r.role === role);
-    if (these.length) lines.push(`  ${role}s: ${ids(these)}`);
+    if (these.length) lines.push(`  ${role}s: ${ids(these, labels)}`);
   }
   if (reactivate.length) {
     lines.push(
       "",
       `Deactivated Slack accounts to reactivate: ${reactivate.length}`
     );
-    for (const r of reactivate) lines.push(`  ${r.personId} (${r.role})`);
+    for (const r of reactivate) lines.push(`  ${who(r.personId)}`);
   }
 
   lines.push("", `Not ready for Slack yet: ${plan.notReady.length}`);
   for (const n of plan.notReady as NotReady[]) {
-    lines.push(`  ${n.personId} (${n.role}): ${n.reason}`);
+    lines.push(`  ${who(n.personId)}: ${n.reason}`);
   }
 
   const withoutCori = opts.slackWithoutCori ?? [];
@@ -98,7 +103,7 @@ export function formatOnboarding(opts: {
     `Mentors in Slack without CORI current (each a cori_lapsed alert in the ` +
       `alert channel): ${withoutCori.length}`
   );
-  if (withoutCori.length) lines.push(`  ${withoutCori.join(", ")}`);
+  if (withoutCori.length) lines.push(`  ${withoutCori.map(who).join(", ")}`);
 
   lines.push(
     "",

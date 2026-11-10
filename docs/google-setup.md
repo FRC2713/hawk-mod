@@ -137,9 +137,12 @@ plan`). It changes nothing, anywhere. Expect:
   cleared (so not eligible for Slack) and why, and a list of sheet problems by Person ID. The
   sample people P0001–P0003 are ignored and reported until they're deleted.
 
-The output names Person IDs and counts only. The CLI's `--members` adds each
-group's addresses; most of those belong to minors, so keep that output to
-yourself. Slack never offers it.
+The output names each person by Person ID, short name and role, for example
+`P0101 Alex S. (Student)`, so a mistake can be spotted without opening the
+sheet. That is safe because, in Slack, the reply is ephemeral: only the
+administrator who ran it sees it. It never prints an address. The CLI's
+`--members` adds each group's addresses; most of those belong to minors, so
+keep that output to yourself. Slack never offers it.
 
 ## Part 2 — manage groups (step 4 onwards)
 
@@ -210,7 +213,9 @@ changes nothing. What it can say:
 - **"WRONG GROUP"** — the ID leads to a group with a different name: an ID on
   the wrong line. Nothing is applied to that group until it is fixed.
 - Otherwise, per group, who would join, who would leave on their own (a lead
-  or RA flag turned off), and who is held for a click, by Person ID.
+  or RA flag turned off), and who is held for a click, each by Person ID,
+  short name and role. A parent is named by their student (`parent of P0101
+Alex S. (Student)`), since hawk-mod never reads a contact's name.
 
 ## Part 3 — read user accounts (step 6 onwards)
 

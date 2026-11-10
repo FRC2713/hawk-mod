@@ -1,3 +1,4 @@
+import { labelOf, type PersonLabels } from "./labels.js";
 import type { SheetPerson } from "./sheet.js";
 
 /** The two tabs that carry a `Slack User ID` column. */
@@ -130,4 +131,35 @@ export function planSlackIds(
     if (found) return { ...target, kind: "write", slackUserId: found };
     return { ...target, kind: "not_in_slack" };
   });
+}
+
+const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {
+  write: "To fill in",
+  unchanged: "Already correct",
+  typed: "Typed by hand, trusted (Slack email differs)",
+  not_in_slack: "Not in Slack yet",
+  conflict: "Needs a person to look at",
+};
+
+/**
+ * The decisions as report lines, for `lifecycle slack-ids`: each person by
+ * Person ID, short name and role (`labels.ts`), with the cell. Never an
+ * address.
+ */
+export function formatSlackIds(
+  decisions: readonly SlackIdDecision[],
+  labels: PersonLabels
+): string[] {
+  const lines: string[] = [];
+  for (const kind of Object.keys(SLACK_ID_LABEL) as SlackIdDecision["kind"][]) {
+    const these = decisions.filter((d) => d.kind === kind);
+    lines.push(`${SLACK_ID_LABEL[kind]}: ${these.length}`);
+    for (const d of these) {
+      const where = `${labelOf(labels, d.personId)}, ${d.tab} row ${d.row}`;
+      if (d.kind === "write") lines.push(`  ${where} -> ${d.slackUserId}`);
+      else if (d.kind === "conflict") lines.push(`  ${where}: ${d.reason}`);
+      else if (d.kind === "not_in_slack") lines.push(`  ${where}`);
+    }
+  }
+  return lines;
 }

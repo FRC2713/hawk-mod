@@ -32,6 +32,7 @@ function mentor(personId: string, extra: { ra?: boolean } = {}): SheetPerson {
   return {
     personId,
     name: `Mentor ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "active",
     roles: ["Mentor"],

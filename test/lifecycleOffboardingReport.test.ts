@@ -11,11 +11,14 @@ import {
   type OffboardingPlan,
 } from "../src/domain/lifecycle/offboarding.js";
 import { formatOffboarding } from "../src/domain/lifecycle/offboardingReport.js";
+import { personLabels } from "../src/domain/lifecycle/labels.js";
 
 /**
  * Step 7, part 2: reading every group in the Workspace as hawk-mod@, and the
- * `/hawkmod lifecycle offboarding` dry run. The dry run can be posted in any
- * channel, so it names Person IDs and group names and never an address.
+ * `/hawkmod lifecycle offboarding` dry run. The dry run is an administrator's
+ * ephemeral reply, so it names each person by Person ID, short name and role
+ * (#74), and groups by name — never a full name, and never a person's address.
+ * (Names here are made up.)
  */
 
 /** A stand-in for Google: answers each request from a list, in order. */
@@ -177,9 +180,18 @@ const PLAN: OffboardingPlan = {
   ],
 };
 
+// P0050 is gone from the sheet, so it has no label: the report names them
+// from the roster's name instead.
+const LABELS = personLabels([
+  { personId: "P0012", shortName: "Pat M.", roles: ["Mentor"] },
+  { personId: "P0013", shortName: "Robin H.", roles: ["Volunteer"] },
+  { personId: "P0040", shortName: "Kid G.", roles: ["Alumni"] },
+]);
+
 function report(overrides: Partial<Parameters<typeof formatOffboarding>[0]>) {
   return formatOffboarding({
     plan: PLAN,
+    labels: LABELS,
     asOf: "2026-09-29",
     slackAccounts: 294,
     directory: { count: 22, admins: 5 },
@@ -199,21 +211,24 @@ function report(overrides: Partial<Parameters<typeof formatOffboarding>[0]>) {
 }
 
 describe("the offboarding dry run", () => {
-  it("lists each thing left behind by Person ID and reason", () => {
+  it("lists each thing left behind by Person ID, short name, role and reason", () => {
     const text = report({});
     assert.match(text, /dry run: nothing posted, nothing changed/);
-    assert.match(text, /Google accounts to suspend: 2\n {2}P0012: Inactive\n/);
     assert.match(
       text,
-      /P0013: now Volunteer — holds a Google admin role, so a Super Admin must remove it/
+      /Google accounts to suspend: 2\n {2}P0012 Pat M\. \(Mentor\): Inactive\n/
     );
     assert.match(
       text,
-      /Slack accounts to deactivate \(by hand\): 3\n {2}P0012: Inactive\n {2}P0040: now Alumni\n {2}P0050: Person ID no longer on the sheet/
+      /P0013 Robin H\. \(Volunteer\): now Volunteer — holds a Google admin role, so a Super Admin must remove it/
     );
     assert.match(
       text,
-      /Still in groups the sheet does not compute: 2\n {2}P0012 \(Inactive\): grp-orders \(owner\)\n {2}P0040 \(now Alumni\): grp-grants/
+      /Slack accounts to deactivate \(by hand\): 3\n {2}P0012 Pat M\. \(Mentor\): Inactive\n {2}P0040 Kid G\. \(Alumni\): now Alumni\n {2}P0050 Gone P\.: Person ID no longer on the sheet/
+    );
+    assert.match(
+      text,
+      /Still in groups the sheet does not compute: 2\n {2}P0012 Pat M\. \(Mentor\), Inactive: grp-orders \(owner\)\n {2}P0040 Kid G\. \(Alumni\), now Alumni: grp-grants/
     );
   });
 
@@ -229,7 +244,7 @@ describe("the offboarding dry run", () => {
     );
   });
 
-  it("never prints a name or an address", () => {
+  it("never prints a full name or an address", () => {
     const text = report({});
     for (const l of PLAN.leavers) assert.ok(!text.includes(l.name), l.name);
     assert.doesNotMatch(text, /@/);

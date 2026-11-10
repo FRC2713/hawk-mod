@@ -3,12 +3,15 @@ import { describe, it } from "node:test";
 import type { Person } from "../src/domain/people.js";
 import { planRoster } from "../src/domain/lifecycle/roster.js";
 import { formatRosterPlan } from "../src/domain/lifecycle/rosterReport.js";
+import { personLabels, shortNameOf } from "../src/domain/lifecycle/labels.js";
 import type { SheetPerson } from "../src/domain/lifecycle/sheet.js";
 
 /**
- * The dry run is posted into Slack and mostly describes minors, so it may name
- * Person IDs, roster rows, Slack IDs and dates, and never a name or an
- * address. This builds a plan that touches every section and checks the text.
+ * The dry run is an administrator's preview before Apply, and mostly
+ * describes minors. It names each person by Person ID, short name and role
+ * (#74), with roster rows, Slack IDs and dates — never a full name and never
+ * an address. This builds a plan that touches every section and checks the
+ * text. (Names here are made up.)
  */
 
 function rosterRow(id: number, overrides: Partial<Person>): Person {
@@ -42,6 +45,7 @@ function student(
   return {
     personId,
     name,
+    shortName: shortNameOf(name),
     personalEmail: `${name.split(" ")[0]!.toLowerCase()}@home.example`,
     status: "active",
     roles: ["Student"],
@@ -97,6 +101,8 @@ const roster: Person[] = [
     full_name: "Emery Vance",
     slack_user_id: "U4",
   }), // unmatched, refuses the first apply
+  // Gone from the sheet: named from the roster, with no role.
+  rosterRow(5, { person_id: "P0199", full_name: "Finley Van Der Berg" }),
 ];
 
 const plan = planRoster({
@@ -109,16 +115,23 @@ const plan = planRoster({
   firstApply: true,
 });
 
-const text = formatRosterPlan({ plan, roster, sheetProblems: 2, dryRun: true });
+const text = formatRosterPlan({
+  plan,
+  roster,
+  labels: personLabels(sheet),
+  sheetProblems: 2,
+  dryRun: true,
+});
 
 describe("roster dry run text", () => {
-  it("names no one and quotes no address", () => {
+  it("prints no full name and quotes no address", () => {
     for (const secret of [
-      "Avery",
-      "Blake",
-      "Casey",
-      "Drew",
-      "Emery",
+      "Quinn",
+      "Rowe",
+      "Stone",
+      "Tate",
+      "Vance",
+      "Van Der Berg",
       "@",
       "example",
     ]) {
@@ -132,15 +145,37 @@ describe("roster dry run text", () => {
   });
 
   it("lists every date that would be cleared, with the value it had", () => {
-    assert.match(text, /P0101 \(row 1\): Slack Consent 2027-08-01 -> blank/);
+    assert.match(
+      text,
+      /P0101 Blake R\. \(Student\), row 1: Slack Consent 2027-08-01 -> blank/
+    );
   });
 
   it("shows matches, new rows and every kind of question", () => {
-    assert.match(text, /row 1 -> P0101/);
-    assert.match(text, /P0100 student, not in Slack yet/);
-    assert.match(text, /P0102 \(row 2\) student: Inactive on the sheet/);
-    assert.match(text, /row 4, Slack U4 student: matches nobody on the sheet/);
-    assert.match(text, /\[Make adult\]: 1\n {4}P0103 \(row 3\)/);
+    assert.match(text, /row 1 -> P0101 Blake R\. \(Student\)\n/);
+    assert.match(
+      text,
+      /P0100 Avery Q\. \(Student\), student, not in Slack yet/
+    );
+    assert.match(
+      text,
+      /P0102 Casey S\. \(Student\), row 2 student: Inactive on the sheet/
+    );
+    assert.match(
+      text,
+      /Emery V\., row 4, Slack U4 student: matches nobody on the sheet/
+    );
+    assert.match(
+      text,
+      /\[Make adult\]: 1\n {4}P0103 Drew T\. \(Mentor\), row 3\n/
+    );
     assert.match(text, /2 sheet problem\(s\)/);
+  });
+
+  it("names a row the sheet no longer has from the roster, cut down", () => {
+    assert.match(
+      text,
+      /P0199 Finley V\., row 5 student: their Person ID is no longer on the sheet/
+    );
   });
 });

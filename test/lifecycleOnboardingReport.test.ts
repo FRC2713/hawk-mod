@@ -4,11 +4,13 @@ import type { JWT } from "google-auth-library";
 import { listDomainUsers, pageUsers } from "../src/google/directory.js";
 import type { OnboardingPlan } from "../src/domain/lifecycle/onboarding.js";
 import { formatOnboarding } from "../src/domain/lifecycle/onboardingReport.js";
+import { personLabels } from "../src/domain/lifecycle/labels.js";
 
 /**
  * Step 6, part 2: reading Google's user accounts as hawk-mod@, and the
- * `/hawkmod lifecycle onboarding` dry run. The dry run can be posted in any
- * channel, so it names Person IDs and never an address.
+ * `/hawkmod lifecycle onboarding` dry run. The dry run is an administrator's
+ * ephemeral reply, so it names each person by Person ID, short name and role
+ * (#74) — never a full name, and never an address. (Names here are made up.)
  */
 
 /** A stand-in for Google: answers each request from a list, in order. */
@@ -162,9 +164,20 @@ const PLAN: OnboardingPlan = {
   directoryChecked: true,
 };
 
+const LABELS = personLabels([
+  { personId: "P0042", shortName: "Jordan L.", roles: ["Mentor"] },
+  { personId: "P0073", shortName: "Alexa M.", roles: ["Mentor"] },
+  { personId: "P0043", shortName: "Sam P.", roles: ["Mentor", "Alumni"] },
+  { personId: "P0101", shortName: "Alex S.", roles: ["Student"] },
+  { personId: "P0102", shortName: "Casey S.", roles: ["Student"] },
+  // No name on the sheet: the ID once, and the role.
+  { personId: "P0004", shortName: null, roles: ["Mentor"] },
+]);
+
 function report(over: Partial<Parameters<typeof formatOnboarding>[0]> = {}) {
   return formatOnboarding({
     plan: PLAN,
+    labels: LABELS,
     asOf: "2026-09-29",
     slackAccounts: 120,
     directory: { count: 45 },
@@ -175,31 +188,40 @@ function report(over: Partial<Parameters<typeof formatOnboarding>[0]> = {}) {
 }
 
 describe("the onboarding dry run", () => {
-  it("lists every request and every reason, by Person ID", () => {
+  it("lists every request and every reason, by Person ID, short name and role", () => {
     const text = report();
     assert.match(text, /dry run: nothing posted/);
     assert.match(
       text,
-      /Google accounts to create \(Active mentors with no account yet\): 2\n {2}P0042: no RHR Email on the sheet yet\n {2}P0073: at the RHR Email on the sheet/
+      /Google accounts to create \(Active mentors with no account yet\): 2\n {2}P0042 Jordan L\. \(Mentor\): no RHR Email on the sheet yet\n {2}P0073 Alexa M\. \(Mentor\): at the RHR Email on the sheet/
     );
     assert.match(text, /suspended or an alias: 1 \(checked against 45/);
-    assert.match(text, /P0043: it is an alias of another account/);
     assert.match(
       text,
-      /Slack invites: 2\n {2}mentors: P0043\n {2}students: P0101/
+      /P0043 Sam P\. \(Mentor, Alumni\): it is an alias of another account/
     );
-    assert.match(text, /reactivate: 1\n {2}P0102 \(student\)/);
-    assert.match(text, /P0004 \(mentor\): no CORI Expiry on the sheet/);
+    assert.match(
+      text,
+      /Slack invites: 2\n {2}mentors: P0043 Sam P\. \(Mentor, Alumni\)\n {2}students: P0101 Alex S\. \(Student\)/
+    );
+    assert.match(text, /reactivate: 1\n {2}P0102 Casey S\. \(Student\)/);
+    assert.match(text, /\n {2}P0004 \(Mentor\): no CORI Expiry on the sheet/);
     assert.match(
       text,
       /Requests will go to #bot-onboarding-requests \(C0ONBOARD\)\.$/
     );
   });
 
-  it("never shows a name or an address", () => {
+  it("never shows a full name or an address", () => {
     const text = report();
     assert.doesNotMatch(text, /@/);
-    for (const name of ["Jordan", "Sam", "Alex", "Casey", "Alexa"]) {
+    for (const name of [
+      "Jordan Lee",
+      "Sam Park",
+      "Alex Student",
+      "Casey Student",
+      "Alexa Mentor",
+    ]) {
       assert.doesNotMatch(text, new RegExp(name));
     }
   });

@@ -63,6 +63,13 @@ which rows each kind of person gets. This skill is the safety wrapper around
   each download copied into its own new folder there. Delete them when the
   import is done. Files in the repo, commits, issues, PRs and memory get
   structure only. The repo is public.
+- **The dry-run replies the operator pastes name people.** Every lifecycle
+  preview shows each person as Person ID, short name and role, such as
+  `P0101 Alex S. (Student)`, and most of them are students. That is personal
+  data under the rule above: it stays in chat. Quote a Person ID, not the
+  name, in anything written to the repo, an issue or memory. Ask for each
+  reply whole, because "nothing else changed" can only be checked against all
+  of it. A long reply arrives as several messages; ask for every one.
 - **A fill only ever writes into a blank cell.** A cell that already holds a
   value keeps it. Where the source disagrees with that value, list it as a
   _difference_. If the operator decides the existing value is a mistake, the
@@ -91,6 +98,8 @@ which rows each kind of person gets. This skill is the safety wrapper around
      group sizes, and **every** sheet problem line.
    - `/hawkmod lifecycle groups`: record every join and hold **already
      pending**, so that gate 4 can tell this import's joins from older ones.
+     Record them by Person ID; the short name beside each is for checking,
+     not for keeping.
 
    Together they are the baseline.
 
@@ -287,7 +296,10 @@ again:
   top of the joins already pending in the baseline. Students join by School
   Email, guardians join `grp-parents`, and mentors join only once their CORI
   is current, which a fresh import usually leaves blank. **This is the check
-  on every guardian address.**
+  on every guardian address.** Each join shows the person's short name and
+  role, and a guardian's shows their student's (`parent of P0101 Alex S.
+(Student)`): check each one is the person the approved table expects, not
+  only the Person ID.
 - `onboarding`: only the requests the approved table implies.
 
 The hourly run at :20 then applies it.

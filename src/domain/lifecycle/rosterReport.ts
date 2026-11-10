@@ -1,4 +1,5 @@
 import type { Person } from "../people.js";
+import { labelOf, shortNameOf, type PersonLabels } from "./labels.js";
 import type {
   DateField,
   RosterChange,
@@ -10,11 +11,16 @@ import type {
 /**
  * The roster plan as text, for `/hawkmod lifecycle roster` and the CLI.
  *
- * It names roster rows, Person IDs, Slack User IDs, fields and dates — never
- * a name or an address. It is posted into Slack, and most of the people in it
- * are minors. What a field changes *to* is shown only for dates, and every
- * date that would be cleared is listed, because a cleared date is the one
- * change here that makes someone count as unscreened.
+ * It names each person by Person ID, short name and role (`labels.ts`), with
+ * their roster row where it helps, plus Slack User IDs, fields and dates. It
+ * is an ephemeral reply to an administrator, and the hourly run discards it;
+ * the name is there so whoever is about to apply it can check who it changes
+ * without opening the sheet. A row the sheet does not have — its Person ID
+ * gone, or none yet — is named from the roster's own name, cut down the same
+ * way, and is only `row N` when that is all there is. Never an address. What
+ * a field changes *to* is shown only for dates, and every date that would be
+ * cleared is listed, because a cleared date is the one change here that makes
+ * someone count as unscreened.
  */
 
 const DATE_LABEL: Record<DateField, string> = {
@@ -53,6 +59,8 @@ function section(lines: string[], title: string, items: string[], indent = "") {
 export function formatRosterPlan(args: {
   plan: RosterPlan;
   roster: readonly Person[];
+  /** Person ID → label, from the sheet (`personLabels`). */
+  labels: PersonLabels;
   /** Sheet problems the parser reported, by count; `lifecycle plan` lists them. */
   sheetProblems: number;
   /** True when nothing was applied; the heading says so. */
@@ -60,21 +68,22 @@ export function formatRosterPlan(args: {
 }): string {
   const { plan } = args;
   const rowById = new Map(args.roster.map((r) => [r.id, r]));
-  // A row with no Person ID yet is otherwise just a number; its Slack ID is
-  // something `/hawkmod whois` can turn into a person, without the report
-  // printing a name.
+  // A row with no Person ID yet is named from the roster; its Slack ID is
+  // something `/hawkmod whois` can turn into the whole person.
   const who = (personId: string | null, rosterId: number | null): string => {
-    const slack =
-      rosterId === null ? null : rowById.get(rosterId)?.slack_user_id;
-    const row =
-      rosterId === null
-        ? ""
-        : personId || !slack
-          ? `row ${rosterId}`
-          : `row ${rosterId}, Slack ${slack}`;
-    if (personId && row) return `${personId} (${row})`;
-    return personId ?? row;
+    const r = rosterId === null ? undefined : rowById.get(rosterId);
+    if (personId) {
+      const label = labelOf(args.labels, personId, r?.full_name);
+      return rosterId === null ? label : `${label}, row ${rosterId}`;
+    }
+    const parts = [
+      shortNameOf(r?.full_name),
+      rosterId === null ? null : `row ${rosterId}`,
+      r?.slack_user_id ? `Slack ${r.slack_user_id}` : null,
+    ].filter(Boolean);
+    return parts.join(", ");
   };
+  const label = (personId: string) => labelOf(args.labels, personId);
   const updates = plan.changes.filter((c): c is Update => c.kind === "update");
   const creates = plan.changes.filter((c): c is Create => c.kind === "create");
 
@@ -90,7 +99,7 @@ export function formatRosterPlan(args: {
     "Rows matched to a Person ID for the first time",
     updates
       .filter((u) => u.set.person_id)
-      .map((u) => `row ${u.rosterId} -> ${u.personId}`)
+      .map((u) => `row ${u.rosterId} -> ${label(u.personId)}`)
   );
 
   const students = creates.filter((c) => c.role === "student");
@@ -99,7 +108,7 @@ export function formatRosterPlan(args: {
     `New rows (${students.length} student, ${creates.length - students.length} adult)`,
     creates.map(
       (c) =>
-        `${c.personId} ${c.role}` +
+        `${label(c.personId)}, ${c.role}` +
         (c.slackUserId ? `, Slack ${c.slackUserId}` : ", not in Slack yet") +
         (c.email ? "" : ", no identity email on the sheet")
     )

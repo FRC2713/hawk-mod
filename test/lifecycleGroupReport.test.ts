@@ -3,14 +3,17 @@ import { afterEach, describe, it } from "node:test";
 import { planGoogleGroups } from "../src/domain/lifecycle/groupPlan.js";
 import { formatGroupPlans } from "../src/domain/lifecycle/groupReport.js";
 import { GOOGLE_GROUP_IDS, GROUPS } from "../src/domain/lifecycle/groups.js";
+import { personLabels } from "../src/domain/lifecycle/labels.js";
 import type { SheetPerson } from "../src/domain/lifecycle/sheet.js";
 import { googleActor, googleDomain } from "../src/google/credentials.js";
 import { pageAddresses } from "../src/google/directory.js";
 
 /**
- * The groups dry run is posted into Slack, and most of the people in these
- * groups are minors or their parents: Person IDs and counts only, unless the
- * CLI asks for addresses.
+ * The groups dry run is an administrator's preview before Apply: each person
+ * by Person ID, short name and role, so a wrong join can be spotted without
+ * opening the sheet (#74). Most of the people in these groups are minors or
+ * their parents, so never an address unless the CLI asks, and never a full
+ * name. (Names here are made up.)
  */
 
 const AS_OF = "2026-09-28";
@@ -22,6 +25,7 @@ function student(
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: null,
     personalEmail: `${personId.toLowerCase()}@home.example`,
     status: "active",
     roles: ["Student"],
@@ -40,8 +44,17 @@ function student(
 }
 
 const people = [
-  student("P0020", { parentEmails: ["mom@home.example"] }),
-  student("P0021", { status: "inactive" }),
+  student("P0020", {
+    name: "Alex Samplewood",
+    shortName: "Alex S.",
+    parentEmails: ["mom@home.example"],
+  }),
+  student("P0021", {
+    name: "Jordan Testerly",
+    shortName: "Jordan T.",
+    roles: ["Student", "Alumni"],
+    status: "inactive",
+  }),
 ];
 
 const plans = planGoogleGroups({
@@ -81,6 +94,7 @@ const report = (members: boolean) =>
       "grp-ra": { id: "02nusc193nukp6h" },
       "grp-volunteers": { id: "" },
     },
+    labels: personLabels(people),
     members,
     dryRun: true,
   });
@@ -90,19 +104,39 @@ const withoutGroupAddresses = (text: string) =>
   text.replace(/\([a-z-]+@team\.example, /g, "(");
 
 describe("groups dry run text", () => {
-  it("names Person IDs and counts, and no person's address, in Slack", () => {
+  it("names each person by Person ID, short name and role, and no address", () => {
     const text = report(false);
     assert.ok(!withoutGroupAddresses(text).includes("@"), text);
-    assert.match(text, /Would join: 1\n {6}P0020/);
-    assert.match(text, /P0021: Inactive on the sheet/);
+    assert.match(text, /Would join: 1\n {6}P0020 Alex S\. \(Student\)\n/);
+    assert.match(
+      text,
+      /P0021 Jordan T\. \(Student, Alumni\): Inactive on the sheet/
+    );
     assert.match(text, /Held, not on the sheet: 1 address\(es\)/);
-    assert.match(text, /parent of P0020/);
+  });
+
+  it("never prints a full name", () => {
+    const text = report(false);
+    assert.ok(!text.includes("Samplewood"), text);
+    assert.ok(!text.includes("Testerly"), text);
+  });
+
+  it("names a parent by their student, never by the contact", () => {
+    // Contacts' names are never read from the sheet, so the line names the
+    // student the parent belongs to.
+    assert.match(
+      report(false),
+      /grp-parents[^\n]*\n {4}Would join: 1\n {6}parent of P0020 Alex S\. \(Student\)\n/
+    );
   });
 
   it("lists addresses only when the CLI asks", () => {
     const text = report(true);
     assert.match(text, /<stranger@elsewhere\.example>/);
-    assert.match(text, /parent of P0020 <mom@home\.example>/);
+    assert.match(
+      text,
+      /parent of P0020 Alex S\. \(Student\) <mom@home\.example>/
+    );
   });
 
   it("shows each group's current address beside it", () => {

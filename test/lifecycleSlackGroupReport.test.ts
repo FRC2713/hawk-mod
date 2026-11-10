@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { personLabels } from "../src/domain/lifecycle/labels.js";
 import type { SheetPerson } from "../src/domain/lifecycle/sheet.js";
 import {
   formatSlackCopies,
@@ -15,15 +16,18 @@ import {
 /**
  * What `/hawkmod lifecycle slack-groups` prints: who would be added, removed
  * or held, each group's default channels, and — while SLACK_GROUP_IDS is
- * empty — every user group in Slack with its ID.
+ * empty — every user group in Slack with its ID. People are named as every
+ * lifecycle preview names them: Person ID, short name and role (#74), never
+ * the full name. (Names here are made up.)
  */
 
 const AS_OF = "2026-09-28";
 
-function student(personId: string): SheetPerson {
+function student(personId: string, first: string, last: string): SheetPerson {
   return {
     personId,
-    name: `Student ${personId}`,
+    name: `${first} ${last}`,
+    shortName: `${first} ${last[0]}.`,
     personalEmail: null,
     status: "active",
     roles: ["Student"],
@@ -41,9 +45,9 @@ function student(personId: string): SheetPerson {
 }
 
 const people = [
-  student("P0020"),
-  student("P0021"),
-  { ...student("P0022"), status: "inactive" as const },
+  student("P0020", "Alex", "Samplewood"),
+  student("P0021", "Jordan", "Testerly"),
+  { ...student("P0022", "Casey", "Unwin"), status: "inactive" as const },
 ];
 const slackIds = new Map([
   ["P0020", "U0020"],
@@ -76,8 +80,8 @@ function report(opts: {
       },
       { id: "S0OLD", handle: "old-team", name: "Old team", disabled: true },
     ],
-    names: new Map(people.map((p) => [p.personId, p.name])),
-    accounts: new Map([["UOTHER", "Someone Else"]]),
+    labels: personLabels(people),
+    accounts: new Map([["UOTHER", "Someone Elsewhere"]]),
     dryRun: true,
   });
 }
@@ -94,10 +98,21 @@ describe("the Slack groups dry run", () => {
   const text = report({ read: { "grp-students": students } });
 
   it("names who would be added and who is held, and why", () => {
-    assert.match(text, /Would add: 1\n {6}P0021 Student P0021/);
-    assert.match(text, /P0022 Student P0022: Inactive on the sheet/);
-    assert.match(text, /Someone Else \(UOTHER\): not on the sheet/);
+    assert.match(text, /Would add: 1\n {6}P0021 Jordan T\. \(Student\)\n/);
+    assert.match(text, /P0022 Casey U\. \(Student\): Inactive on the sheet/);
+    assert.match(text, /Someone E\. \(UOTHER\): not on the sheet/);
     assert.match(text, /Would add: 1 · would remove .*: 0 · held .*: 2/);
+  });
+
+  it("never prints a full name, a Slack account's included", () => {
+    for (const full of ["Samplewood", "Testerly", "Unwin", "Elsewhere"]) {
+      assert.ok(!text.includes(full), `report contains "${full}"`);
+    }
+  });
+
+  it("never prints an address", () => {
+    assert.ok(!text.includes("@school"), text);
+    assert.doesNotMatch(text, /[a-z0-9]@[a-z]/);
   });
 
   it("shows each group's default channels by name and ID", () => {

@@ -34,6 +34,7 @@ function mentor(personId: string, extra: Extra = {}): SheetPerson {
   return {
     personId,
     name: `Mentor ${personId}`,
+    shortName: null,
     personalEmail: `${id}@personal.example`,
     status: extra.status ?? "active",
     roles: extra.roles ?? ["Mentor"],
@@ -63,6 +64,7 @@ function student(personId: string, extra: Extra = {}): SheetPerson {
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: null,
     personalEmail: `${id}@personal.example`,
     status: extra.status ?? "active",
     roles: extra.roles ?? ["Student"],
@@ -86,6 +88,7 @@ function volunteer(personId: string, extra: Extra = {}): SheetPerson {
   return {
     personId,
     name: `Volunteer ${personId}`,
+    shortName: null,
     personalEmail: `${personId.toLowerCase()}@personal.example`,
     status: extra.status ?? "active",
     roles: extra.roles ?? ["Volunteer"],

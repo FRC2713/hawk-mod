@@ -5,14 +5,19 @@ import type {
   HeldReason,
   Member,
 } from "./groupPlan.js";
+import { labelOf, type PersonLabels } from "./labels.js";
 
 /**
  * The Google Groups plan as text, for `/hawkmod lifecycle groups` and the CLI.
  *
- * Names Person IDs and counts, never an address: it is posted into Slack, and
- * most of the people in these groups are minors or their parents. An address
- * the sheet does not account for has no Person ID, so it is counted, and the
- * CLI's `--members` — which Slack never offers — lists it.
+ * Names each person by Person ID, short name and role (`labels.ts`), so the
+ * administrator about to apply it can see who is joining without opening the
+ * sheet; it is an ephemeral reply to an administrator, and the hourly run
+ * discards it. Never an address: most of the people in these groups are
+ * minors or their parents. A parent is named by their student — contacts'
+ * names are never read from the sheet. An address the sheet does not account
+ * for has no Person ID, so it is counted, and the CLI's `--members` — which
+ * Slack never offers — lists it.
  */
 
 export const REASON: Record<HeldReason, string> = {
@@ -25,13 +30,19 @@ export const REASON: Record<HeldReason, string> = {
   parent_not_listed: "no Active student lists them as a parent",
 };
 
-function who(m: Member, group: GroupName, members: boolean): string {
+function who(
+  m: Member,
+  group: GroupName,
+  labels: PersonLabels,
+  members: boolean
+): string {
+  const people = m.personIds.map((id) => labelOf(labels, id)).join(", ");
   const ids =
     group === "grp-parents"
-      ? m.personIds.length
-        ? `parent of ${m.personIds.join(", ")}`
+      ? people
+        ? `parent of ${people}`
         : "a parent"
-      : m.personIds.join(", ") || "no Person ID";
+      : people || "no Person ID";
   return members ? `${ids} <${m.address}>` : ids;
 }
 
@@ -40,11 +51,12 @@ function list(
   title: string,
   items: Member[],
   group: GroupName,
+  labels: PersonLabels,
   members: boolean
 ) {
   if (!items.length) return;
   lines.push(`    ${title}: ${items.length}`);
-  for (const m of items) lines.push(`      ${who(m, group, members)}`);
+  for (const m of items) lines.push(`      ${who(m, group, labels, members)}`);
 }
 
 /** A group as read by its ID. */
@@ -68,11 +80,13 @@ export function formatGroupPlans(args: {
   found: Partial<Record<GroupName, FoundGroup>>;
   /** Groups not read: no ID configured, or no group has that ID. */
   missing: Partial<Record<GroupName, MissingGroup>>;
+  /** Person ID → label, from the sheet (`personLabels`). */
+  labels: PersonLabels;
   /** Print member addresses too. The CLI only; Slack never offers it. */
   members: boolean;
   dryRun: boolean;
 }): string {
-  const { plans, members } = args;
+  const { plans, labels, members } = args;
   // Only groups that were read, and are the group they should be, count.
   const counted = plans.filter((p) => {
     const f = args.found[p.group];
@@ -116,6 +130,7 @@ export function formatGroupPlans(args: {
       args.dryRun ? "Would join" : "Joining",
       plan.add,
       group,
+      labels,
       members
     );
     list(
@@ -123,6 +138,7 @@ export function formatGroupPlans(args: {
       args.dryRun ? "Would leave on their own" : "Leaving on their own",
       plan.automatic,
       group,
+      labels,
       members
     );
 
@@ -131,7 +147,9 @@ export function formatGroupPlans(args: {
     if (onSheet.length) {
       lines.push(`    Held for a click: ${onSheet.length}`);
       for (const h of onSheet as HeldMember[]) {
-        lines.push(`      ${who(h, group, members)}: ${REASON[h.reason]}`);
+        lines.push(
+          `      ${who(h, group, labels, members)}: ${REASON[h.reason]}`
+        );
       }
     }
     if (unknown.length) {

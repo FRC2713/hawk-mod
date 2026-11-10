@@ -16,8 +16,8 @@ import type { SlackAccount } from "./slackIds.js";
  * own either adds monitoring, or updates a fact — a name, an address, a date —
  * whose only effect on the rules is to make them stricter when it is blank.
  *
- * Output names Person IDs and roster ids, never an address: it is printed into
- * Slack, and most of the people in it are minors.
+ * Output (`rosterReport.ts`) names Person IDs, short names and roster ids,
+ * never an address: most of the people in it are minors.
  */
 
 /** The requirement dates the sheet owns, by the roster column they land in. */

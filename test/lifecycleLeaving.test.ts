@@ -31,6 +31,7 @@ function student(
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "active",
     roles: ["Student"],

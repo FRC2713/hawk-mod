@@ -1,4 +1,5 @@
 import { REASON } from "./groupReport.js";
+import { labelOf, shortNameOf, type PersonLabels } from "./labels.js";
 import {
   SLACK_GROUP_IDS,
   type SlackCopy,
@@ -9,10 +10,11 @@ import {
 
 /**
  * The Slack copies' plan as text, for `/hawkmod lifecycle slack-groups` and
- * the CLI. It goes only to an administrator, so it names people — Person ID
- * and name, and for an account the sheet does not know, its Slack name —
- * which is what they need to act on it. There are no addresses to hide: a
- * Slack group holds accounts.
+ * the CLI. It goes only to an administrator, so it names people the way every
+ * lifecycle preview does — Person ID, short name and role (`labels.ts`), and
+ * for an account the sheet does not know, its Slack name cut down the same
+ * way, with its Slack ID — which is what they need to act on it. There are no
+ * addresses to hide: a Slack group holds accounts.
  */
 
 /** A copy's Slack group as read for this report. */
@@ -45,8 +47,8 @@ export function formatSlackCopies(args: {
   /** Copies whose group Slack has only as disabled. */
   disabled: ReadonlySet<SlackCopy>;
   workspace: readonly ListedGroup[];
-  /** Person ID → name, from the sheet. */
-  names: ReadonlyMap<string, string>;
+  /** Person ID → label, from the sheet (`personLabels`). */
+  labels: PersonLabels;
   /** Slack user ID → name, for accounts the sheet does not know. */
   accounts: ReadonlyMap<string, string>;
   dryRun: boolean;
@@ -56,8 +58,8 @@ export function formatSlackCopies(args: {
 
   const who = (m: SlackMember) =>
     m.personId
-      ? `${m.personId} ${args.names.get(m.personId) ?? ""}`.trim()
-      : `${args.accounts.get(m.slackUserId) ?? "an account"} (${m.slackUserId})`;
+      ? labelOf(args.labels, m.personId)
+      : `${shortNameOf(args.accounts.get(m.slackUserId)) ?? "an account"} (${m.slackUserId})`;
 
   const counted = plans.filter((p) => read[p.copy]);
   const total = (f: (p: SlackCopyPlan) => unknown[]) =>
