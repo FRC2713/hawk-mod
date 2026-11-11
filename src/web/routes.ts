@@ -1,8 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { randomBytes } from "node:crypto";
 import { WebClient } from "@slack/web-api";
 import type { CustomRoute } from "@slack/bolt";
-import { APP_NAME } from "../brand.js";
 import { config } from "../config.js";
 import { anyBotInstallation, setSetting } from "../db/repo.js";
 import { rescheduleReports } from "../jobs/schedule.js";
@@ -18,31 +16,20 @@ import {
   messagePage,
   type SettingRow,
 } from "./pages.js";
-import {
-  parseCookies,
-  SESSION_COOKIE,
-  SESSION_PURPOSE,
-  signToken,
-  STATE_PURPOSE,
-  verifyToken,
-  type Session,
-} from "./session.js";
 import { readSuiteHeaders } from "./suiteSession.js";
 
 /**
  * The browser-facing routes: a landing page anyone may read, and a
- * configuration page accepting local Slack sign-in or a trusted gateway identity.
+ * configuration page for administrators.
  *
- * The sign-in is OpenID Connect against the same Slack app — no new
- * credentials, no password, no user table. Slack says who is asking; whether
- * they may configure anything is then the same question every Slack entry
- * point asks, answered by the same `administrator()` — Workspace Owners and
- * Admins, read live. The cookie only carries identity; authority is re-checked
- * on every request, so losing Slack admin locks this page within a minute.
+ * Who is asking comes from hawk_suite's sign-in gateway and nothing else:
+ * Caddy verifies the suite session and passes the Slack identity in trusted
+ * headers (web/suiteSession.ts). hawk-mod runs no sign-in of its own and sets
+ * no cookies. Whether that person may configure anything is then the same
+ * question every Slack entry point asks, answered by the same
+ * `administrator()` — Workspace Owners and Admins, read live on every request,
+ * so losing Slack admin locks this page within a minute.
  */
-
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-const STATE_TTL_MS = 10 * 60 * 1000;
 
 function html(res: ServerResponse, code: number, body: string): void {
   res.writeHead(code, {
@@ -57,50 +44,35 @@ function redirect(res: ServerResponse, to: string): void {
   res.end();
 }
 
-function setSessionCookie(res: ServerResponse, token: string | null): void {
-  const secure = config().PUBLIC_URL.startsWith("https:") ? "; Secure" : "";
-  res.setHeader(
-    "set-cookie",
-    token
-      ? `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax` +
-          `; Max-Age=${SESSION_TTL_MS / 1000}${secure}`
-      : `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`
-  );
-}
-
 /**
  * The signed-in administrator, or `null` after this has already answered the
- * request — with a redirect into sign-in when there is no session, or a
- * refusal when there is one but its holder is not an Owner/Admin.
+ * request — with a redirect to the suite portal when the gateway's identity is
+ * missing, or a refusal when its holder is not an Owner/Admin.
  */
 async function requireAdministrator(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<Actor | null> {
   const cfg = config();
-  const cookies = parseCookies(req.headers.cookie);
-  const suite = cfg.HAWK_SUITE_TRUST_PROXY
-    ? readSuiteHeaders(
-        req.headersDistinct ?? req.headers,
-        cfg.HAWK_SUITE_TEAM_ID!
-      )
-    : undefined;
-  const token = cookies.get(SESSION_COOKIE);
-  const own = token
-    ? verifyToken<Session>(
-        SESSION_PURPOSE,
-        token,
-        cfg.SLACK_STATE_SECRET,
-        Date.now()
-      )
-    : null;
-  if (!suite && !own) {
-    redirect(
+  if (!cfg.HAWK_SUITE_TRUST_PROXY) {
+    html(
       res,
-      cfg.HAWK_SUITE_TRUST_PROXY
-        ? new URL("auth/", cfg.HAWK_SUITE_ISSUER!).href
-        : "/auth/slack"
+      200,
+      messagePage(
+        "Use Slack to configure",
+        "<p>Web sign-in comes from Hawk Suite, which this server is not " +
+          "behind. <code>/hawkmod config</code> in Slack shows and edits the " +
+          "same settings.</p>"
+      )
     );
+    return null;
+  }
+  const suite = readSuiteHeaders(
+    req.headersDistinct ?? req.headers,
+    cfg.HAWK_SUITE_TEAM_ID!
+  );
+  if (!suite) {
+    redirect(res, new URL("auth/", cfg.HAWK_SUITE_ISSUER!).href);
     return null;
   }
   const installedTeam = anyBotInstallation()?.teamId;
@@ -108,15 +80,9 @@ async function requireAdministrator(
     html(res, 503, messagePage("Not installed yet", `<p>${APPROVAL_HINT}</p>`));
     return null;
   }
-  // Prefer a matching suite identity. A foreign cookie must not mask a valid
-  // local session, and neither kind may authenticate another workspace.
-  const slackUserId =
-    suite?.teamId === installedTeam
-      ? suite.userId
-      : own?.teamId === installedTeam
-        ? own.slackUserId
-        : undefined;
-  if (!slackUserId) {
+  // The gateway admits its configured team; that must also be the team this
+  // app is installed in, or the sign-in proves nothing here.
+  if (suite.teamId !== installedTeam) {
     html(
       res,
       403,
@@ -130,7 +96,7 @@ async function requireAdministrator(
 
   let actor: Actor | null;
   try {
-    actor = await administrator(botClient(), slackUserId);
+    actor = await administrator(botClient(), suite.userId);
   } catch (err) {
     // botClient() throws until the app is installed somewhere; there is
     // nothing to configure yet either way.
@@ -139,7 +105,6 @@ async function requireAdministrator(
     return null;
   }
   if (!actor) {
-    setSessionCookie(res, null);
     html(res, 403, messagePage("Not permitted", `<p>${NOT_PERMITTED}</p>`));
     return null;
   }
@@ -179,6 +144,7 @@ async function handleConfigGet(
     configPage({
       rows: await settingRows(botClient()),
       signedInAs: actor.name,
+      signOutUrl: new URL("auth/logout", config().HAWK_SUITE_ISSUER!).href,
       notice: ok
         ? { ok: true, text: ok }
         : err
@@ -270,117 +236,6 @@ async function handleConfigPost(
   redirect(res, `/config?ok=${encodeURIComponent(note)}`);
 }
 
-/** Sends the browser to Slack's OpenID authorize screen, with a signed state. */
-function signinHandler(_req: IncomingMessage, res: ServerResponse): void {
-  const cfg = config();
-  const state = signToken(
-    STATE_PURPOSE,
-    {
-      nonce: randomBytes(16).toString("base64url"),
-      expiresAt: Date.now() + STATE_TTL_MS,
-    },
-    cfg.SLACK_STATE_SECRET
-  );
-  const url = new URL("https://slack.com/openid/connect/authorize");
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", cfg.SLACK_CLIENT_ID);
-  url.searchParams.set("scope", "openid");
-  url.searchParams.set("redirect_uri", `${cfg.PUBLIC_URL}/auth/slack/callback`);
-  url.searchParams.set("state", state);
-  // Pins the consent screen to the installed workspace when there is one.
-  const team = anyBotInstallation()?.teamId;
-  if (team) url.searchParams.set("team", team);
-  res.writeHead(302, { location: url.toString() });
-  res.end();
-}
-
-async function callbackHandler(
-  req: IncomingMessage,
-  res: ServerResponse
-): Promise<void> {
-  const cfg = config();
-  const url = new URL(req.url ?? "/", cfg.PUBLIC_URL);
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-
-  const stateOk =
-    state &&
-    verifyToken(STATE_PURPOSE, state, cfg.SLACK_STATE_SECRET, Date.now());
-  if (!code || !stateOk) {
-    // Ten-minute links expire; same answer the enrolment flow gives.
-    html(
-      res,
-      400,
-      messagePage(
-        "That link expired",
-        "<p>Sign-in links are good for ten minutes. " +
-          '<a href="/auth/slack">Start again</a> — nothing was changed.</p>'
-      )
-    );
-    return;
-  }
-
-  try {
-    const exchange = await new WebClient().openid.connect.token({
-      client_id: cfg.SLACK_CLIENT_ID,
-      client_secret: cfg.SLACK_CLIENT_SECRET,
-      code,
-      redirect_uri: `${cfg.PUBLIC_URL}/auth/slack/callback`,
-    });
-    const identity = await new WebClient(
-      exchange.access_token
-    ).openid.connect.userInfo();
-    const slackUserId = identity["https://slack.com/user_id"];
-    const teamId = identity["https://slack.com/team_id"];
-    if (!slackUserId || !teamId) throw new Error("no identity in OIDC reply");
-
-    // Sign-in from some other workspace is a stranger with a Slack account,
-    // whatever flags their own workspace gives them.
-    const installedTeam = anyBotInstallation()?.teamId;
-    if (!installedTeam || teamId !== installedTeam) {
-      html(
-        res,
-        403,
-        messagePage(
-          "Wrong workspace",
-          `<p>That Slack account is not in the workspace ${APP_NAME} is ` +
-            "installed in.</p>"
-        )
-      );
-      return;
-    }
-
-    const actor = await administrator(botClient(), slackUserId);
-    if (!actor) {
-      html(res, 403, messagePage("Not permitted", `<p>${NOT_PERMITTED}</p>`));
-      return;
-    }
-
-    const session: Session = {
-      slackUserId,
-      teamId,
-      expiresAt: Date.now() + SESSION_TTL_MS,
-    };
-    setSessionCookie(
-      res,
-      signToken(SESSION_PURPOSE, session, cfg.SLACK_STATE_SECRET)
-    );
-    redirect(res, "/config");
-    log.info("administrator signed in to web config", { slackUserId });
-  } catch (err) {
-    log.error("web sign-in failed", { error: String(err) });
-    html(
-      res,
-      500,
-      messagePage(
-        "Sign-in failed",
-        "<p>Nothing was changed. The server log has the detail; " +
-          '<a href="/auth/slack">trying again</a> is safe.</p>'
-      )
-    );
-  }
-}
-
 export const webRoutes: CustomRoute[] = [
   {
     path: "/",
@@ -396,28 +251,6 @@ export const webRoutes: CustomRoute[] = [
       if (!actor) return;
       if (req.method === "POST") await handleConfigPost(req, res, actor);
       else await handleConfigGet(req, res, actor);
-    },
-  },
-  { path: "/auth/slack", method: ["GET"], handler: signinHandler },
-  { path: "/auth/slack/callback", method: ["GET"], handler: callbackHandler },
-  {
-    path: "/auth/signout",
-    method: ["GET"],
-    handler: (req, res) => {
-      setSessionCookie(res, null);
-      const cfg = config();
-      const fromSuite =
-        cfg.HAWK_SUITE_TRUST_PROXY &&
-        readSuiteHeaders(
-          req.headersDistinct ?? req.headers,
-          cfg.HAWK_SUITE_TEAM_ID!
-        );
-      redirect(
-        res,
-        fromSuite && cfg.HAWK_SUITE_ISSUER
-          ? new URL("auth/logout", cfg.HAWK_SUITE_ISSUER!).href
-          : "/"
-      );
     },
   },
 ];

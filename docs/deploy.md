@@ -100,13 +100,13 @@ before setup — running and waiting.
 
 The root URL serves a landing page — what a person who types the domain into a
 browser should see — with the enrollment link and a link to `/config`, a
-configuration page equivalent to `/hawkmod config`. It uses Sign in with Slack
-(OpenID Connect, identity only — no scopes, no stored token) and then applies
-the same rule as every other entry point: workspace Owners and Admins only.
-Both redirect URLs in the manifest must be registered or the matching flow
-fails at Slack before anyone sees a consent screen:
-`/slack/oauth_redirect` for installs and enrollment, `/auth/slack/callback`
-for sign-in.
+configuration page equivalent to `/hawkmod config`. Sign-in is hawk_suite's
+gateway, which passes the Slack identity in trusted headers; the page then
+applies the same rule as every other entry point: workspace Owners and Admins
+only. Without the gateway the page points at `/hawkmod config`. The manifest's
+one redirect URL, `/slack/oauth_redirect`, serves installs and enrollment and
+must be registered or that flow fails at Slack before anyone sees a consent
+screen.
 
 ## Upgrades
 

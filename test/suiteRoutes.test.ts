@@ -9,7 +9,6 @@ import { WebClient } from "@slack/web-api";
 import { saveInstallation, createPersonFromSheet } from "../src/db/repo.js";
 import { forgetAuthorization } from "../src/slack/authz.js";
 import { webRoutes } from "../src/web/routes.js";
-import { SESSION_PURPOSE, signToken } from "../src/web/session.js";
 
 const directory = mkdtempSync(join(tmpdir(), "hawk-mod-suite-"));
 const issuer = "https://apps.suite.test/";
@@ -90,11 +89,6 @@ function suite(overrides: Record<string, string> = {}): Record<string, string> {
     ...overrides,
   };
 }
-function own(teamId = "TTEAM"): Record<string, string> {
-  return {
-    cookie: `hawkmod_session=${signToken(SESSION_PURPOSE, { slackUserId: "UADMIN", teamId, expiresAt: Date.now() + 60_000 }, secret)}`,
-  };
-}
 function request(
   headers: Record<string, string>,
   extra: RequestInit = {}
@@ -132,22 +126,7 @@ it("refuses a foreign workspace before consulting Slack", async () => {
     ).status,
     303
   );
-  assert.equal((await request(own("TOTHER"))).status, 403);
   assert.equal(calls, 0);
-});
-it("keeps local sessions usable when a foreign suite identity is present", async () => {
-  assert.equal(
-    (
-      await request({
-        ...suite({
-          "x-token-subject": "slack:TOTHER:UADMIN",
-          "x-hawk-slack-team": "TOTHER",
-        }),
-        ...own(),
-      })
-    ).status,
-    200
-  );
 });
 it("ignores identity headers and redirects invalid suite identity to the portal", async () => {
   const res = await request(suite({ "x-token-user-roles": "admin" }), {
@@ -191,13 +170,10 @@ it("allows an authenticated settings POST with the matching Origin", async () =>
   assert.equal(res.status, 303);
   assert.match(res.headers.get("location")!, /^\/config\?ok=/);
 });
-it("clears the local session and sends suite sign-out to the gateway", async () => {
-  const res = await fetch(`${base}/auth/signout`, {
-    redirect: "manual",
-    headers: suite(),
-  });
-  assert.equal(res.headers.get("location"), `${issuer}auth/logout`);
-  assert.match(res.headers.get("set-cookie")!, /hawkmod_session=;.*Max-Age=0/);
+it("signs out at the gateway", async () => {
+  const res = await request(suite());
+  assert.ok((await res.text()).includes(`href="${issuer}auth/logout"`));
+  assert.equal(res.headers.get("set-cookie"), null);
 });
 
 it("refuses a student even when Slack grants them admin rights", async () => {

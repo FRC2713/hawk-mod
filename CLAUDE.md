@@ -264,16 +264,14 @@ the 1:1 still happened.
 
 **The browser gets two pages, and the second is the same door as Slack.**
 `src/web/` serves a landing page at `/` and a configuration page at `/config`
-(this is what mod.redhawkrobotics.org shows). `/config` accepts trusted Hawk Suite headers when explicitly enabled,
-or signs people in with Slack — OpenID Connect against the same app, identity only, no stored token —
-and then asks `administrator()` exactly as the slash command does, on every
-request, so the cookie only says _who_ and losing Slack admin locks the page
-within a minute. Writes go through `slack/settingsAdmin.ts`, the one
+(this is what mod.redhawkrobotics.org shows). `/config` takes its identity
+from hawk_suite's sign-in gateway, as trusted headers (`web/suiteSession.ts`),
+and from nothing else — hawk-mod runs no sign-in of its own and sets no
+cookies. Without the gateway it points at `/hawkmod config`. It then asks
+`administrator()` exactly as the slash command does, on every request, so the
+gateway only says _who_ and losing Slack admin locks the page within a minute. Writes go through `slack/settingsAdmin.ts`, the one
 implementation of setting validation shared with `/hawkmod config set`; keep it
-that way, or a value one door refuses becomes reachable through the other. The
-session cookie and OAuth state are stateless HMAC tokens (`web/session.ts`,
-signed with `SLACK_STATE_SECRET`, purpose-bound so one kind can never replay as
-the other). Every string a page interpolates goes through `esc()` — setting
+that way, or a value one door refuses becomes reachable through the other. Every string a page interpolates goes through `esc()` — setting
 values and display names are whatever their owner typed.
 
 **The lifecycle sheet is the source of people** (the scope and build order
