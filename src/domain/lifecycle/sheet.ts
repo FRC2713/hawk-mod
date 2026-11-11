@@ -1,5 +1,6 @@
 import type { IsoDate } from "../dates.js";
 import { addressKey } from "./address.js";
+import { shortName } from "./labels.js";
 import type { Header, SheetData, SheetRow, SheetTab } from "./schema.js";
 
 /**
@@ -63,6 +64,13 @@ export type SheetPerson = {
   personId: string;
   /** Preferred first name (else legal) and legal last name. */
   name: string;
+  /**
+   * `Alex S.`: the same first name and the last name's initial, built from
+   * the two cells rather than from `name`, whose last name may be several
+   * words. What the previews print (`labels.ts`). Null when the row has no
+   * name, so a report never prints the Person ID twice.
+   */
+  shortName: string | null;
   personalEmail: string | null;
   status: SheetStatus;
   roles: SheetRole[];
@@ -325,6 +333,7 @@ export function parseSheet(data: SheetData): ParsedSheet {
     people.set(id, {
       personId: id,
       name: name || id,
+      shortName: shortName(first, row["Legal Last Name"]),
       personalEmail: email(
         row["Personal Email"],
         "Personal Email",

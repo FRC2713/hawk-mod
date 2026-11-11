@@ -47,6 +47,7 @@ import {
   syncNow,
   slackIdsReport,
 } from "../lifecycle/run.js";
+import { fencedReplies, MAX_REPLIES } from "./replyChunks.js";
 
 const HELP = [
   `*${APP_NAME}*`,
@@ -293,10 +294,10 @@ export function registerCommands(app: App): void {
                               applyHint: "/hawkmod lifecycle slack-ids apply",
                               by: caller.name,
                             });
-          await respond({
-            response_type: "ephemeral",
-            text: "```" + report + "```",
-          });
+          // "Reading the lifecycle sheet…" used one of the five responses.
+          for (const text of fencedReplies(report, { max: MAX_REPLIES - 1 })) {
+            await respond({ response_type: "ephemeral", text });
+          }
           return;
         }
 

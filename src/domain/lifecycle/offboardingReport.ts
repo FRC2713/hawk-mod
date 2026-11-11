@@ -1,5 +1,6 @@
 import type { IsoDate } from "../dates.js";
 import { maskAddress } from "./heldMembers.js";
+import { labelOf, type PersonLabels } from "./labels.js";
 import type {
   DomainGroup,
   Leaver,
@@ -9,14 +10,15 @@ import type {
 } from "./offboarding.js";
 
 /**
- * The offboarding dry run, as `/hawkmod lifecycle offboarding` posts it.
- * Person IDs, reasons and group names only — never a name, and never an
- * address anyone might have given as their own: it can be run in any
- * channel, and some of the people leaving are minors. Two exceptions, both
- * for things the sheet cannot name: a Google account nobody accounts for is
- * shown by its address, since every one is a Red Hawk team account, and an
- * outsider in a group is shown partly hidden (`k…@gmail.com`), as held
- * members are.
+ * The offboarding dry run, as `/hawkmod lifecycle offboarding` replies with
+ * it: each person by Person ID, short name and role (`labels.ts`; someone the
+ * sheet no longer has, by the roster's name cut down the same way), with
+ * reasons and group names. It is an ephemeral reply to the administrator who
+ * ran it. Never an address anyone might have given as their own: some of the
+ * people leaving are minors. Two exceptions, both for things the sheet cannot
+ * name: a Google account nobody accounts for is shown by its address, since
+ * every one is a Red Hawk team account, and an outsider in a group is shown
+ * partly hidden (`k…@gmail.com`), as held members are.
  */
 
 export function reasonText(r: OffboardingReason): string {
@@ -54,6 +56,8 @@ function groupsOf(l: Leaver): string {
 
 export function formatOffboarding(opts: {
   plan: OffboardingPlan;
+  /** Person ID → label, from the sheet (`personLabels`). */
+  labels: PersonLabels;
   asOf: IsoDate;
   slackAccounts: number;
   /** How many Google accounts were read and how many are admins, or why not. */
@@ -66,6 +70,7 @@ export function formatOffboarding(opts: {
   suspend?: { ok: true } | { error: string };
 }): string {
   const { leavers } = opts.plan;
+  const who = (l: Leaver) => labelOf(opts.labels, l.personId, l.name);
   const google = leavers.filter((l) => l.google);
   const slack = leavers.filter((l) => l.slack);
   const grouped = leavers.filter((l) => l.groups.length);
@@ -84,7 +89,7 @@ export function formatOffboarding(opts: {
     lines.push(`Google accounts to suspend: ${google.length}`);
     for (const l of google) {
       lines.push(
-        `  ${l.personId}: ${reasonText(l.reason)}` +
+        `  ${who(l)}: ${reasonText(l.reason)}` +
           (l.google!.admin
             ? " — holds a Google admin role, so a Super Admin must remove " +
               "it before hawk-mod can suspend the account"
@@ -95,7 +100,7 @@ export function formatOffboarding(opts: {
 
   lines.push("", `Slack accounts to deactivate (by hand): ${slack.length}`);
   for (const l of slack) {
-    lines.push(`  ${l.personId}: ${reasonText(l.reason)}`);
+    lines.push(`  ${who(l)}: ${reasonText(l.reason)}`);
   }
 
   lines.push("");
@@ -107,7 +112,7 @@ export function formatOffboarding(opts: {
   } else {
     lines.push(`Still in groups the sheet does not compute: ${grouped.length}`);
     for (const l of grouped) {
-      lines.push(`  ${l.personId} (${reasonText(l.reason)}): ${groupsOf(l)}`);
+      lines.push(`  ${who(l)}, ${reasonText(l.reason)}: ${groupsOf(l)}`);
     }
   }
 

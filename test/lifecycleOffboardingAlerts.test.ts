@@ -394,6 +394,7 @@ describe("suspending and restoring in Google", () => {
   it("the dry run says whether the delegation is in place", () => {
     const base = {
       plan: { leavers: [], directoryChecked: true, groupsChecked: true },
+      labels: new Map(),
       asOf: "2026-09-29",
       slackAccounts: 1,
       directory: { count: 1, admins: 0 },

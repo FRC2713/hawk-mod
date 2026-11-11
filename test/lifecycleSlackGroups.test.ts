@@ -30,6 +30,7 @@ function mentor(
   return {
     personId,
     name: `Mentor ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "active",
     roles: ["Mentor"],
@@ -60,6 +61,7 @@ function student(
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "active",
     roles: ["Student"],

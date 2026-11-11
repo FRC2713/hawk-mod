@@ -1,13 +1,12 @@
 import type { WebClient } from "@slack/web-api";
 import { today } from "../domain/dates.js";
-import { planLifecycle, type LifecyclePlan } from "../domain/lifecycle/plan.js";
+import { planLifecycle } from "../domain/lifecycle/plan.js";
 import { planRoster } from "../domain/lifecycle/roster.js";
 import { formatRosterPlan } from "../domain/lifecycle/rosterReport.js";
 import { parseSheet } from "../domain/lifecycle/sheet.js";
-import {
-  planSlackIds,
-  type SlackIdDecision,
-} from "../domain/lifecycle/slackIds.js";
+import { formatSlackIds, planSlackIds } from "../domain/lifecycle/slackIds.js";
+import { labelOf, personLabels } from "../domain/lifecycle/labels.js";
+import { formatPlan } from "../domain/lifecycle/planReport.js";
 import {
   googleActor,
   googleEnv,
@@ -162,9 +161,10 @@ import {
  * implementation means the dry run seen in Slack is the dry run that was
  * tested from a laptop.
  *
- * Output names Person IDs, rows and counts, never a name or an address — it is
- * posted into Slack, and most of the people in it are minors. The CLI's
- * `--members` is the one exception, and Slack never offers it.
+ * Output names each person by Person ID, short name and role (`labels.ts`),
+ * never by address: in Slack it is an ephemeral reply to an administrator,
+ * and the hourly runs discard it. The CLI's `--members` is the one place an
+ * address is printed, and Slack never offers it.
  */
 
 function requireGoogle() {
@@ -179,59 +179,6 @@ function requireGoogle() {
   return { ...env, sheetId: env.sheetId };
 }
 
-function formatPlan(plan: LifecyclePlan, members: boolean): string {
-  const { people } = plan;
-  const count = (o: Record<string, number>) =>
-    Object.entries(o)
-      .map(([k, n]) => `${k} ${n}`)
-      .join(", ");
-  const lines = [
-    `Lifecycle plan as of ${plan.asOf} (dry run: nothing changed)`,
-    "",
-    `People: ${people.total} (${count(people.byStatus)})`,
-    `Roles:  ${count(people.byRole)}`,
-    "",
-    "Groups, as the sheet computes them:",
-  ];
-  for (const g of plan.groups) {
-    lines.push(`  ${g.name.padEnd(18)} ${g.members.length}`);
-    if (members) for (const m of g.members) lines.push(`      ${m}`);
-  }
-  if (plan.noAccess.length) {
-    lines.push(
-      "",
-      "Active mentors without CORI current (join no group; not invited to Slack):"
-    );
-    for (const m of plan.noAccess) lines.push(`  ${m.personId}: ${m.why}`);
-  }
-  if (plan.notCleared.length) {
-    lines.push(
-      "",
-      "Active mentors not screened (do not count toward the two-adult rule):"
-    );
-    for (const m of plan.notCleared) {
-      lines.push(`  ${m.personId}: ${m.missing.join(", ")}`);
-    }
-  }
-  if (plan.noAddress.length) {
-    lines.push("", `No email to add to groups: ${plan.noAddress.join(", ")}`);
-  }
-  if (plan.noParentEmail.length) {
-    lines.push(
-      "",
-      `Active students with no parent email for grp-parents: ${plan.noParentEmail.join(", ")}`
-    );
-  }
-  lines.push("", `Sheet problems: ${plan.problems.length}`);
-  for (const p of plan.problems) {
-    const where = p.row ? `${p.tab} row ${p.row}` : p.tab;
-    lines.push(
-      `  ${where}${p.personId ? `, ${p.personId}` : ""}: ${p.message}`
-    );
-  }
-  return lines.join("\n");
-}
-
 /** Reads the sheet and describes it. Changes nothing, anywhere. */
 export async function lifecyclePlanReport(
   opts: { members?: boolean } = {}
@@ -239,8 +186,10 @@ export async function lifecyclePlanReport(
   const env = requireGoogle();
   const client = serviceAccountClient(env, [SHEETS_READONLY]);
   const data = await readLifecycleSheet(client, env.sheetId);
+  const parsed = parseSheet(data);
   return formatPlan(
-    planLifecycle(parseSheet(data), today()),
+    planLifecycle(parsed, today()),
+    personLabels(parsed.people),
     opts.members ?? false
   );
 }
@@ -297,6 +246,7 @@ export async function rosterReport(opts: {
   const text = formatRosterPlan({
     plan,
     roster,
+    labels: personLabels(parsed.people),
     sheetProblems: parsed.problems.length,
     dryRun: !opts.apply,
   });
@@ -489,7 +439,7 @@ export async function slackGroupsReport(opts: {
     read,
     disabled,
     workspace,
-    names: new Map(parsed.people.map((p) => [p.personId, p.name])),
+    labels: personLabels(parsed.people),
     accounts: new Map(
       users.map((u) => [
         u.id,
@@ -516,9 +466,8 @@ export async function slackGroupsCheck(slack: WebClient): Promise<string> {
   }
   const { parsed, plans, found } = inputs;
   const decisions = decideSlackCopies({ plans, found });
-  const names = new Map(parsed.people.map((p) => [p.personId, p.name]));
   const seen = new Set<string>();
-  const differ = slackDifferFinding(decisions, names);
+  const differ = slackDifferFinding(decisions, personLabels(parsed.people));
   if (differ) {
     seen.add(differ.dedupeKey);
     await raise(differ);
@@ -575,11 +524,9 @@ export async function slackGroupsApply(opts: {
         found,
         force: opts.force ? new Set([opts.force]) : undefined,
       }).filter((d) => !opts.force || d.copy === opts.force);
-      const names = new Map(parsed.people.map((p) => [p.personId, p.name]));
+      const labels = personLabels(parsed.people);
       const who = (m: SlackMember) =>
-        m.personId
-          ? `${m.personId} ${names.get(m.personId) ?? ""}`.trim()
-          : m.slackUserId;
+        m.personId ? labelOf(labels, m.personId) : m.slackUserId;
       const rosterIds = new Map(
         listPeople(false).flatMap((p) =>
           p.person_id ? [[p.person_id, p.id] as const] : []
@@ -687,6 +634,7 @@ export async function groupsReport(
     plans,
     found,
     missing,
+    labels: personLabels(parsed.people),
     members: opts.members ?? false,
     dryRun: !opts.apply,
   });
@@ -1348,14 +1296,6 @@ export async function lifecycleHourly(slack: WebClient): Promise<void> {
   }
 }
 
-const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {
-  write: "To fill in",
-  unchanged: "Already correct",
-  typed: "Typed by hand, trusted (Slack email differs)",
-  not_in_slack: "Not in Slack yet",
-  conflict: "Needs a person to look at",
-};
-
 /**
  * Step 1 of the lifecycle sync. A dry run unless `apply`; both print the same
  * plan, so what an administrator read is what gets written.
@@ -1379,21 +1319,13 @@ export async function slackIdsReport(opts: {
     live: !u.isBot && !u.isDeleted,
   }));
   const decisions = planSlackIds(parsed.people, accounts);
+  const labels = personLabels(parsed.people);
 
   const lines = [
     `Slack User IDs${opts.apply ? "" : " (dry run: nothing changed)"}`,
     "",
+    ...formatSlackIds(decisions, labels),
   ];
-  for (const kind of Object.keys(SLACK_ID_LABEL) as SlackIdDecision["kind"][]) {
-    const these = decisions.filter((d) => d.kind === kind);
-    lines.push(`${SLACK_ID_LABEL[kind]}: ${these.length}`);
-    for (const d of these) {
-      const where = `${d.personId} (${d.tab} row ${d.row})`;
-      if (d.kind === "write") lines.push(`  ${where} -> ${d.slackUserId}`);
-      else if (d.kind === "conflict") lines.push(`  ${where}: ${d.reason}`);
-      else if (d.kind === "not_in_slack") lines.push(`  ${where}`);
-    }
-  }
   if (parsed.problems.length) {
     lines.push(
       "",
@@ -1426,7 +1358,9 @@ export async function slackIdsReport(opts: {
   });
   lines.push("", `Filled ${result.written.length} cell(s).`);
   for (const s of result.skipped) {
-    lines.push(`  skipped ${s.write.personId}: ${s.reason}; run it again`);
+    lines.push(
+      `  skipped ${labelOf(labels, s.write.personId)}: ${s.reason}; run it again`
+    );
   }
   return lines.join("\n");
 }
@@ -1547,7 +1481,15 @@ async function readOnboardingInputs(slack: WebClient) {
     )
   );
   const withoutCori = slackWithoutCori(parsed, rosterSlack);
-  return { asOf, plan, users, directory, directoryError, withoutCori };
+  return {
+    asOf,
+    plan,
+    users,
+    directory,
+    directoryError,
+    withoutCori,
+    labels: personLabels(parsed.people),
+  };
 }
 
 /**
@@ -1557,11 +1499,12 @@ async function readOnboardingInputs(slack: WebClient) {
 export async function onboardingReport(opts: {
   slack: WebClient;
 }): Promise<string> {
-  const { asOf, plan, users, directory, directoryError, withoutCori } =
+  const { asOf, plan, users, directory, directoryError, withoutCori, labels } =
     await readOnboardingInputs(opts.slack);
   const { channel, fallback } = onboardingChannel();
   return formatOnboarding({
     plan,
+    labels,
     asOf,
     slackAccounts: users.length,
     directory: directory
@@ -1688,6 +1631,7 @@ export async function offboardingReport(opts: {
   slack: WebClient;
 }): Promise<string> {
   const {
+    parsed,
     plan,
     unaccounted,
     users,
@@ -1708,6 +1652,7 @@ export async function offboardingReport(opts: {
   }
   return formatOffboarding({
     plan,
+    labels: personLabels(parsed.people),
     unaccounted,
     suspend,
     asOf: today(),

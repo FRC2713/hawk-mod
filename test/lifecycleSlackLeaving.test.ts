@@ -28,6 +28,7 @@ function mentor(personId: string, coriExpiry: string | null): SheetPerson {
   return {
     personId,
     name: `Mentor ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "active",
     roles: ["Mentor"],
@@ -54,6 +55,7 @@ function student(personId: string): SheetPerson {
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "inactive",
     roles: ["Student"],

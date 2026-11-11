@@ -15,6 +15,7 @@ import {
   slackHeldFinding,
   type SlackCopyDecision,
 } from "../src/domain/lifecycle/slackGroups.js";
+import { personLabels } from "../src/domain/lifecycle/labels.js";
 import {
   ACK_ACTION,
   findingBlocks,
@@ -35,6 +36,7 @@ function student(personId: string, lead = false): SheetPerson {
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: "Student P.",
     personalEmail: null,
     status: "active",
     roles: ["Student"],
@@ -57,8 +59,9 @@ const accounts = (people: SheetPerson[]) =>
 const found = Object.fromEntries(
   SLACK_COPIES.map((c) => [c, SLACK_GROUP_IDS[c]])
 );
-const names = (people: SheetPerson[]) =>
-  new Map(people.map((p) => [p.personId, p.name]));
+// The alert is Apply's preview, so it names people as every preview does:
+// Person ID, short name and role (#74), never the full name.
+const names = (people: SheetPerson[]) => personLabels(people);
 
 function decide(
   people: SheetPerson[],
@@ -121,7 +124,11 @@ describe("the one Slack groups differ finding", () => {
       names(people)
     );
     assert.equal(f?.dedupeKey, SLACK_DIFFER_KEY);
-    assert.match(f!.summary, /\n• \*@students\* — add P0021 Student P0021\n/);
+    assert.match(
+      f!.summary,
+      /\n• \*@students\* — add P0021 Student P\. \(Student\)\n/
+    );
+    assert.ok(!f!.summary.includes("Student P0021"), f!.summary);
     assert.match(f!.summary, /Nobody leaving is removed/);
 
     assert.equal(
@@ -150,7 +157,7 @@ describe("the one Slack groups differ finding", () => {
     );
     assert.match(
       f!.summary,
-      /• \*@student-leads\* — remove P0024 Student P0024 \(lead\/RA flag off\)/
+      /• \*@student-leads\* — remove P0024 Student P\. \(Student\) \(lead\/RA flag off\)/
     );
   });
 

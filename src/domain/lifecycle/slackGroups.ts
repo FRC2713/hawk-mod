@@ -2,6 +2,7 @@ import type { IsoDate } from "../dates.js";
 import { dedupeKey, type NewFinding } from "../findings.js";
 import { belongs, intendedGroups, type PersonGroup } from "./groups.js";
 import { leaving, planRefusal, type LeavingReason } from "./groupPlan.js";
+import { labelOf, type PersonLabels } from "./labels.js";
 import type { SheetPerson } from "./sheet.js";
 
 /**
@@ -257,13 +258,15 @@ export function slackRefusedKey(copy: SlackCopy): string {
 
 /**
  * The one "Slack groups differ" finding, from every copy Apply may change.
- * Names people — the alert channel may, and the clicker needs to know who
- * they are adding — and ends with what Apply does, since the text is an hour
- * old by the time someone reads it. Null when nothing differs.
+ * It is the preview for **Apply**, so it names people as every lifecycle
+ * preview does — Person ID, short name and role (`labels.ts`); the alert
+ * channel may, and the clicker needs to know who they are adding — and ends
+ * with what Apply does, since the text is an hour old by the time someone
+ * reads it. Null when nothing differs.
  */
 export function slackDifferFinding(
   decisions: readonly SlackCopyDecision[],
-  names: ReadonlyMap<string, string>
+  labels: PersonLabels
 ): NewFinding | null {
   const apply = decisions.filter(
     (d): d is Extract<SlackCopyDecision, { kind: "apply" }> =>
@@ -271,9 +274,7 @@ export function slackDifferFinding(
   );
   if (!apply.length) return null;
   const who = (m: SlackMember) =>
-    m.personId
-      ? `${m.personId}${names.get(m.personId) ? ` ${names.get(m.personId)}` : ""}`
-      : m.slackUserId;
+    m.personId ? labelOf(labels, m.personId) : m.slackUserId;
   // One line per group: a list of sixteen names in one sentence is unreadable.
   const lines = apply.map(
     (d) =>

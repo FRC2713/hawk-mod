@@ -32,6 +32,7 @@ function sheetMentor(
   return {
     personId,
     name,
+    shortName: null,
     personalEmail: null,
     status,
     roles: ["Mentor"],
@@ -67,6 +68,7 @@ function sheetStudent(
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: null,
     personalEmail: `${personId}@personal.example`,
     status: opts.status ?? "active",
     roles: ["Student"],

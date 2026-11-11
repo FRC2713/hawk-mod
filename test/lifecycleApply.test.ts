@@ -18,6 +18,7 @@ function student(personId: string, slackUserId: string | null): SheetPerson {
   return {
     personId,
     name: `Student ${personId}`,
+    shortName: null,
     personalEmail: null,
     status: "active",
     roles: ["Student"],
