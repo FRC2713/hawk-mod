@@ -4,7 +4,7 @@ import { SETTINGS, type SettingKey } from "../settings.js";
 /**
  * The handful of pages hawk-mod serves to a browser: a landing page for
  * whoever follows mod.redhawkrobotics.org, and the configuration page behind
- * Sign in with Slack. String templates rather than a template engine — this is
+ * hawk_suite's sign-in. String templates rather than a template engine — this is
  * four pages, and a dependency would outweigh them.
  *
  * Everything interpolated from outside this file goes through `esc()`. Setting
@@ -87,8 +87,8 @@ export function landingPage(workspace: string | null): string {
   <p><strong>Coaches and admins:</strong> the
   <a href="/config">configuration page</a> shows and changes where findings
   are posted, when the morning report arrives, and which other user groups
-  <code>/hawkmod group</code> may edit. It asks you to sign in with
-  Slack, and is limited to workspace Owners and Admins &mdash; the same rule as
+  <code>/hawkmod group</code> may edit. It asks you to sign in to Hawk
+  Suite with Slack, and is limited to workspace Owners and Admins &mdash; the same rule as
   <code>/hawkmod</code>.</p>
   <footer class="muted">Day to day, ${APP_NAME} lives in Slack:
   <code>/hawkmod</code> shows coverage, findings, and settings.</footer>`
@@ -107,6 +107,8 @@ export type SettingRow = {
 export function configPage(args: {
   rows: SettingRow[];
   signedInAs: string;
+  /** The suite gateway's logout, which ends this session and every app's. */
+  signOutUrl: string;
   notice?: { ok: boolean; text: string };
 }): string {
   const sections = args.rows
@@ -159,7 +161,7 @@ export function configPage(args: {
   <p class="muted">Slack credentials and the token encryption key stay in the
   environment and cannot be changed from here.</p>
   <footer class="muted">Signed in as ${esc(args.signedInAs)} &middot;
-  <a href="/auth/signout">sign out</a> &middot; <a href="/">home</a></footer>`
+  <a href="${esc(args.signOutUrl)}">sign out of Hawk Suite</a> &middot; <a href="/">home</a></footer>`
   );
 }
 

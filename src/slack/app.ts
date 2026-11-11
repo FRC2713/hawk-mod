@@ -139,8 +139,8 @@ export function createApp(): App {
       // handleInstallPath, not generateInstallUrl: it also sets the state
       // cookie the callback checks, and redirects (directInstall). Calling
       // generateInstallUrl alone left both out, so every authorization came
-      // back "expired" — and, with no redirect_uri, Slack sent it to the
-      // app's first registered URL, which may be the web sign-in callback.
+      // back "expired" — and, with no redirect_uri, Slack sent it to
+      // whichever URL the app registered first.
       await installer().handleInstallPath(
         req,
         res,
@@ -170,7 +170,7 @@ export function createApp(): App {
         method: ["GET"],
         handler: authorizeGroups,
       },
-      // The landing page and the Sign in with Slack–gated configuration page —
+      // The landing page and the suite-gated configuration page —
       // what mod.redhawkrobotics.org serves to a browser.
       ...webRoutes,
     ],
