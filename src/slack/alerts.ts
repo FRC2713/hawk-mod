@@ -1,4 +1,9 @@
-import { getFinding, setFindingAlertTs } from "../db/repo.js";
+import {
+  findingsInSummary,
+  getFinding,
+  setFindingAlertTs,
+} from "../db/repo.js";
+import { chunkLines, summaryText } from "../domain/alertGroups.js";
 import type { Finding } from "../domain/findings.js";
 import { severityEmoji } from "../domain/findings.js";
 import { log } from "../logger.js";
@@ -342,6 +347,126 @@ async function supersede(
   }
 }
 
+/**
+ * The old message a re-posted finding leaves behind. A single alert is
+ * superseded; a summary is redrawn without it, since the others it lists are
+ * still there (#86).
+ */
+async function replaced(
+  previousTs: string,
+  previousChannel: string | null,
+  finding: Finding
+): Promise<void> {
+  if (finding.alert_grouped) {
+    const channel = previousChannel ?? alertChannel("summary");
+    if (channel) await redrawSummary(channel, previousTs);
+    return;
+  }
+  await supersede(previousTs, previousChannel, finding);
+}
+
+/** The Slack layout of a grouped summary. No buttons, by design. */
+export function summaryBlocks(findings: readonly Finding[]): {
+  text: string;
+  blocks: unknown[];
+} {
+  const kind = findings[0]!.kind;
+  const { headline, lines, footer } = summaryText(kind, findings);
+  return {
+    text: headline,
+    blocks: [
+      // verbatim, as in findingBlocks: a summary must never ping a group.
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: headline, verbatim: true },
+      },
+      ...chunkLines(lines).map((chunk) => ({
+        type: "section",
+        text: { type: "mrkdwn", text: chunk, verbatim: true },
+      })),
+      {
+        type: "context",
+        elements: [{ type: "mrkdwn", text: footer }],
+      },
+    ],
+  };
+}
+
+/** Redraws a summary message from the findings it still stands for. */
+async function redrawSummary(channel: string, ts: string): Promise<void> {
+  const findings = findingsInSummary(channel, ts);
+  // Every one of them has been posted again since: say so, rather than leave
+  // a list that no longer matches anything.
+  const { text, blocks } = findings.length
+    ? summaryBlocks(findings)
+    : {
+        text: "These findings happened again",
+        blocks: [
+          {
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: "These findings were closed and *have happened again* — see the newer alerts in this channel.",
+              },
+            ],
+          },
+        ],
+      };
+  try {
+    await botClient().chat.update({
+      channel,
+      ts,
+      text,
+      blocks: blocks as never,
+    });
+  } catch (err) {
+    log.warn("could not update summary message", {
+      ts,
+      error: String(err),
+    });
+  }
+}
+
+/**
+ * Posts one summary for several new findings of one kind, in place of an
+ * alert each (#86). Every one of them is then pointed at the message, so
+ * closing any of them redraws it. A finding that had an alert before — a
+ * condition come back — has that old message dealt with as `postFinding`
+ * would.
+ */
+export async function postFindingGroup(ids: readonly number[]): Promise<void> {
+  const findings = ids
+    .map((id) => getFinding(id))
+    .filter((f): f is Finding => f !== undefined);
+  if (!findings.length) return;
+  const previous = findings.map((f) => ({
+    ts: f.alert_ts,
+    channel: f.alert_channel,
+    finding: f,
+  }));
+  const { text, blocks } = summaryBlocks(findings);
+  try {
+    const channel = alertChannel(`findings ${ids.join(", ")}`);
+    if (!channel) return;
+    const res = await botClient().chat.postMessage({
+      channel,
+      text,
+      blocks: blocks as never,
+    });
+    if (!res.ts) return;
+    for (const f of findings) setFindingAlertTs(f.id, res.ts, channel, true);
+    for (const p of previous) {
+      if (p.ts && p.ts !== res.ts) await replaced(p.ts, p.channel, p.finding);
+    }
+  } catch (err) {
+    log.error("could not post summary", {
+      findingIds: ids,
+      error: String(err),
+    });
+  }
+}
+
 export async function postFinding(findingId: number): Promise<void> {
   const finding = getFinding(findingId);
   if (!finding) return;
@@ -361,7 +486,7 @@ export async function postFinding(findingId: number): Promise<void> {
     // Only once the replacement is actually in the channel: if the post failed,
     // the old message is the only one there and must keep its buttons.
     if (previousTs && previousTs !== res.ts)
-      await supersede(previousTs, previousChannel, finding);
+      await replaced(previousTs, previousChannel, finding);
   } catch (err) {
     // A failed alert must not abort the sweep; the finding is already durable.
     log.error("could not post finding", { findingId, error: String(err) });
@@ -372,6 +497,11 @@ export async function postFinding(findingId: number): Promise<void> {
 export async function refreshFinding(findingId: number): Promise<void> {
   const finding = getFinding(findingId);
   if (!finding?.alert_ts) return;
+  if (finding.alert_grouped) {
+    const channel = postedChannel(finding);
+    if (channel) await redrawSummary(channel, finding.alert_ts);
+    return;
+  }
   const { text, blocks } = findingBlocks(finding);
   try {
     const channel = postedChannel(finding);
@@ -405,5 +535,29 @@ export async function postToAlertChannel(
     });
   } catch (err) {
     log.error("could not post to alert channel", { error: String(err) });
+  }
+}
+
+/**
+ * A line of information for `onboarding-channel` (the alert channel while
+ * that is unset): no buttons, no finding behind it. Used for the join notice
+ * (#86). A failure is logged and swallowed — anything that matters is a
+ * finding, raised on its own.
+ */
+export async function postToOnboardingChannel(text: string): Promise<void> {
+  const { channel } = onboardingChannel();
+  if (!channel) {
+    log.error("no onboarding or alert channel configured; nobody is told", {
+      context: "join notice",
+      fix: "/hawkmod config set onboarding-channel #channel",
+    });
+    return;
+  }
+  try {
+    await botClient().chat.postMessage({ channel, text });
+  } catch (err) {
+    log.warn("could not post to the onboarding channel", {
+      error: String(err),
+    });
   }
 }

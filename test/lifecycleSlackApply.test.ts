@@ -46,7 +46,8 @@ function student(personId: string, lead = false): SheetPerson {
       schoolEmail: `${personId.toLowerCase()}@school.example`,
       slackUserId: null,
       lead,
-      slackConsentExpiry: null,
+      // Current, so a student joins the student groups (#86).
+      slackConsentExpiry: "2027-08-01",
     },
     adminRoles: [],
     parentEmails: [],
@@ -96,6 +97,7 @@ function finding(kind: Finding["kind"], key: string): Finding {
     resolution_note: null,
     alert_ts: null,
     alert_channel: null,
+    alert_grouped: 0,
   };
 }
 

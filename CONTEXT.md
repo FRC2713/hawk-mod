@@ -169,6 +169,14 @@ A Slack user group whose membership is copied from a Google Group the lifecycle
 sheet computes. Edited only through the sheet; a hand edit is drift, and is
 undone.
 
+**Slack Consent**:
+A parent's or guardian's signed permission for a student to hold a Slack
+account, recorded as an expiry date on the lifecycle sheet. Like FIRST's
+annual items it runs to 1 August. A student in Slack without one current is a
+finding, and is not added to the Slack user groups until it is.
+_Avoid_: Slack authorization form (the team's everyday name for the paper
+form — "authorization" here means an adult's **Enrollment**)
+
 **Ready to invite**:
 Active in the lifecycle sheet and not yet in Slack: a mentor once cleared, a
 student once their Slack consent is current. Listed for an administrator to

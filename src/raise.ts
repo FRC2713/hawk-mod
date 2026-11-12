@@ -29,7 +29,16 @@ export type Occurrence = { at: string };
  */
 export async function raise(
   f: NewFinding,
-  occurrence?: Occurrence
+  occurrence?: Occurrence,
+  opts: {
+    /**
+     * Persist, but leave posting a new alert to the caller — the sweep, which
+     * may post several of one kind as one summary (`alertGroups.ts`). A
+     * finding raised this way and never posted is still durable, and in the
+     * morning report.
+     */
+    deferPost?: boolean;
+  } = {}
 ): Promise<{ id: number; alerted: boolean }> {
   const existing = findingByKey(f.dedupeKey);
   const reopen = occurrence
@@ -43,7 +52,7 @@ export async function raise(
     : existing?.status === "resolved";
 
   const { id, isNew } = upsertFinding(f, { reopen });
-  if (isNew) await postFinding(id);
+  if (isNew && !opts.deferPost) await postFinding(id);
   // New words for a finding already posted are redrawn in place, without a
   // ping: an alert whose text has fallen behind the database is one that
   // misleads whoever reads it.

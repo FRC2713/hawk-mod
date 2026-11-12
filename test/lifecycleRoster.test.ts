@@ -512,6 +512,23 @@ describe("roster from the sheet: matching today's rows at cutover", () => {
     assert.ok(!p.changes.some((c) => c.kind === "create"));
   });
 
+  // #86: deactivating a student who has no Slack Consent is the fix, and
+  // must not come back as "check the lifecycle sheet".
+  it("accepts a typed Slack User ID whose account has been deactivated", () => {
+    const s = sheetStudent("P0100", { slackUserId: "U1" });
+    const r = matched("student", s);
+    const p = plan(
+      [r],
+      [s],
+      [{ id: "U1", email: null, live: false, deactivated: true }]
+    );
+    assert.deepEqual(
+      p.findings.filter((f) => f.kind === "sheet_conflict"),
+      []
+    );
+    assert.equal(p.refused, null);
+  });
+
   it("uses neither of two rows carrying the same Slack User ID", () => {
     const a = sheetMentor("P0100", { slackUserId: "U1" });
     const b = sheetMentor("P0101", { slackUserId: "U1" });

@@ -198,6 +198,9 @@ export function planRoster(args: {
   ) => findings.push({ kind: "sheet_conflict", personId, rosterId, reason });
 
   const liveIds = new Set(args.accounts.filter((a) => a.live).map((a) => a.id));
+  const deactivatedIds = new Set(
+    args.accounts.filter((a) => !a.live && a.deactivated).map((a) => a.id)
+  );
   const liveByEmail = new Map<string, string>();
   for (const a of args.accounts) {
     if (a.live && a.email) liveByEmail.set(a.email.toLowerCase(), a.id);
@@ -219,14 +222,17 @@ export function planRoster(args: {
     } else if (typed) {
       // Typing an ID is the statement, so it is trusted even when that
       // account's email is not the identity email — that is exactly why a
-      // person types one. Refused only when it is not a live account.
-      if (liveIds.has(typed)) slackId = typed;
+      // person types one. A deactivated account is still theirs — turning
+      // it off is how an administrator deals with a student who has no
+      // Slack Consent, and that must not read as a typo (#86). Refused only
+      // when Slack has no such person's account at all.
+      if (liveIds.has(typed) || deactivatedIds.has(typed)) slackId = typed;
       else if (id.declares) {
         conflicted = true;
         conflict(
           s.personId,
           null,
-          "the Slack User ID on the sheet is not an active Slack account"
+          "the Slack User ID on the sheet is not a Slack account in this workspace"
         );
       }
     } else if (id.email) {

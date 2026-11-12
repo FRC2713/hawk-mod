@@ -14,7 +14,7 @@ import {
   type NewFinding,
 } from "../domain/findings.js";
 import { requiresEnrollment, unknownAccountSummary } from "../domain/people.js";
-import { consentStatus, mayHoldAccount } from "../domain/rules/consent.js";
+import { lacksConsent } from "../domain/rules/consent.js";
 import {
   describeScreening,
   screeningStatus,
@@ -24,7 +24,12 @@ import { log } from "../logger.js";
 import { reevaluateRecorded } from "../monitor/conversations.js";
 import { raise } from "../raise.js";
 import { channelMemberships, syncSlackAccounts } from "../slack/roster.js";
-import { refreshFinding } from "../slack/alerts.js";
+import {
+  postFinding,
+  postFindingGroup,
+  refreshFinding,
+} from "../slack/alerts.js";
+import { planPosting, type NewlyRaised } from "../domain/alertGroups.js";
 import { botClient, revokeUserToken } from "../slack/tokens.js";
 
 /** Kinds this sweep owns end to end, and may therefore close on its own. */
@@ -78,208 +83,234 @@ export async function runSweep(): Promise<SweepStats> {
     findingsClosed: 0,
   };
 
+  // New alerts wait for the end of the sweep, so that four or more of one
+  // kind — 1 August — can go out as one summary (#86). Everything is
+  // persisted as it is found; only the posting waits.
+  const raised: NewlyRaised[] = [];
   const emit = async (f: NewFinding) => {
     seen.add(f.dedupeKey);
-    await raise(f);
+    const { id, alerted } = await raise(f, undefined, { deferPost: true });
+    if (alerted) raised.push({ id, kind: f.kind });
   };
 
-  // Roles come from the lifecycle sheet, which the hourly roster run keeps
-  // (lifecycle/run.ts); the sweep only reads them.
+  // Whatever happens below, what was found gets posted: a finding persisted
+  // with its alert still waiting would never alert, because the next sweep
+  // finds it already open.
+  try {
+    // Roles come from the lifecycle sheet, which the hourly roster run keeps
+    // (lifecycle/run.ts); the sweep only reads them.
 
-  /* ---- roster vs Slack -------------------------------------------------- */
+    /* ---- roster vs Slack -------------------------------------------------- */
 
-  const { sync, users } = await syncSlackAccounts(client);
-  stats.slackAccountsLinked = sync.linked;
+    const { sync, users } = await syncSlackAccounts(client);
+    stats.slackAccountsLinked = sync.linked;
 
-  const teamId = (await client.auth.test()).team_id as string;
-  const botIds = new Set(users.filter((u) => u.isBot).map((u) => u.id));
+    const teamId = (await client.auth.test()).team_id as string;
+    const botIds = new Set(users.filter((u) => u.isBot).map((u) => u.id));
+    const deactivatedIds = new Set(
+      users.filter((u) => u.isDeleted).map((u) => u.id)
+    );
 
-  for (const u of sync.unknown) {
-    stats.unknownAccounts += 1;
-    await emit({
-      kind: "unknown_account",
-      dedupeKey: dedupeKey("unknown_account", u.id),
-      severity: "violation",
-      summary: unknownAccountSummary(u),
-      subjectRef: u.id,
-      detail: { realName: u.realName, isOwner: u.isOwner, isAdmin: u.isAdmin },
-    });
-  }
+    for (const u of sync.unknown) {
+      stats.unknownAccounts += 1;
+      await emit({
+        kind: "unknown_account",
+        dedupeKey: dedupeKey("unknown_account", u.id),
+        severity: "violation",
+        summary: unknownAccountSummary(u),
+        subjectRef: u.id,
+        detail: {
+          realName: u.realName,
+          isOwner: u.isOwner,
+          isAdmin: u.isAdmin,
+        },
+      });
+    }
 
-  /* ---- consent, screening, enrollment ----------------------------------- */
+    /* ---- consent, screening, enrollment ----------------------------------- */
 
-  const people = listPeople(true);
-  stats.people = people.length;
+    const people = listPeople(true);
+    stats.people = people.length;
 
-  for (const p of people) {
-    if (p.role === "student" && p.slack_user_id) {
-      const status = consentStatus(p, asOf);
-      if (!mayHoldAccount(status)) {
+    for (const p of people) {
+      // A deactivated account is the fix, not the problem. Not raising it is
+      // what closes the finding (it is SWEEP_OWNED) once an administrator has
+      // deactivated the student (#86).
+      const unconsented = lacksConsent(
+        p,
+        p.slack_user_id ? deactivatedIds.has(p.slack_user_id) : false,
+        asOf
+      );
+      if (unconsented) {
         stats.unconsentedAccounts += 1;
         await emit({
           kind: "unconsented_account",
           dedupeKey: dedupeKey("unconsented_account", String(p.id)),
           severity: "violation",
-          summary: `${p.full_name} has a Slack account but consent is ${status.state}.`,
+          summary: `${p.full_name} has a Slack account but their Slack Consent form is ${unconsented.state}.`,
           subjectPersonId: p.id,
           subjectRef: p.slack_user_id,
-          detail: { state: status.state },
+          detail: { state: unconsented.state },
         });
+      }
+
+      // Every adult on the roster, `district_observer` included (§8: they count
+      // as an adult only once screening dates are recorded).
+      if (p.role !== "student") {
+        const screening = screeningStatus(p, asOf);
+        if (!screening.current) {
+          stats.screeningLapsed += 1;
+          await emit({
+            kind: "screening_lapsed",
+            dedupeKey: dedupeKey("screening_lapsed", String(p.id)),
+            severity: "warn",
+            summary: `${p.full_name}: ${describeScreening(screening)}`,
+            subjectPersonId: p.id,
+            detail: screening,
+          });
+        }
+      }
+
+      // Someone can enrol legitimately as a adult and later be moved into the
+      // students group. The install-time refusal cannot see the future, so the
+      // sweep tears the token down instead of leaving their peer DMs visible.
+      if (p.role === "student" && p.slack_user_id) {
+        const install = getInstallation(teamId, "user", p.slack_user_id);
+        if (install) {
+          await revokeUserToken(teamId, p.slack_user_id);
+          deleteInstallation(teamId, "user", p.slack_user_id);
+          stats.studentEnrollmentsRemoved += 1;
+          await emit({
+            kind: "student_enrolled",
+            dedupeKey: dedupeKey("student_enrolled", String(p.id)),
+            severity: "violation",
+            summary:
+              `${p.full_name} is rostered as a student but had authorized ` +
+              `${APP_NAME}. The token has been revoked and removed — until now it ` +
+              `made their DMs with other students visible.`,
+            subjectPersonId: p.id,
+            subjectRef: p.slack_user_id,
+            detail: { installedAt: install.installedAt },
+          });
+        }
+      }
+
+      if (requiresEnrollment(p) && p.slack_user_id) {
+        const install = getInstallation(teamId, "user", p.slack_user_id);
+        if (!install) {
+          stats.adultsNotEnrolled += 1;
+          await emit({
+            kind: "adult_not_enrolled",
+            dedupeKey: dedupeKey("adult_not_enrolled", String(p.id)),
+            severity: "violation",
+            summary:
+              `${p.full_name} has not authorized ${APP_NAME}. Their DMs with students ` +
+              `are not monitored by anything.`,
+            subjectPersonId: p.id,
+            subjectRef: p.slack_user_id,
+          });
+        } else if (install.revokedAt) {
+          stats.enrollmentsRevoked += 1;
+          await emit({
+            kind: "enrollment_revoked",
+            dedupeKey: dedupeKey("enrollment_revoked", String(p.id)),
+            severity: "violation",
+            summary: `${p.full_name}'s ${APP_NAME} authorization stopped working on ${install.revokedAt.slice(0, 10)}.`,
+            subjectPersonId: p.id,
+            subjectRef: p.slack_user_id,
+          });
+        }
       }
     }
 
-    // Every adult on the roster, `district_observer` included (§8: they count
-    // as an adult only once screening dates are recorded).
-    if (p.role !== "student") {
-      const screening = screeningStatus(p, asOf);
-      if (!screening.current) {
-        stats.screeningLapsed += 1;
-        await emit({
-          kind: "screening_lapsed",
-          dedupeKey: dedupeKey("screening_lapsed", String(p.id)),
-          severity: "warn",
-          summary: `${p.full_name}: ${describeScreening(screening)}`,
-          subjectPersonId: p.id,
-          detail: screening,
-        });
-      }
-    }
+    /* ---- two screened adults in every student channel --------------------- */
 
-    // Someone can enrol legitimately as a adult and later be moved into the
-    // students group. The install-time refusal cannot see the future, so the
-    // sweep tears the token down instead of leaving their peer DMs visible.
-    if (p.role === "student" && p.slack_user_id) {
-      const install = getInstallation(teamId, "user", p.slack_user_id);
-      if (install) {
-        await revokeUserToken(teamId, p.slack_user_id);
-        deleteInstallation(teamId, "user", p.slack_user_id);
-        stats.studentEnrollmentsRemoved += 1;
-        await emit({
-          kind: "student_enrolled",
-          dedupeKey: dedupeKey("student_enrolled", String(p.id)),
-          severity: "violation",
-          summary:
-            `${p.full_name} is rostered as a student but had authorized ` +
-            `${APP_NAME}. The token has been revoked and removed — until now it ` +
-            `made their DMs with other students visible.`,
-          subjectPersonId: p.id,
-          subjectRef: p.slack_user_id,
-          detail: { installedAt: install.installedAt },
-        });
-      }
-    }
+    const channels = await channelMemberships(client, botIds);
+    stats.channelsChecked = channels.length;
 
-    if (requiresEnrollment(p) && p.slack_user_id) {
-      const install = getInstallation(teamId, "user", p.slack_user_id);
-      if (!install) {
-        stats.adultsNotEnrolled += 1;
-        await emit({
-          kind: "adult_not_enrolled",
-          dedupeKey: dedupeKey("adult_not_enrolled", String(p.id)),
-          severity: "violation",
-          summary:
-            `${p.full_name} has not authorized ${APP_NAME}. Their DMs with students ` +
-            `are not monitored by anything.`,
-          subjectPersonId: p.id,
-          subjectRef: p.slack_user_id,
-        });
-      } else if (install.revokedAt) {
-        stats.enrollmentsRevoked += 1;
-        await emit({
-          kind: "enrollment_revoked",
-          dedupeKey: dedupeKey("enrollment_revoked", String(p.id)),
-          severity: "violation",
-          summary: `${p.full_name}'s ${APP_NAME} authorization stopped working on ${install.revokedAt.slice(0, 10)}.`,
-          subjectPersonId: p.id,
-          subjectRef: p.slack_user_id,
-        });
-      }
-    }
-  }
-
-  /* ---- two screened adults in every student channel --------------------- */
-
-  const channels = await channelMemberships(client, botIds);
-  stats.channelsChecked = channels.length;
-
-  for (const channel of channels) {
-    const result = evaluateTwoAdultRule(channel, asOf);
-    if (result.ok) continue;
-    stats.channelsFailingTwoAdults += 1;
-    await emit({
-      kind: "lone_adult_channel",
-      dedupeKey: dedupeKey("lone_adult_channel", channel.channelId),
-      severity: "violation",
-      summary: result.summary,
-      subjectRef: channel.channelId,
-      detail: result,
-    });
-  }
-
-  /* ---- DM conversations already on record -------------------------------- */
-
-  // A conversation's verdict can change without anyone saying a word: screening
-  // lapses, roles move. Alerts are otherwise driven by new messages, so this is
-  // what stops a quiet conversation from going unreported.
-  const rechecked = await reevaluateRecorded(asOf);
-  stats.dmConversationsRechecked = rechecked.checked;
-  stats.dmViolationsStanding = rechecked.violations;
-
-  /* ---- workspace configuration (§6) ------------------------------------- */
-
-  const owners = users.filter((u) => u.isOwner && !u.isDeleted && !u.isBot);
-  if (owners.length < 2) {
-    await emit({
-      kind: "workspace_config",
-      dedupeKey: dedupeKey("workspace_config", "owner_count"),
-      severity: "violation",
-      summary: `Workspace has ${owners.length} owner(s); at least two screened adults are required.`,
-    });
-  }
-
-  const rosterBySlackId = new Map(
-    people.filter((p) => p.slack_user_id).map((p) => [p.slack_user_id!, p])
-  );
-  for (const u of users) {
-    if (!u.isOwner && !u.isAdmin) continue;
-    const person = rosterBySlackId.get(u.id);
-    if (person?.role === "student") {
+    for (const channel of channels) {
+      const result = evaluateTwoAdultRule(channel, asOf);
+      if (result.ok) continue;
+      stats.channelsFailingTwoAdults += 1;
       await emit({
-        kind: "workspace_config",
-        dedupeKey: dedupeKey("workspace_config", "student_admin", u.id),
+        kind: "lone_adult_channel",
+        dedupeKey: dedupeKey("lone_adult_channel", channel.channelId),
         severity: "violation",
-        summary: `${person.full_name} is a student and holds workspace ${u.isOwner ? "Owner" : "Admin"}.`,
-        subjectPersonId: person.id,
-        subjectRef: u.id,
+        summary: result.summary,
+        subjectRef: channel.channelId,
+        detail: result,
       });
     }
-  }
 
-  /* ---- responsible adults (§3) ------------------------------------------ */
+    /* ---- DM conversations already on record -------------------------------- */
 
-  // FIRST requires two screened Lead Coaches. hawk-mod used to answer this
-  // from a `lead_coach` roster role — a label anyone could type, that granted
-  // administrative access, and that nothing checked against reality. The
-  // people who actually hold the authority are the workspace's Owners and
-  // Admins, which Slack knows and nobody can quietly self-assign here, so the
-  // question becomes: are at least two of them screened adults on the roster?
-  const responsible = users.filter((u) => {
-    if (u.isDeleted || u.isBot || !(u.isOwner || u.isAdmin)) return false;
-    const person = rosterBySlackId.get(u.id);
-    if (!person || person.role === "student" || person.active !== 1)
-      return false;
-    return screeningStatus(person, asOf).current;
-  });
-  if (responsible.length < 2) {
-    await emit({
-      kind: "workspace_config",
-      dedupeKey: dedupeKey("workspace_config", "screened_admins"),
-      severity: "violation",
-      summary:
-        `${responsible.length} of the workspace's Owners/Admins are screened ` +
-        `adults on the roster; FIRST requires two (§3).`,
-      detail: { screened: responsible.map((u) => u.id) },
+    // A conversation's verdict can change without anyone saying a word: screening
+    // lapses, roles move. Alerts are otherwise driven by new messages, so this is
+    // what stops a quiet conversation from going unreported.
+    const rechecked = await reevaluateRecorded(asOf);
+    stats.dmConversationsRechecked = rechecked.checked;
+    stats.dmViolationsStanding = rechecked.violations;
+
+    /* ---- workspace configuration (§6) ------------------------------------- */
+
+    const owners = users.filter((u) => u.isOwner && !u.isDeleted && !u.isBot);
+    if (owners.length < 2) {
+      await emit({
+        kind: "workspace_config",
+        dedupeKey: dedupeKey("workspace_config", "owner_count"),
+        severity: "violation",
+        summary: `Workspace has ${owners.length} owner(s); at least two screened adults are required.`,
+      });
+    }
+
+    const rosterBySlackId = new Map(
+      people.filter((p) => p.slack_user_id).map((p) => [p.slack_user_id!, p])
+    );
+    for (const u of users) {
+      if (!u.isOwner && !u.isAdmin) continue;
+      const person = rosterBySlackId.get(u.id);
+      if (person?.role === "student") {
+        await emit({
+          kind: "workspace_config",
+          dedupeKey: dedupeKey("workspace_config", "student_admin", u.id),
+          severity: "violation",
+          summary: `${person.full_name} is a student and holds workspace ${u.isOwner ? "Owner" : "Admin"}.`,
+          subjectPersonId: person.id,
+          subjectRef: u.id,
+        });
+      }
+    }
+
+    /* ---- responsible adults (§3) ------------------------------------------ */
+
+    // FIRST requires two screened Lead Coaches. hawk-mod used to answer this
+    // from a `lead_coach` roster role — a label anyone could type, that granted
+    // administrative access, and that nothing checked against reality. The
+    // people who actually hold the authority are the workspace's Owners and
+    // Admins, which Slack knows and nobody can quietly self-assign here, so the
+    // question becomes: are at least two of them screened adults on the roster?
+    const responsible = users.filter((u) => {
+      if (u.isDeleted || u.isBot || !(u.isOwner || u.isAdmin)) return false;
+      const person = rosterBySlackId.get(u.id);
+      if (!person || person.role === "student" || person.active !== 1)
+        return false;
+      return screeningStatus(person, asOf).current;
     });
+    if (responsible.length < 2) {
+      await emit({
+        kind: "workspace_config",
+        dedupeKey: dedupeKey("workspace_config", "screened_admins"),
+        severity: "violation",
+        summary:
+          `${responsible.length} of the workspace's Owners/Admins are screened ` +
+          `adults on the roster; FIRST requires two (§3).`,
+        detail: { screened: responsible.map((u) => u.id) },
+      });
+    }
+  } finally {
+    const posting = planPosting(raised, new Set(SWEEP_OWNED));
+    for (const id of posting.singles) await postFinding(id);
+    for (const g of posting.groups) await postFindingGroup(g.ids);
   }
 
   const closed = autoResolveMissing(SWEEP_OWNED, seen);
