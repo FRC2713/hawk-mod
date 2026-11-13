@@ -4,6 +4,7 @@ import { belongs, intendedGroups, type PersonGroup } from "./groups.js";
 import { leaving, planRefusal, type LeavingReason } from "./groupPlan.js";
 import { labelOf, type PersonLabels } from "./labels.js";
 import type { SheetPerson } from "./sheet.js";
+import { consentStatus, mayHoldAccount } from "../rules/consent.js";
 
 /**
  * The Slack user groups that copy a Google group (docs/lifecycle-sync.md,
@@ -76,6 +77,41 @@ export type SlackCopyPlan = {
   refusal: string | null;
 };
 
+/** The copies made of students, which wait for their Slack Consent. */
+const STUDENT_COPIES: ReadonlySet<SlackCopy> = new Set([
+  "grp-students",
+  "grp-student-leads",
+]);
+
+/**
+ * Whether a person may be *added* to a copy as far as Slack Consent goes
+ * (#86). A student copy's default channels are what make a Slack account
+ * useful, so a student joins one only with their Slack Consent current, the
+ * way a mentor joins @mentors only with CORI current. The Google groups do
+ * not wait: Slack Consent is about Slack.
+ *
+ * It decides joining and nothing else. A student already in the group whose
+ * consent lapses stays — no one is held or removed for it — because what the
+ * consent gates is whether their account is active, which the
+ * `unconsented_account` finding is about. On 1 August that is everyone.
+ */
+function consentAllowsJoining(
+  copy: SlackCopy,
+  p: SheetPerson,
+  asOf: IsoDate
+): boolean {
+  if (!STUDENT_COPIES.has(copy)) return true;
+  return mayHoldAccount(
+    consentStatus(
+      {
+        role: "student",
+        slack_consent_expires_on: p.student?.slackConsentExpiry ?? null,
+      },
+      asOf
+    )
+  );
+}
+
 /**
  * What Apply would do to each Slack copy. Pure: sheet people, their Slack
  * accounts and each group's current members in, a plan out.
@@ -117,7 +153,7 @@ export function planSlackCopies(args: {
     const want = new Map<string, string>();
     for (const p of intended[copy]) {
       const id = slackIds.get(p.personId);
-      if (id) want.set(id, p.personId);
+      if (id && consentAllowsJoining(copy, p, asOf)) want.set(id, p.personId);
     }
 
     const add: SlackMember[] = [];
@@ -134,7 +170,8 @@ export function planSlackCopies(args: {
         held.push({ slackUserId, personId: null, reason: "not_on_sheet" });
         continue;
       }
-      // Still entitled to stay: grp-ra's lapsed screening.
+      // Still entitled to stay: grp-ra's lapsed screening, or a student's
+      // lapsed Slack Consent (that is about their account, not the group).
       if (belongs(copy, p, asOf, false)) continue;
       const reason = leaving(copy, p, asOf);
       const member = { slackUserId, personId: p.personId };

@@ -65,7 +65,8 @@ function student(personId: string): SheetPerson {
       schoolEmail: `${personId.toLowerCase()}@school.example`,
       slackUserId: null,
       lead: false,
-      slackConsentExpiry: null,
+      // Current, so a student joins the student groups (#86).
+      slackConsentExpiry: "2027-08-01",
     },
     adminRoles: [],
     parentEmails: [],

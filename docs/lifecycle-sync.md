@@ -307,7 +307,12 @@ keyed by handle). Each
 Slack group is computed from the sheet by the same `intendedGroups` as the
 Google group, restricted to people with a Slack account — a mentor not yet
 invited is in the Google group and absent from the Slack one, which is not
-drift.
+drift. A student joins `@students` and `@student-leads` only with their Slack
+Consent current, as a mentor joins `@mentors` only with CORI current
+(FRC2713/hawk-mod#86): those groups' default channels are what make a Slack
+account useful. A student already in them whose consent lapses — everyone, on
+1 August — stays, held by nobody: what Slack Consent gates is an active
+account, which `unconsented_account` reports. The Google groups do not wait.
 
 **Every Slack group change is applied by a click, as the person who clicked**
 (decided 2026-09-27). Slack accepts group edits only from an administrator's

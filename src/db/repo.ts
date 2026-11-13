@@ -1087,15 +1087,36 @@ export function resolveFinding(
   return info.changes > 0;
 }
 
-/** Where an alert was posted: its timestamp, and the channel it is in. */
+/**
+ * Where an alert was posted: its timestamp, the channel it is in, and whether
+ * it is a summary shared with other findings (`domain/alertGroups.ts`).
+ */
 export function setFindingAlertTs(
   id: number,
   ts: string,
-  channel: string
+  channel: string,
+  grouped = false
 ): void {
   db()
-    .prepare("UPDATE findings SET alert_ts = ?, alert_channel = ? WHERE id = ?")
-    .run(ts, channel, id);
+    .prepare(
+      "UPDATE findings SET alert_ts = ?, alert_channel = ?, alert_grouped = ? WHERE id = ?"
+    )
+    .run(ts, channel, grouped ? 1 : 0, id);
+}
+
+/**
+ * The findings a grouped summary message was posted for and still stands for,
+ * oldest first (`domain/alertGroups.ts`). It is redrawn from these whenever
+ * any of them changes.
+ */
+export function findingsInSummary(channel: string, ts: string): Finding[] {
+  return db()
+    .prepare<[string, string], Finding>(
+      `SELECT * FROM findings
+       WHERE alert_channel = ? AND alert_ts = ? AND alert_grouped = 1
+       ORDER BY id`
+    )
+    .all(channel, ts);
 }
 
 /* ---------------------------------------------------- onboarding messages */

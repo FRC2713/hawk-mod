@@ -43,3 +43,21 @@ export function consentStatus(
 export function mayHoldAccount(status: ConsentStatus): boolean {
   return status.state === "not_required" || status.state === "valid";
 }
+
+/**
+ * Whether a person's Slack account is one Slack Consent is missing for: the
+ * `unconsented_account` question, asked of a roster row. `deactivated` is
+ * whether Slack has that account switched off — the fix an administrator
+ * reaches for, so a deactivated account is never one (#86). What the gate
+ * protects is an account a student can use; whether they are in any user
+ * group does not enter into it.
+ */
+export function lacksConsent(
+  person: Pick<Person, "role" | "slack_consent_expires_on" | "slack_user_id">,
+  deactivated: boolean,
+  asOf: IsoDate
+): ConsentStatus | null {
+  if (!person.slack_user_id || deactivated) return null;
+  const status = consentStatus(person, asOf);
+  return mayHoldAccount(status) ? null : status;
+}

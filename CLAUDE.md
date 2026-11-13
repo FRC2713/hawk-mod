@@ -194,6 +194,16 @@ command, alert button, modal submit, auto-remediation, the sweep — goes throug
 wrong and the alert channel becomes noise nobody reads, which is the exact
 failure the source document warns about.
 
+**The sweep posts last, so 1 August is one message per kind.** Its `emit`
+raises with `deferPost`, persisting as it goes, and posts in a `finally`:
+four or more new findings of one `SWEEP_OWNED` kind share one summary
+(`domain/alertGroups.ts`, `postFindingGroup`), anything else its own alert.
+Each finding stays its own row and closes on its own; the summary is redrawn
+from `alert_grouped` rows on every change and has **no buttons** — an
+"acknowledge all" would bury forty true things in one click (#52, #86). The
+`finally` matters: a finding persisted but never posted would never alert,
+because the next sweep finds it already open.
+
 **Conditions and occurrences re-alert differently**
 (`domain/rules/recurrence.ts`). A condition finding — lapsed screening, an
 unenrolled adult — describes something currently true, so re-detection is not

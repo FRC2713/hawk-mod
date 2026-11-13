@@ -56,7 +56,7 @@ function mentor(
 
 function student(
   personId: string,
-  extra: { lead?: boolean } = {}
+  extra: { lead?: boolean; slackConsentExpiry?: string | null } = {}
 ): SheetPerson {
   return {
     personId,
@@ -71,7 +71,10 @@ function student(
       schoolEmail: `${personId.toLowerCase()}@school.example`,
       slackUserId: null,
       lead: extra.lead ?? false,
-      slackConsentExpiry: null,
+      slackConsentExpiry:
+        extra.slackConsentExpiry === undefined
+          ? "2027-08-01"
+          : extra.slackConsentExpiry,
     },
     adminRoles: [],
     parentEmails: [],
@@ -147,6 +150,36 @@ describe("planning a Slack copy: joining by Apply, leaving waits", () => {
       {}
     );
     assert.deepEqual(p["grp-mentors"].add, []);
+  });
+
+  // #86: a student's default channels are what make their account useful,
+  // so @students waits for Slack Consent the way @mentors waits for CORI.
+  it("does not add a student to the student groups until their Slack Consent is current", () => {
+    const p = plan(
+      [
+        student("P0020", { slackConsentExpiry: null, lead: true }),
+        student("P0021", { slackConsentExpiry: "2026-08-01" }),
+        student("P0022"),
+      ],
+      {}
+    );
+    assert.deepEqual(ids(p["grp-students"].add), ["P0022"]);
+    assert.deepEqual(p["grp-student-leads"].add, []);
+  });
+
+  it("keeps a student whose Slack Consent lapsed where they are, holding no one", () => {
+    const p = plan(
+      [student("P0020", { slackConsentExpiry: "2026-08-01", lead: true })],
+      {
+        "grp-students": [u("P0020")],
+        "grp-student-leads": [u("P0020")],
+      }
+    );
+    for (const copy of ["grp-students", "grp-student-leads"] as const) {
+      assert.deepEqual(p[copy].remove, [], copy);
+      assert.deepEqual(p[copy].held, [], copy);
+      assert.deepEqual(p[copy].add, [], copy);
+    }
   });
 
   it("keeps a mentor already in @mentors whose CORI lapsed, for their own finding", () => {

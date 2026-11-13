@@ -147,6 +147,21 @@ describe("Slack ID write-back", () => {
     );
   });
 
+  it("keeps a recorded ID whose account an administrator deactivated", () => {
+    const [d] = planSlackIds(
+      [mentor("P0010", "ana@redhawkrobotics.org", "U9")],
+      [
+        {
+          id: "U9",
+          email: "ana@redhawkrobotics.org",
+          live: false,
+          deactivated: true,
+        },
+      ]
+    );
+    assert.equal(d?.kind, "deactivated");
+  });
+
   it("trusts a hand-typed ID whose account signed up with another email", () => {
     const [d] = planSlackIds(
       [mentor("P0010", "ana@redhawkrobotics.org", "U9")],

@@ -87,6 +87,8 @@ export type Finding = {
   /** The channel `alert_ts` is in; null on alerts older than migration 0010,
    * which are all in the alert channel. */
   alert_channel: string | null;
+  /** 1 when `alert_ts` is a summary shared with others (`alertGroups.ts`). */
+  alert_grouped: number;
 };
 
 export type NewFinding = {

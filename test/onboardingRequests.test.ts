@@ -56,6 +56,7 @@ function asFinding(r: OnboardingRequest, over: Partial<Finding> = {}): Finding {
     resolution_note: null,
     alert_ts: null,
     alert_channel: null,
+    alert_grouped: 0,
     ...over,
   };
 }

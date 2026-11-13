@@ -21,6 +21,8 @@ import {
   type ObservedFile,
 } from "../monitor/record.js";
 import { raise } from "../raise.js";
+import { joinNotice } from "../domain/joinNotice.js";
+import { postToOnboardingChannel } from "./alerts.js";
 import { botClient, userClient } from "./tokens.js";
 
 type MessageLike = {
@@ -184,6 +186,19 @@ export function registerEvents(app: App): void {
     }
     const person =
       match.kind === "unknown" ? undefined : personById(match.person.id);
+    // Whoever they are, the people who handle invites hear that they came
+    // (#86): with an approved sign-up domain, nobody may have invited them.
+    await postToOnboardingChannel(
+      joinNotice(
+        person ?? null,
+        {
+          id: user.id,
+          name: user.name ?? null,
+          realName: user.real_name ?? user.profile?.real_name ?? null,
+        },
+        today()
+      )
+    );
     if (!person) {
       await raise({
         kind: "unknown_account",
@@ -205,7 +220,7 @@ export function registerEvents(app: App): void {
         kind: "unconsented_account",
         dedupeKey: dedupeKey("unconsented_account", String(person.id)),
         severity: "violation",
-        summary: `${person.full_name} joined the workspace but consent is ${status.state}.`,
+        summary: `${person.full_name} joined the workspace but their Slack Consent form is ${status.state}.`,
         subjectPersonId: person.id,
         subjectRef: user.id,
         detail: { state: status.state },

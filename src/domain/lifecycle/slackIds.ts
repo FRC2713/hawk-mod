@@ -10,6 +10,13 @@ export type SlackAccount = {
   email: string | null;
   /** Deactivated in Slack, or a bot: never a match for a person. */
   live: boolean;
+  /**
+   * A person's account an administrator has deactivated (not a bot). Never
+   * matched by email, but a Slack User ID typed for it is still that person's
+   * account: deactivating a student who has no Slack Consent is the fix, and
+   * must not read as a mistyped ID (#86).
+   */
+  deactivated?: boolean;
 };
 
 type Target = { personId: string; tab: SlackIdTab; row: number };
@@ -25,6 +32,11 @@ export type SlackIdDecision =
    * (docs/lifecycle-sync.md, "Cutover"): the typing is the statement.
    */
   | (Target & { kind: "typed"; slackUserId: string })
+  /**
+   * The cell holds an account an administrator has deactivated, and no live
+   * account holds the identity email. Still theirs; left as it is (#86).
+   */
+  | (Target & { kind: "deactivated"; slackUserId: string })
   /** No live account has this email yet: not invited, or not joined. */
   | (Target & { kind: "not_in_slack" })
   /**
@@ -56,7 +68,9 @@ export function planSlackIds(
 ): SlackIdDecision[] {
   const liveByEmail = new Map<string, string>();
   const liveIds = new Set<string>();
+  const deactivatedIds = new Set<string>();
   for (const a of accounts) {
+    if (!a.live && a.deactivated) deactivatedIds.add(a.id);
     if (!a.live) continue;
     liveIds.add(a.id);
     if (a.email) liveByEmail.set(a.email.toLowerCase(), a.id);
@@ -118,6 +132,9 @@ export function planSlackIds(
       if (liveIds.has(recorded) && !found) {
         return { ...target, kind: "typed", slackUserId: recorded };
       }
+      if (deactivatedIds.has(recorded) && !found) {
+        return { ...target, kind: "deactivated", slackUserId: recorded };
+      }
       return {
         ...target,
         kind: "conflict",
@@ -137,6 +154,7 @@ const SLACK_ID_LABEL: Record<SlackIdDecision["kind"], string> = {
   write: "To fill in",
   unchanged: "Already correct",
   typed: "Typed by hand, trusted (Slack email differs)",
+  deactivated: "Deactivated in Slack, kept",
   not_in_slack: "Not in Slack yet",
   conflict: "Needs a person to look at",
 };

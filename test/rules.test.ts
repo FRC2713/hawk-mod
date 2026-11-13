@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { addYears, daysBetween, today } from "../src/domain/dates.js";
 import type { Person, Role } from "../src/domain/people.js";
-import { consentStatus, mayHoldAccount } from "../src/domain/rules/consent.js";
+import {
+  consentStatus,
+  lacksConsent,
+  mayHoldAccount,
+} from "../src/domain/rules/consent.js";
 import {
   isScreenedAdult,
   latestAnnualExpiry,
@@ -98,6 +102,41 @@ describe("consent", () => {
     // Signed in September, runs to the next 1 August like every annual item.
     const status = consentStatus(student("2027-08-01"), "2026-09-28");
     assert.deepEqual(status, { state: "valid", expiresOn: "2027-08-01" });
+  });
+
+  // #86: deactivating a student with no Slack Consent is the fix, so it must
+  // be what makes the finding go away.
+  it("flags a usable account with no Slack Consent, and not a deactivated one", () => {
+    const s = person("student", {
+      slack_user_id: "U1",
+      slack_consent_expires_on: null,
+    });
+    assert.deepEqual(lacksConsent(s, false, "2026-11-12"), {
+      state: "missing",
+    });
+    assert.equal(lacksConsent(s, true, "2026-11-12"), null);
+  });
+
+  it("asks nothing of a student with no Slack account, or a consented one", () => {
+    assert.equal(
+      lacksConsent(
+        person("student", { slack_user_id: null }),
+        false,
+        "2026-11-12"
+      ),
+      null
+    );
+    assert.equal(
+      lacksConsent(
+        person("student", {
+          slack_user_id: "U1",
+          slack_consent_expires_on: "2027-08-01",
+        }),
+        false,
+        "2026-11-12"
+      ),
+      null
+    );
   });
 });
 

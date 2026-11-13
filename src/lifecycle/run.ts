@@ -203,6 +203,7 @@ async function readRosterInputs(slack: WebClient) {
     id: u.id,
     email: u.email,
     live: !u.isBot && !u.isDeleted,
+    deactivated: !u.isBot && u.isDeleted,
   }));
   const roster = listPeople(false);
   const plan = planRoster({
@@ -1317,6 +1318,7 @@ export async function slackIdsReport(opts: {
     id: u.id,
     email: u.email,
     live: !u.isBot && !u.isDeleted,
+    deactivated: !u.isBot && u.isDeleted,
   }));
   const decisions = planSlackIds(parsed.people, accounts);
   const labels = personLabels(parsed.people);
