@@ -108,7 +108,18 @@ a student-phone column (both for high-schoolers), a block of
 question, a shirt-size question, a parent-volunteer question, and a trailing
 `Email Address` that is sometimes the student's and sometimes a parent's. The
 2026-27 responses sheet also has columns the team added by hand, which are not
-form questions: `CORI parent?`, `CORI parent 2?` and `Summer Learning`.
+form questions: `CORI parent?`, `CORI parent 2?` and `Summer Learning`. It
+also has tabs of its own besides `Form Responses 1`. See _Other tabs_ below.
+
+**Find the right spreadsheet first.** Copies of this form and of its
+responses sheet exist under the same titles. The source is the responses
+sheet the live form writes to: open the form, go to its Responses tab and
+choose View in Sheets. A copy edited by hand was once imported by mistake,
+and two guardian addresses on the sheet came from it rather than from what
+the families typed. A response whose timestamp is not a real date, or a
+newest response older than the form's newest, means you have a copy. Tab
+names do not tell them apart: the team renames and copies tabs in both, so a
+tab that was in only one of them last week can be in either this week.
 
 The first conversion left Pronouns, Food Allergies / Requirements and Shirt
 Size blank for every student, so a backfill can fill them (all quiet).
@@ -134,6 +145,8 @@ Size blank for every student, so a backfill can fill them (all quiet).
 | Parent volunteer interest                 | set aside                                               | Parents aren't People. That is a separate outreach list.                                                                                                                                                                                                                                                                                                                                               |
 | `CORI parent?`, `CORI parent 2?`          | `Emergency_Contacts`: CORI Expiry, a **derived value**  | Added by the team, not asked on the form. A date there is the day the guardian's CORI check was done, not an expiry: the expiry is 1 September after the third school year of that date (`docs/lifecycle-sheet.md` §2), shown with its working. "n", "NO" or a note gives nothing. Set every row that lists the same guardian.                                                                         |
 | `Summer Learning`                         | set aside                                               | Added by the team. No column for it.                                                                                                                                                                                                                                                                                                                                                                   |
+| Grade and program disagree                | set aside                                               | A grade the sheet covers with a program tier for younger students (a 9th grader picking the grades 7-8 tier), or the reverse. The operator decides whether the student is on the team.                                                                                                                                                                                                                 |
+| _(a new student's legal first name)_      | `People`: Legal First / Preferred First Name            | When the School Email's first part is a longer form of the name given (`alexander.…` for "Alex"), it is the Legal First Name and the name given is the Preferred First Name, as earlier rows did. A **derived value**, listed under _names to confirm_.                                                                                                                                                |
 | _(a blank Legal First Name on the sheet)_ | `People`: Legal First Name                              | Not from the form, which asks for the name a student goes by. When the sheet has only a preferred name, the School Email's first part (`firstname` in `firstname.lastname@…`) gives the legal one: a **derived value**, written only with the operator's approval.                                                                                                                                     |
 
 ### Guardians
@@ -156,3 +169,32 @@ Size blank for every student, so a backfill can fill them (all quiet).
   answer as that sibling gave it.
 - **No relationship between students is ever inferred.** A shared surname is
   not a sibling link. **(corrected:** once inferred.)
+
+### Other tabs in the responses workbook
+
+The team keeps working tabs beside `Form Responses 1`, and renames them. Read
+every tab's name and header before matching, and recognise each by what it
+holds, not by its name. Only `Form Responses 1` is a source.
+
+- **`Not participating/archived`:** responses the team moved out of
+  `Form Responses 1`, each with a note in column A, then the response shifted
+  one column right. Nobody on it is imported. Anyone on it who is already on
+  the sheet goes on the follow-up list by Person ID, because an import never
+  sets anyone Inactive: that stays the operator's call, made by hand. A
+  response moved back from it can stay shifted: the misaligned-rows rule
+  applies.
+- **The tracking tab** (seen as `DNI Form` and as `FRC Form tracking`): a
+  name column, often an email column, and 0/1 tracking columns
+  (`Slack form`, `Parental Consent`, `NERD?`, `banquet`, `rookie?`,
+  `Kit Tour signup`, `Invited to Basecamp`, `FIRST Signup`, `FIRST Consent`,
+  `Worlds Interest Form`, `Media Release status DENY`), one row per
+  high-school respondent. Never a source. The same 0/1 columns can also
+  appear in `Form Responses 1` after `Summer Learning`. Either way, a `1`
+  says a form came back or a step was done, never when, so it is not a date.
+  Where one matches a sheet date column (`Slack form` and Slack Consent
+  Expiry, `FIRST Consent` and FIRST Consent Form Expiry), a `1` puts that
+  column on _dates to get_.
+- **`FRC Only Sorted formula based`:** first name, last name and email, built
+  by formula from the responses. Never a source.
+- **`Stats`:** counts. Never a source. A row in `Form Responses 1` holding
+  only numbers is a count too, not a response.
